@@ -122,7 +122,7 @@ TEMPLATE = """<!DOCTYPE html>
   </footer>
   <script>
 (function(){{var l=location;if(l.hostname==="localhost"||l.hostname==="127.0.0.1")return;
-var u="https://stats.leongorecki.eu/e",b=JSON.stringify({{p:l.pathname,r:document.referrer,h:l.hostname}});
+var u="https://stats.leongorecki.eu/e",o={{p:l.pathname,r:document.referrer,h:l.hostname}};if(/(?:^|; )lg_me=1/.test(document.cookie))o.m=1;var b=JSON.stringify(o);
 try{{if(navigator.sendBeacon&&navigator.sendBeacon(u,new Blob([b],{{type:"text/plain"}})))return}}catch(e){{}}
 try{{fetch(u,{{method:"POST",body:b,keepalive:true,mode:"cors",headers:{{"content-type":"text/plain"}}}})}}catch(e){{}}}})();
   </script>
