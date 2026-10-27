@@ -1755,7 +1755,19 @@ def _is_linespec(x) -> bool:
     return isinstance(x, str) and bool(x) and bool(_LINESPEC.match(x))
 
 
-class _Library:
+# The everyday-data functions live in modules of their own, one mixin each;
+# a method defined here wins over a mixin's of the same name.
+from .lib_cells import CellLibrary  # noqa: E402
+from .lib_files import FileLibrary  # noqa: E402
+from .lib_optim import OptimLibrary  # noqa: E402
+from .lib_signal import SignalLibrary  # noqa: E402
+from .lib_stats import StatsLibrary  # noqa: E402
+from .lib_system import SystemLibrary  # noqa: E402
+from .lib_text import TextLibrary  # noqa: E402
+
+
+class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
+               SignalLibrary, OptimLibrary, SystemLibrary):
     """MATLAB's own functions, with MATLAB's shapes and argument rules."""
 
     def __init__(self, rt: Runtime) -> None:

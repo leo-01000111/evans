@@ -1,0 +1,21 @@
+"""
+Statistics and linear algebra.
+==============================
+Descriptive statistics, distributions, factorisations, random integers.
+
+A mixin of :class:`.matlab_runtime._Library`: each ``f_<name>`` method is
+the MATLAB function ``<name>``. It is imported by :mod:`.matlab_runtime`
+just before ``_Library`` is defined, so the helpers above that line can be
+imported from it by name; anything defined further down is reached through
+the module (``_mr._sprintf``) at call time. Import :mod:`.matlab_runtime` first, never this module on
+its own: the two import each other.
+"""
+
+from __future__ import annotations
+
+from . import matlab_runtime as _mr  # noqa: F401
+from .matlab_runtime import MatlabError, _nargout  # noqa: F401
+
+
+class StatsLibrary:
+    """var, cov, svd, randi and the rest."""
