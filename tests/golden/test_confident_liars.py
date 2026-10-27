@@ -330,3 +330,98 @@ def test_clear_with_wildcard_and_regexp(it):
     assert not {"K1", "K2", "Kp"} & set(it.namespace) and "x" in it.namespace
     run(it, "a1 = 1; a2 = 2; ab = 3; clear -regexp ^a[0-9]")
     assert {"a1", "a2"}.isdisjoint(it.namespace) and "ab" in it.namespace
+
+
+# ──────────────────────────────────────────────────────────────
+#  Cells, structs, errors, global and persistent
+# ──────────────────────────────────────────────────────────────
+
+def test_a_cell_written_with_semicolons_has_rows(it):
+    """``{1,'a';2,'b'}`` is 2×2; it was 1×4, and ``c{2,1}`` read ``c{1}``."""
+    run(it, "c = {1,'a';2,'b'}; sz = size(c); x = c{2,1}; y = c{3}; "
+            "z = c{end,end}; r = c(:,2); n = numel(c);")
+    assert list(np.ravel(val(it, "sz"))) == [2, 2]
+    assert val(it, "x") == 2            # row 2, column 1
+    assert val(it, "y") == "a"          # linear order runs down the columns
+    assert val(it, "z") == "b"
+    assert list(val(it, "r")) == ["a", "b"] and val(it, "r").dims == (2, 1)
+    assert val(it, "n") == 4
+
+
+def test_cells_grow_stack_and_transpose_as_tables(it):
+    run(it, "c = {1,2}; c{2,3} = 9; sz = size(c); e = c{2,1}; "
+            "d = [{1,2}; {3,4}]; t = d'; k = cell(3); f = fieldnames("
+            "struct('a',1,'b',2)); q = num2cell([1 2; 3 4]); m = 0; "
+            "for col = d, m = m + 1; end")
+    assert list(np.ravel(val(it, "sz"))) == [2, 3]
+    assert np.size(val(it, "e")) == 0                   # filled with []
+    assert val(it, "d").dims == (2, 2) and val(it, "d")[1] == 3
+    assert val(it, "t")[1] == 2                         # transposed
+    assert val(it, "k").dims == (3, 3)                  # cell(n) is n×n
+    assert val(it, "f").dims == (2, 1)                  # a column
+    assert val(it, "q").dims == (2, 2) and val(it, "q")[1] == 3
+    assert val(it, "m") == 2                            # one pass a column
+    assert "consistent" in error_of(it, "c = {1,2;3}")
+
+
+def test_struct_with_a_cell_value_makes_a_struct_array(it):
+    """``struct('a',{1,2})`` is 1×2; a cell inside a cell is the value."""
+    run(it, "s = struct('a',{1,2},'b','k'); n = numel(s); a2 = s(2).a; "
+            "b2 = s(2).b; t = struct('a',{{1,2}}); tc = class(t.a); "
+            "u = struct('a',{7}); ua = u.a;")
+    assert val(it, "n") == 2
+    assert val(it, "a2") == 2 and val(it, "b2") == "k"
+    assert val(it, "tc") == "cell"
+    assert val(it, "ua") == 7
+    assert "dimensions" in error_of(it, "s = struct('a',{1,2},'b',{1,2,3})")
+
+
+def test_error_keeps_its_identifier_and_formats_the_message(it):
+    """``error(id, fmt, x)`` used the id as the message and lost the id."""
+    run(it, "try, error('my:id','boom %d',3); catch e, i1 = e.identifier; "
+            "m1 = e.message; end\n"
+            "try, error('a:b'); catch e, i2 = e.identifier; m2 = e.message; "
+            "end\n"
+            "try, try, error('x:y','in'); catch q, rethrow(q); end\n"
+            "catch q, i3 = q.identifier; end\n"
+            "try, throw(MException('p:q','n=%d',4)); catch r, i4 = "
+            "r.identifier; m4 = r.message; end")
+    assert (val(it, "i1"), val(it, "m1")) == ("my:id", "boom 3")
+    assert (val(it, "i2"), val(it, "m2")) == ("", "a:b")   # alone: a message
+    assert val(it, "i3") == "x:y"
+    assert (val(it, "i4"), val(it, "m4")) == ("p:q", "n=4")
+
+
+def test_global_is_shared_between_function_files(it, tmp_path):
+    (tmp_path / "bump.m").write_text(
+        "function bump()\nglobal counter\ncounter = counter + 1;\nend\n")
+    (tmp_path / "readc.m").write_text(
+        "function v = readc()\nglobal counter\nv = counter;\nend\n")
+    folder = str(tmp_path).replace("\\", "/")
+    run(it, f"addpath('{folder}'); global counter; counter = 10; "
+            "bump(); bump(); v = readc();")
+    assert val(it, "v") == 12
+    assert val(it, "counter") == 12     # the workspace sees the change
+
+
+def test_persistent_keeps_its_value_between_calls(it, tmp_path):
+    """It crashed with a Python ``UnboundLocalError``."""
+    (tmp_path / "tick.m").write_text(
+        "function n = tick()\npersistent k\nif isempty(k)\n    k = 0;\nend\n"
+        "k = k + 1;\nn = k;\nend\n")
+    folder = str(tmp_path).replace("\\", "/")
+    run(it, f"addpath('{folder}'); a = tick(); b = tick(); c = tick();")
+    assert (val(it, "a"), val(it, "b"), val(it, "c")) == (1, 2, 3)
+    assert "function" in error_of(it, "persistent z")
+
+
+def test_cells_and_structs_are_values_not_shared(it):
+    """``b = c; b{1} = 5`` changed ``c`` too; so did ``t = s; t.a = 9``."""
+    run(it, "c = {1,2}; b = c; b{1} = 5; c1 = c{1}; "
+            "s.a = 1; t = s; t.a = 9; sa = s.a; "
+            "q(1).v = 1; q(2).v = 2; r = q; r(2).v = 8; qv = q(2).v; "
+            "n = {c}; n{1}{2} = 0; c2 = c{2};")
+    assert val(it, "c1") == 1
+    assert val(it, "sa") == 1
+    assert val(it, "qv") == 2
+    assert val(it, "c2") == 2

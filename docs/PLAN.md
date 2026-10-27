@@ -556,6 +556,9 @@ functions and the truncated Bode plots are fixed is an hour spent making a confi
 
 ## Part 6 — Backlog: large features, not scheduled
 
+> **Superseded 2026-10-27 by [ROADMAP.md](ROADMAP.md)**, which ranks every remaining gap
+> into phases with TODOs. The table below is kept as history.
+
 Written down 2026-10-16 from a survey of Octave, Scilab/Xcos, OpenModelica, Simulink, Pluto and bdsim.
 None of these is in the current round.
 

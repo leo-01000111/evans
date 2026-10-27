@@ -20,14 +20,15 @@ Matrices ``[1 2; 3 4]`` (spaces, commas, newlines), cells ``{…}``, strings in
 both quotes, ``'`` as transpose, every arithmetic and logical operator,
 ``a:b:c``, indexing and indexed assignment with ``end`` (including growing an
 array), struct fields, ``if/elseif/else``, ``for``, ``while``, ``switch``,
-``try/catch``, ``break/continue/return``, function handles ``@(x) …``,
+``try/catch``, ``break/continue/return``, ``global`` and ``persistent``,
+function handles ``@(x) …``,
 local functions (with or without ``end``), command syntax (``hold on``,
 ``close all``), ``%`` and ``%{ … %}`` comments, ``...`` continuations, and
 ``;`` deciding whether a result is echoed.
 
 What is not
 -----------
-Classes, ``eval``, nested functions, ``global`` sharing, and symbolic
+Classes, ``eval``, nested functions, and symbolic
 functions such as ``syms y(t)`` — the runtime says so by name rather than
 failing obscurely. (Symbolic *variables* are supported; see
 :mod:`.symbolic`.)
@@ -637,6 +638,12 @@ class _Simple(_Stmt):
 
 
 @dataclass
+class _Declare(_Stmt):
+    word: str = ""     # global persistent
+    names: list[str] = field(default_factory=list)
+
+
+@dataclass
 class _Function(_Stmt):
     name: str = ""
     params: list[str] = field(default_factory=list)
@@ -750,9 +757,17 @@ class _Parser:
                 _, line = self._end_statement()
                 return _Simple(t.line, end_line=t.line, word=t.text)
             if t.text in ("global", "persistent"):
-                while not self._is("sep") and not self._is("eof"):
-                    self._advance()
-                return _Simple(t.line, end_line=t.line, word="pass")
+                self._advance()
+                names = []
+                while self._is("id"):
+                    names.append(self._advance().text)
+                    if self._is_op(","):
+                        self._advance()
+                if not self._is("sep") and not self._is("eof"):
+                    self._error(f"'{t.text}' takes variable names only")
+                self._end_statement()
+                return _Declare(t.line, end_line=t.line, word=t.text,
+                                names=names)
             self._error(f"'{t.text}' is not valid here")
         return self._simple_statement()
 
@@ -1173,11 +1188,28 @@ def _assigned_names(body: list[_Stmt], top: bool = False) -> set[str]:
                 visit(s.handler)
                 if s.var:
                     names.add(s.var)
+            elif isinstance(s, _Declare):
+                names.update(s.names)
             elif isinstance(s, _Function) and top:
                 names.add(s.name)
 
     visit(body)
     return names
+
+
+def _declares(body: list[_Stmt], word: str) -> bool:
+    """Whether a function body says ``persistent`` (or ``global``) anywhere."""
+    for s in body:
+        if isinstance(s, _Declare) and s.word == word:
+            return True
+        blocks = [getattr(s, "body", None), getattr(s, "handler", None),
+                  getattr(s, "orelse", None), getattr(s, "otherwise", None)]
+        blocks += [b for _, b in getattr(s, "branches", ())]
+        blocks += [b for _, b in getattr(s, "cases", ())]
+        if not isinstance(s, _Function) and any(
+                _declares(b, word) for b in blocks if b):
+            return True
+    return False
 
 
 class _Emitter:
@@ -1186,6 +1218,9 @@ class _Emitter:
         self.lines: list[tuple[int, str, int]] = []   # indent, text, mline
         self._switch_count = 0
         self._outputs: list[str] | None = None        # inside a function
+        #: Names declared ``global`` or ``persistent``: read from, and
+        #: written back to, the store that outlives this call.
+        self.linked: dict[str, str] = {}
 
     def code(self) -> str:
         return "\n".join("    " * i + t for i, t, _ in self.lines) + "\n"
@@ -1250,6 +1285,8 @@ class _Emitter:
                 self._put(i + 1, f"{name} = {_RT}.MException.wrap({name})",
                           s.line)
             self._block(s.handler, i + 1, s.line)
+        elif isinstance(s, _Declare):
+            self._declare(s, i)
         elif isinstance(s, _Simple):
             if s.word == "return":
                 self._put(i, self._return_text(), s.line)
@@ -1277,6 +1314,10 @@ class _Emitter:
         if "varargin" in f.params:
             sig.append("*varargin")
         sig.append("nargout=1")
+        if _declares(f.body, "persistent"):
+            # A default dict lives as long as the function: that is
+            # exactly a persistent variable's lifetime.
+            sig.append("_persist={}")
         self._put(i, f"@{_RT}.function", f.line)
         self._put(i, f"def {_py_name(f.name)}({', '.join(sig)}):", f.line)
         body_indent = i + 1
@@ -1330,6 +1371,7 @@ class _Emitter:
         if isinstance(target, _Name):
             self.vars.add(target.name)
             self._put(i, f"{_py_name(target.name)} = {value}", line)
+            self._write_back(target.name, i, line)
             return
         path = []
         node = target
@@ -1345,15 +1387,46 @@ class _Emitter:
         path.reverse()
         name = _py_name(node.name)
         self.vars.add(node.name)
-        self._put(i, f"{name} = {_RT}.assign({_RT}.existing({name!r}, locals()), "
+        current = (self._linked_read(node.name) if node.name in self.linked
+                   else f"{_RT}.existing({name!r}, locals())")
+        self._put(i, f"{name} = {_RT}.assign({current}, "
                      f"[{', '.join(path)}], {value})", line)
+        self._write_back(node.name, i, line)
+
+    def _declare(self, s: _Declare, i: int) -> None:
+        if s.word == "persistent" and self._outputs is None:
+            raise MatlabSyntaxError("persistent can only be used in a "
+                                    "function", s.line)
+        for name in s.names:
+            self.vars.add(name)
+            self.linked[name] = s.word
+            if s.word == "global":
+                top = self._outputs is None
+                self._put(i, f"{_py_name(name)} = {_RT}.declare_global("
+                             f"{name!r}, {top})", s.line)
+            else:
+                self._put(i, f"{_py_name(name)} = {_RT}.persistent("
+                             f"_persist, {name!r})", s.line)
+
+    def _linked_read(self, name: str) -> str:
+        if self.linked[name] == "global":
+            return f"{_RT}.get_global({name!r})"
+        return f"_persist[{name!r}]"
+
+    def _write_back(self, name: str, i: int, line: int) -> None:
+        kind = self.linked.get(name)
+        if kind == "global":
+            self._put(i, f"{_RT}.set_global({name!r}, {_py_name(name)})",
+                      line)
+        elif kind == "persistent":
+            self._put(i, f"_persist[{name!r}] = {_py_name(name)}", line)
 
     def _expr_stmt(self, s: _ExprStmt, i: int) -> None:
         e = s.expr
         if isinstance(e, _Name) and e.name in self.vars:
             if s.echo:
-                self._put(i, f"{_RT}.show({e.name!r}, {_py_name(e.name)})",
-                          s.line)
+                self._put(i, f"{_RT}.show({e.name!r}, "
+                             f"{self._name_ref(e.name)})", s.line)
             else:
                 self._put(i, f"{_py_name(e.name)}", s.line)
             return
@@ -1380,11 +1453,15 @@ class _Emitter:
 
     def _name_ref(self, name: str) -> str:
         """A bare name: a variable as is; a function is called with no args."""
+        if name in self.linked:
+            return self._linked_read(name)
         if name in self.vars:
             return _py_name(name)
         return f"{_RT}.value({_RT}.lookup({name!r}, globals(), locals()))"
 
     def _callee(self, name: str) -> str:
+        if name in self.linked:
+            return self._linked_read(name)
         if name in self.vars:
             return _py_name(name)
         return f"{_RT}.lookup({name!r}, globals(), locals())"

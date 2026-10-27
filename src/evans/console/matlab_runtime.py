@@ -26,6 +26,7 @@ They are handed to the real figure sink when the script finishes.
 
 from __future__ import annotations
 
+import copy
 import fnmatch
 import functools
 import math
@@ -51,6 +52,10 @@ from .figures import FigureSpec
 class MatlabError(Exception):
     """An ``error(...)`` raised by the script, or a MATLAB-style failure."""
 
+    def __init__(self, message: str = "", identifier: str = "") -> None:
+        super().__init__(message)
+        self.identifier = identifier
+
 
 class ScriptReturn(Exception):
     """``return`` at the top level of a script: stop, quietly."""
@@ -65,6 +70,8 @@ class MException:
 
     @classmethod
     def wrap(cls, exc: BaseException) -> MException:
+        if isinstance(exc, MatlabError):
+            return cls(str(exc), exc.identifier)
         return cls(str(exc), type(exc).__name__)
 
     def __repr__(self) -> str:
@@ -76,11 +83,46 @@ class MException:
 # ──────────────────────────────────────────────────────────────
 
 class Cell(list):
-    """A MATLAB cell array (always a row here)."""
+    """
+    A MATLAB cell array. The elements are kept column by column, the order
+    MATLAB's linear index ``c{k}`` reads them in, and ``rows`` gives the
+    shape: ``{1,'a';2,'b'}`` is ``[1, 2, 'a', 'b']`` with ``rows = 2``.
+    """
+
+    def __init__(self, items=(), rows: int = 1) -> None:
+        super().__init__(items)
+        self.rows = rows
+
+    @property
+    def dims(self) -> tuple[int, int]:
+        n = len(self)
+        if not n:
+            return (0, 0)
+        # A list method (append, extend) that broke the shape leaves a row.
+        r = self.rows if self.rows > 0 and n % self.rows == 0 else 1
+        return (r, n // r)
+
+    def grid(self) -> list[list]:
+        """The elements as rows of a table."""
+        r, c = self.dims
+        return [[self[i + j * r] for j in range(c)] for i in range(r)]
+
+    @classmethod
+    def from_grid(cls, grid: list[list]) -> Cell:
+        grid = [row for row in grid if row]
+        if not grid:
+            return cls()
+        if len({len(row) for row in grid}) > 1:
+            raise MatlabError("Dimensions of arrays being concatenated are "
+                              "not consistent.")
+        return cls((row[j] for j in range(len(grid[0])) for row in grid),
+                   rows=len(grid))
 
     def __repr__(self) -> str:
-        inner = "    ".join(_brief(v) for v in self)
-        return f"1×{len(self)} cell array\n    {{{inner}}}"
+        r, c = self.dims
+        lines = ("    {" + "    ".join(_brief(v) for v in row) + "}"
+                 for row in self.grid())
+        return f"{r}×{c} cell array\n" + "\n".join(lines)
 
 
 class Struct(dict):
@@ -325,7 +367,9 @@ def _shape(x) -> tuple[int, int]:
         return (0, 0)
     if isinstance(x, str):
         return (1 if x else 0, len(x))
-    if isinstance(x, (Cell, StructArray)):
+    if isinstance(x, Cell):
+        return x.dims
+    if isinstance(x, StructArray):
         return (1 if len(x) else 0, len(x))
     if isinstance(x, (Struct, PlotOptions, Table)):
         return (len(x.rows), len(x.columns)) if isinstance(x, Table) \
@@ -422,7 +466,8 @@ def _brief(v) -> str:
     if isinstance(v, Struct):
         return "[1×1 struct]"
     if isinstance(v, Cell):
-        return f"{{1×{len(v)} cell}}"
+        r, c = v.dims
+        return f"{{{r}×{c} cell}}"
     return type(v).__name__
 
 
@@ -647,6 +692,10 @@ class Runtime:
         self.tracer = None
         #: Set once "no audio output" has been said, so it is said once.
         self._quiet = False
+        #: ``global`` variables, shared by every function that declares
+        #: them; those declared at the prompt are mirrored in the workspace.
+        self.global_vars: dict[str, Any] = {}
+        self._workspace_globals: set[str] = set()
         self.lib = _Library(self)
 
     # ── names ───────────────────────────────────────────────────
@@ -677,6 +726,27 @@ class Runtime:
         if path is not None:
             return self._file_function(name, path)
         raise MatlabError(f"Unrecognized function or variable '{name}'.")
+
+    # ── global and persistent ───────────────────────────────────
+
+    def declare_global(self, name: str, workspace: bool):
+        """``global x``: the shared value, ``[]`` until something sets it."""
+        if workspace:
+            self._workspace_globals.add(name)
+        return self.global_vars.setdefault(name, np.zeros((0, 0)))
+
+    def get_global(self, name: str):
+        return self.global_vars.get(name, np.zeros((0, 0)))
+
+    def set_global(self, name: str, value) -> None:
+        self.global_vars[name] = value
+        if name in self._workspace_globals:
+            self.ns[name] = value
+
+    @staticmethod
+    def persistent(store: dict, name: str):
+        """``persistent x``: ``[]`` on a function's first call, then kept."""
+        return store.setdefault(name, np.zeros((0, 0)))
 
     def existing(self, name: str, scope: dict):
         """
@@ -868,7 +938,9 @@ class Runtime:
         if _is_sym(x):
             return _symbolic.from_objects(
                 self.index(_symbolic.as_objects(x), args))
-        if isinstance(x, (Cell, StructArray)):
+        if isinstance(x, Cell):
+            return self._pick_cell(x, args)
+        if isinstance(x, StructArray):
             picked = self._pick_list(x, args)
             if isinstance(picked, list) and len(picked) == 1 \
                     and isinstance(x, StructArray):
@@ -914,6 +986,28 @@ class Runtime:
             return [items[int(idx)]]
         return [items[int(i)] for i in idx]
 
+    def _cell_subscripts(self, c: Cell, args: tuple) -> tuple[list, list]:
+        """``c(i, j)``'s rows and columns, 0-based; a third index must be 1."""
+        if any(_resolve(a, 1) not in (1, COLON) for a in args[2:]):
+            raise MatlabError("Index exceeds the array dimensions.")
+        r, n = c.dims
+        rows = np.atleast_1d(self._indices(args[0], r)).tolist()
+        cols = np.atleast_1d(self._indices(args[1], n)).tolist()
+        return rows, cols
+
+    def _pick_cell(self, c: Cell, args: tuple) -> Cell:
+        """``c(...)``: a cell of the chosen elements, shaped as MATLAB's."""
+        r, n = c.dims
+        if len(args) == 1:
+            if args[0] is COLON:
+                return Cell(c, rows=len(c))
+            idx = np.atleast_1d(self._indices(args[0], len(c))).tolist()
+            column = n == 1 and r > 1
+            return Cell((c[i] for i in idx), rows=len(idx) if column else 1)
+        rows, cols = self._cell_subscripts(c, args)
+        return Cell((c[i + j * r] for j in cols for i in rows),
+                    rows=len(rows))
+
     def _indices(self, arg, n: int):
         """1-based MATLAB index → 0-based numpy index, checked."""
         if arg is COLON:
@@ -943,7 +1037,8 @@ class Runtime:
 
     def cell_index(self, c, args: tuple):
         if isinstance(c, (Cell, list)):
-            picked = self._pick_list(c, args)
+            picked = (self._pick_cell(c, args) if isinstance(c, Cell)
+                      else self._pick_list(c, args))
             return picked[0] if len(picked) == 1 else tuple(picked)
         raise MatlabError("Brace indexing is only for cell arrays; use "
                           "() for this value.")
@@ -969,14 +1064,21 @@ class Runtime:
     # ── assignment ──────────────────────────────────────────────
 
     def assign(self, obj, path: list, value):
+        """
+        ``obj`` with ``path`` set to ``value``. Cells and structs are values
+        in MATLAB, so each level written to is copied first: after
+        ``b = c; b{1} = 5``, ``c`` is unchanged.
+        """
         if not path:
             return value
         (kind, key), rest = path[0], path[1:]
+        if isinstance(obj, (Mapping, Cell, StructArray)):
+            obj = copy.copy(obj)
         if kind == ".":
             if obj is None or (isinstance(obj, np.ndarray) and obj.size == 0):
                 obj = Struct()
             if isinstance(obj, StructArray) and len(obj) == 1:
-                obj = obj[0]
+                obj = copy.copy(obj[0])
             if isinstance(obj, Mapping):
                 current = obj.get(key)
                 obj[key] = self.assign(current, rest, value)
@@ -989,11 +1091,11 @@ class Runtime:
                               f"{type(obj).__name__}.")
         if kind == "{}":
             cell = Cell() if obj is None else obj
-            if not isinstance(cell, list):
+            if type(cell) is list:                       # varargin
+                cell = Cell(cell)
+            if not isinstance(cell, Cell):
                 raise MatlabError("Brace assignment needs a cell array.")
-            k = self._grow_index(key[-1], len(cell))
-            while len(cell) <= k:
-                cell.append(np.zeros((0, 0)))
+            k = self._cell_slot(cell, key)
             cell[k] = self.assign(cell[k] if rest else None, rest, value)
             return cell
         # ()
@@ -1015,13 +1117,43 @@ class Runtime:
                         else Struct(value))
             return array
         if isinstance(obj, Cell):
-            k = self._grow_index(key[-1], len(obj))
-            while len(obj) <= k:
-                obj.append(np.zeros((0, 0)))
+            k = self._cell_slot(obj, key)
             obj[k] = value[0] if isinstance(value, Cell) and len(value) == 1 \
                 else value
             return obj
         return self._assign_array(obj, key, value)
+
+    def _cell_slot(self, cell: Cell, key: tuple) -> int:
+        """
+        Where ``c{key} = v`` writes, as a linear index, growing the cell
+        with empty elements first if ``key`` is past its end.
+        """
+        r, n = cell.dims
+        if len(key) == 1:
+            k = self._grow_index(key[0], len(cell))
+            if k >= len(cell):
+                if r > 1 and n > 1:
+                    raise MatlabError("Attempt to grow array along "
+                                      "ambiguous dimension.")
+                column = n == 1 and r > 1
+                cell.extend(np.zeros((0, 0)) for _ in range(k + 1 - len(cell)))
+                cell.rows = len(cell) if column else 1
+            return k
+        if any(_resolve(a, 1) not in (1, COLON) for a in key[2:]):
+            raise MatlabError("Evans supports matrices (2-D) only.")
+        i = self._grow_index(key[0], r)
+        j = self._grow_index(key[1], n)
+        if i >= r or j >= n:
+            grid = cell.grid()
+            rows, cols = max(r, i + 1), max(n, j + 1)
+            grid = [grid[a] if a < r else [] for a in range(rows)]
+            grid = [row + [np.zeros((0, 0))] * (cols - len(row))
+                    for row in grid]
+            grown = Cell.from_grid(grid)
+            cell[:] = grown
+            cell.rows = grown.rows
+            r = rows
+        return i + j * r
 
     def _grow_index(self, arg, n: int) -> int:
         k = _resolve(arg, n)
@@ -1137,10 +1269,20 @@ class Runtime:
             raise MatlabError("Concatenating systems into a MIMO model is "
                               "not supported.")
         if any(isinstance(x, (Cell,)) for x in flat):
-            out = Cell()
-            for x in flat:
-                out.extend(x if isinstance(x, Cell) else [x])
-            return out
+            # [a, b; c] joins the cells' tables side by side, then stacks
+            # the rows; a value that is not a cell joins as one element.
+            grid: list[list] = []
+            for row in rows:
+                parts = [x.grid() if isinstance(x, Cell) else [[x]]
+                         for x in row if not isinstance(x, Cell) or x]
+                if not parts:
+                    continue
+                if len({len(p) for p in parts}) > 1:
+                    raise MatlabError("Dimensions of arrays being "
+                                      "concatenated are not consistent.")
+                grid += [sum((p[i] for p in parts), [])
+                         for i in range(len(parts[0]))]
+            return Cell.from_grid(grid)
         if any(isinstance(x, (Struct, StructArray)) for x in flat):
             out = StructArray()
             for x in flat:
@@ -1173,7 +1315,7 @@ class Runtime:
 
     @staticmethod
     def cell(rows: list[list]) -> Cell:
-        return Cell(x for row in rows for x in row)
+        return Cell.from_grid(rows)
 
     def colon(self, start, step, stop):
         if _any_deferred(start, step, stop):
@@ -1247,7 +1389,9 @@ class Runtime:
                 return [_scalar(v) for v in x[0]]
             return [x[:, k:k + 1] for k in range(x.shape[1])]
         if isinstance(x, Cell):
-            return [Cell([v]) for v in x]
+            # A for loop takes a cell a column at a time, as a matrix.
+            r = x.dims[0]
+            return [Cell(x[k:k + r], rows=r) for k in range(0, len(x), r)]
         if isinstance(x, (StructArray, str)):
             return list(x)
         return [x]
@@ -1436,6 +1580,10 @@ class Runtime:
             if a.ndim == 2 and a.shape[1] == 1:
                 return a.reshape(-1)
             return a.T
+        if isinstance(a, Cell):
+            r, c = a.dims
+            return Cell((a[i + j * r] for i in range(r) for j in range(c)),
+                        rows=c)
         return a
 
     def ctranspose(self, a):
@@ -1574,6 +1722,10 @@ def _as_text(x) -> str:
     if _is_number(x):
         return chr(int(x))
     return str(x)
+
+
+#: An error identifier: ``component:mnemonic``, one or more colons.
+_IDENTIFIER = re.compile(r"^[A-Za-z][\w-]*(:[\w-]+)+$")
 
 
 def _lib_attr(name: str) -> str:
@@ -1783,8 +1935,32 @@ class _Library:
     f_keyboard = f_input
 
     def f_error(self, message="", *args):
+        """
+        ``error(msg)``, ``error(fmt, args…)`` or ``error(id, fmt, args…)``.
+        A first argument shaped ``part:part`` is the identifier only when a
+        message follows it, as in MATLAB: ``error('a:b')`` alone is a message.
+        """
+        if isinstance(message, MException):
+            raise MatlabError(message.message, message.identifier)
+        if isinstance(message, Mapping):
+            raise MatlabError(str(message.get("message", "")),
+                              str(message.get("identifier", "")))
+        identifier = ""
+        if args and isinstance(message, str) and _IDENTIFIER.match(message):
+            identifier, message, args = message, args[0], args[1:]
         text = self.f_sprintf(message, *args) if args else str(message)
-        raise MatlabError(text)
+        raise MatlabError(text, identifier)
+
+    def f_MException(self, identifier, message="", *args):
+        text = self.f_sprintf(message, *args) if args else str(message)
+        return MException(text, str(identifier))
+
+    def f_rethrow(self, err):
+        if not isinstance(err, MException):
+            raise MatlabError("rethrow needs the error a catch block caught.")
+        raise MatlabError(err.message, err.identifier)
+
+    f_throw = f_rethrow
 
     def f_warning(self, message="", *args):
         if str(message).lower() in ("on", "off", "query"):
@@ -1919,24 +2095,46 @@ class _Library:
     def f_fieldnames(self, s):
         if isinstance(s, StructArray):
             s = s[0] if s else {}
-        return Cell(s.keys())
+        return Cell(s.keys(), rows=len(s))           # a column, as MATLAB's
 
     def f_struct(self, *pairs):
-        out = Struct()
-        for k in range(0, len(pairs) - 1, 2):
-            out[pairs[k]] = pairs[k + 1]
-        return out
+        """
+        ``struct('a', 1)`` is one struct. A cell value spreads over a struct
+        array, one element each: ``struct('a', {1, 2})`` is 1×2, and
+        ``{{1, 2}}`` is how a field holds the cell itself.
+        """
+        names, values = pairs[0::2], pairs[1::2]
+        sizes = {len(v) for v in values if isinstance(v, Cell) and len(v) != 1}
+        if len(sizes) > 1:
+            raise MatlabError("Array dimensions of input values must match.")
+        n = sizes.pop() if sizes else None
+        if n is None:
+            return Struct({k: v[0] if isinstance(v, Cell) else v
+                           for k, v in zip(names, values)})
+        return StructArray(
+            Struct({k: (v[i] if len(v) != 1 else v[0])
+                    if isinstance(v, Cell) else v
+                    for k, v in zip(names, values)})
+            for i in range(n))
 
     def f_struct2table(self, s):
         rows = list(s) if isinstance(s, StructArray) else [s]
         return Table(rows)
 
     def f_cell(self, *dims):
-        n = int(np.prod([int(d) for d in np.atleast_1d(dims)])) if dims else 0
-        return Cell(np.zeros((0, 0)) for _ in range(n))
+        sizes = [int(d) for d in np.concatenate(
+            [np.atleast_1d(d).ravel() for d in dims])] if dims else [0]
+        if len(sizes) == 1:
+            sizes *= 2                                   # cell(3) is 3×3
+        if any(d != 1 for d in sizes[2:]):
+            raise MatlabError("Evans supports matrices (2-D) only.")
+        r, c = max(sizes[0], 0), max(sizes[1], 0)
+        return Cell((np.zeros((0, 0)) for _ in range(r * c)), rows=r)
 
     def f_num2cell(self, x):
-        return Cell(_scalar(v) for v in np.atleast_1d(x).reshape(-1))
+        a = _as2d(_as_array(x))
+        return Cell((_scalar(v) for v in a.reshape(-1, order="F")),
+                    rows=a.shape[0])
 
     # ── sizes ───────────────────────────────────────────────────
 
