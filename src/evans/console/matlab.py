@@ -28,7 +28,9 @@ local functions (with or without ``end``), command syntax (``hold on``,
 What is not
 -----------
 Classes, ``eval``, nested functions, ``global`` sharing, and symbolic
-``syms`` — the runtime says so by name rather than failing obscurely.
+functions such as ``syms y(t)`` — the runtime says so by name rather than
+failing obscurely. (Symbolic *variables* are supported; see
+:mod:`.symbolic`.)
 """
 
 from __future__ import annotations

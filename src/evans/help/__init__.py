@@ -75,6 +75,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Plotting": ("plot", "figure", "subplot", "hold", "grid", "title",
                  "xlabel", "ylabel", "legend", "axis", "xlim", "ylim",
                  "semilogx"),
+    "Symbolic": ("syms", "sym", "laplace", "ilaplace", "simplify", "expand",
+                 "factor", "partfrac", "numden", "sym2poly", "subs", "int",
+                 "limit", "solve", "double", "matlabFunction", "fplot"),
     "Text": ("disp", "fprintf", "sprintf", "num2str"),
     "Session": ("clc", "clear", "tic", "toc"),
 }

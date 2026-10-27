@@ -399,9 +399,14 @@ def test_undefined_name_is_reported_in_matlab_words(it):
     assert "line 2" in results[-1].error
 
 
-def test_syms_explains_itself(it):
+def test_syms_makes_a_symbol_and_symbolic_functions_explain_themselves(it):
+    # syms used to be refused outright; symbolic variables now work (see
+    # test_symbolic.py), and only symbolic functions are refused, by name.
     results = it.run_script("syms s\nG = 1/(s+1);", "matlab")
-    assert "tf('s')" in results[-1].error
+    assert not results[-1].error
+    assert str(it.namespace["G"]) == "1/(s + 1)"
+    results = it.run_script("syms y(t)", "matlab")
+    assert "not supported" in results[-1].error
 
 
 @pytest.mark.parametrize("source, expected", [

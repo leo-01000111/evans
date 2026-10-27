@@ -132,6 +132,9 @@ def _type_name(value: Any) -> str:
         return "ss (discrete)" if getattr(value, "dt", 0) else "ss"
     if isinstance(value, np.ndarray):
         return f"array {'×'.join(str(d) for d in value.shape)}"
+    if getattr(value, "_ml_sym", False):
+        rows, cols = value.shape
+        return "sym" if (rows, cols) == (1, 1) else f"sym {rows}×{cols}"
     return type(value).__name__
 
 
@@ -160,6 +163,9 @@ def _summary(value: Any) -> str:
         return f"{value.size} elements, {value.dtype}"
     if isinstance(value, float):
         return f"{value:.6g}"
+    if getattr(value, "_ml_sym", False):
+        text = str(value).replace("\n", "; ")
+        return text if len(text) <= 120 else text[:117] + "…"
     if isinstance(value, dict):
         return "{" + ", ".join(list(value)[:6]) + ("…}" if len(value) > 6
                                                    else "}")

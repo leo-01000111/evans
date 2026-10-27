@@ -168,7 +168,7 @@ mean(A, dim)                | Average
 median(A, dim)              | Median
 std(A)                      | Standard deviation
 cumsum(A, dim)              | Cumulative sum
-diff(A)                     | Differences between neighbours
+diff(A)                     | Differences between neighbours, or a symbolic derivative
 max(A)                      | Largest element: [M, I]
 min(A)                      | Smallest element: [M, I]
 sort(A, dim, direction)     | Sort
@@ -250,6 +250,34 @@ eps                         | Floating-point relative accuracy
 Inf                         | Infinity
 NaN                         | Not a number
 help_fm()                   | List the console's commands
+syms(x, y)                  | Make symbolic variables: syms s t, syms a positive
+sym(x)                      | Symbolic variable from a name, or an exact symbolic number
+str2sym(text)               | Read a formula from text
+laplace(f, t, s)            | Laplace transform, t to s by default
+ilaplace(F, s, t)           | Inverse Laplace transform, s to t by default
+simplify(f)                 | Simplest form of a formula
+expand(f)                   | Multiply out products and powers
+factor(f)                   | Factor a polynomial, or a number into primes
+collect(f, x)               | Gather the terms in powers of x
+partfrac(f, s)              | Partial-fraction expansion
+numden(f)                   | Numerator and denominator: [N, D]
+subs(f, old, new)           | Substitute values or formulas for variables
+int(f, x, a, b)             | Integral, indefinite or from a to b
+limit(f, x, a)              | Limit as x approaches a ('left', 'right')
+taylor(f, x, a)             | Taylor series ('Order', n)
+solve(eqn, x)               | Solve equations for variables
+sym2poly(p)                 | Polynomial coefficients as numbers
+poly2sym(c, x)              | Polynomial from its coefficients
+symvar(f)                   | The symbolic variables in a formula
+double(x)                   | Convert to a number
+vpa(x, d)                   | Decimal value to d significant digits
+pretty(f)                   | Print a formula in two dimensions
+latex(f)                    | LaTeX source of a formula
+isAlways(cond)              | Is the condition true for every value?
+heaviside(x)                | Unit step, 1/2 at 0
+dirac(x)                    | Dirac delta
+matlabFunction(f)           | Function handle that evaluates a formula
+fplot(f, [a b])             | Plot a formula or function over an interval
 """
 
 

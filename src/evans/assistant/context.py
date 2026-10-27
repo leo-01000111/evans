@@ -165,6 +165,8 @@ def describe(value: Any) -> tuple[str, str]:
         dt = " discrete" if getattr(value, "dt", 0) else ""
         states = getattr(value, "nstates", "?")
         return f"ss{dt}", f"{value.noutputs}×{value.ninputs}, {states} states"
+    if getattr(value, "_ml_sym", False):
+        return "sym", "×".join(str(d) for d in value.shape)
     shape = getattr(value, "shape", None)
     if isinstance(shape, tuple) and hasattr(value, "dtype"):
         dims = "×".join(str(d) for d in shape) if shape else "scalar"

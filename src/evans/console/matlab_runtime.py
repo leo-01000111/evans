@@ -27,6 +27,7 @@ They are handed to the real figure sink when the script finishes.
 from __future__ import annotations
 
 import fnmatch
+import functools
 import math
 import os
 import re
@@ -277,6 +278,11 @@ def _is_lti(x) -> bool:
     return isinstance(x, ctl.LTI)
 
 
+def _is_sym(x) -> bool:
+    """A symbolic value (:class:`.symbolic.Sym`), tested without importing."""
+    return getattr(type(x), "_ml_sym", False)
+
+
 def _is_number(x) -> bool:
     return isinstance(x, (int, float, complex, bool, np.number, np.bool_))
 
@@ -303,7 +309,12 @@ def _normalise(a):
     if not isinstance(a, np.ndarray):
         return a
     if a.ndim == 0 or a.size == 1 and a.ndim <= 2:
-        return a.reshape(-1)[0].item() if a.size == 1 else a
+        if a.size != 1:
+            return a
+        v = a.reshape(-1)[0]
+        # An object array (a symbolic matrix being indexed) holds the
+        # element itself, not a numpy scalar.
+        return v.item() if isinstance(v, np.generic) else v
     if a.ndim == 2 and a.shape[0] == 1:
         return a.reshape(-1)
     return a
@@ -321,6 +332,8 @@ def _shape(x) -> tuple[int, int]:
             else (1, 1)
     if _is_lti(x):
         return (x.noutputs, x.ninputs)
+    if _is_sym(x):
+        return x.shape
     a = _as_array(x)
     if a.ndim == 0:
         return (1, 1)
@@ -402,6 +415,10 @@ def _brief(v) -> str:
     if _is_lti(v):
         kind = "tf" if isinstance(v, ctl.TransferFunction) else "ss"
         return f"[1×1 {kind}]"
+    if _is_sym(v):
+        r, c = v.shape
+        return str(v) if (r, c) == (1, 1) and len(str(v)) <= 30 \
+            else f"[{r}×{c} sym]"
     if isinstance(v, Struct):
         return "[1×1 struct]"
     if isinstance(v, Cell):
@@ -421,6 +438,8 @@ def display(value) -> str:
         return _matrix_text(value)
     if value is None:
         return "[]"
+    if _is_sym(value):
+        return _symbolic.text(value)
     return repr(value) if not _is_lti(value) else _system_text(value)
 
 
@@ -585,6 +604,21 @@ class Figures:
 #  The runtime
 # ──────────────────────────────────────────────────────────────
 
+def _symbolic_aware(name: str):
+    """
+    Route an operator to :func:`.symbolic.binary` when either side is
+    symbolic; numbers never pay more than the two attribute tests.
+    """
+    def wrap(method):
+        @functools.wraps(method)
+        def operator(self, a, b):
+            if _is_sym(a) or _is_sym(b):
+                return _symbolic.binary(name, a, b)
+            return method(self, a, b)
+        return operator
+    return wrap
+
+
 class Runtime:
     """Bound to one console namespace as ``__ml__``."""
 
@@ -642,10 +676,6 @@ class Runtime:
         path = self.find_file(name, refresh=True)
         if path is not None:
             return self._file_function(name, path)
-        if name == "syms":
-            raise MatlabError(
-                "syms (symbolic maths) is not supported. For transfer "
-                "functions use  s = tf('s').")
         raise MatlabError(f"Unrecognized function or variable '{name}'.")
 
     def existing(self, name: str, scope: dict):
@@ -835,6 +865,9 @@ class Runtime:
         if _is_lti(x):
             raise MatlabError("Indexing into a system is not supported; "
                               "use evalfr(G, s) to evaluate it.")
+        if _is_sym(x):
+            return _symbolic.from_objects(
+                self.index(_symbolic.as_objects(x), args))
         if isinstance(x, (Cell, StructArray)):
             picked = self._pick_list(x, args)
             if isinstance(picked, list) and len(picked) == 1 \
@@ -1096,6 +1129,8 @@ class Runtime:
                 [[_resolve(x, n) for x in row] for row in rows]))
         if not flat:
             return np.zeros((0, 0))
+        if any(_is_sym(x) for x in flat):
+            return _symbolic.concat(rows)
         if any(_is_lti(x) for x in flat):
             if len(flat) == 1:
                 return flat[0]
@@ -1156,7 +1191,7 @@ class Runtime:
     def show(self, name: str, value) -> None:
         text = display(value)
         if "\n" in text or (isinstance(value, np.ndarray) and value.size > 1) \
-                or _is_lti(value):
+                or _is_lti(value) or _is_sym(value):
             body = "\n".join("    " + line for line in text.splitlines())
             print(f"{name} =\n\n{body}\n")
         else:
@@ -1203,6 +1238,8 @@ class Runtime:
     def iterate(x):
         if x is None:
             return []
+        if _is_sym(x):
+            return _symbolic.columns(x)
         if isinstance(x, np.ndarray):
             if x.ndim <= 1:
                 return [_scalar(v) for v in x]
@@ -1228,24 +1265,31 @@ class Runtime:
 
     # ── operators ───────────────────────────────────────────────
 
+    @_symbolic_aware("plus")
     def plus(self, a, b):
         return self._arith(a, b, lambda x, y: x + y)
 
+    @_symbolic_aware("minus")
     def minus(self, a, b):
         return self._arith(a, b, lambda x, y: x - y)
 
+    @_symbolic_aware("times")
     def times(self, a, b):
         return self._arith(a, b, lambda x, y: x * y)
 
+    @_symbolic_aware("rdivide")
     def rdivide(self, a, b):
         return self._arith(a, b, _divide)
 
+    @_symbolic_aware("ldivide")
     def ldivide(self, a, b):
         return self._arith(a, b, lambda x, y: _divide(y, x))
 
+    @_symbolic_aware("power")
     def power(self, a, b):
         return self._arith(a, b, _power)
 
+    @_symbolic_aware("mtimes")
     def mtimes(self, a, b):
         if _any_deferred(a, b):
             return _defer(self.mtimes, a, b)
@@ -1261,6 +1305,7 @@ class Runtime:
             return _normalise(A @ B)
         return a * b
 
+    @_symbolic_aware("mrdivide")
     def mrdivide(self, a, b):
         if _any_deferred(a, b):
             return _defer(self.mrdivide, a, b)
@@ -1271,6 +1316,7 @@ class Runtime:
             return _normalise(x)
         return _divide(a, b)
 
+    @_symbolic_aware("mldivide")
     def mldivide(self, a, b):
         a, b = _coerce(a, b)
         if isinstance(a, np.ndarray) and a.size > 1:
@@ -1284,6 +1330,7 @@ class Runtime:
             return _normalise(x)
         return _divide(b, a)
 
+    @_symbolic_aware("mpower")
     def mpower(self, a, b):
         if _any_deferred(a, b):
             return _defer(self.mpower, a, b)
@@ -1331,21 +1378,27 @@ class Runtime:
         out = op(a, b)
         return bool(out) if isinstance(out, (bool, np.bool_)) else out
 
+    @_symbolic_aware("eq")
     def eq(self, a, b):
         return self._compare(a, b, lambda x, y: x == y)
 
+    @_symbolic_aware("ne")
     def ne(self, a, b):
         return self._compare(a, b, lambda x, y: x != y)
 
+    @_symbolic_aware("lt")
     def lt(self, a, b):
         return self._compare(a, b, lambda x, y: x < y)
 
+    @_symbolic_aware("le")
     def le(self, a, b):
         return self._compare(a, b, lambda x, y: x <= y)
 
+    @_symbolic_aware("gt")
     def gt(self, a, b):
         return self._compare(a, b, lambda x, y: x > y)
 
+    @_symbolic_aware("ge")
     def ge(self, a, b):
         return self._compare(a, b, lambda x, y: x >= y)
 
@@ -1375,6 +1428,8 @@ class Runtime:
 
     @staticmethod
     def transpose(a):
+        if _is_sym(a):
+            return _symbolic.transpose(a, conjugate=False)
         if isinstance(a, np.ndarray):
             if a.ndim == 1:
                 return a.reshape(-1, 1)
@@ -1384,6 +1439,8 @@ class Runtime:
         return a
 
     def ctranspose(self, a):
+        if _is_sym(a):
+            return _symbolic.transpose(a, conjugate=True)
         out = self.transpose(a)
         if isinstance(out, np.ndarray) and np.iscomplexobj(out):
             return out.conj()
@@ -1831,6 +1888,8 @@ class _Library:
             return "tf"
         if isinstance(x, ctl.StateSpace):
             return "ss"
+        if _is_sym(x):
+            return "sym"
         if _is_function(x):
             return "function_handle"
         return "double"
@@ -4208,3 +4267,40 @@ def _num2str(v, spec) -> str:
         return str(int(v))
     digits = max(int(math.floor(math.log10(abs(v)))) + 5, 5) if v else 5
     return f"{v:.{digits}g}"
+
+
+# ──────────────────────────────────────────────────────────────
+#  Symbolic maths
+# ──────────────────────────────────────────────────────────────
+# Imported last because :mod:`.symbolic` builds on this module's types.
+
+from . import symbolic as _symbolic  # noqa: E402
+
+
+def _either(numeric, impl):
+    """The numeric function, unless an argument is symbolic."""
+    @functools.wraps(numeric)
+    def method(self, *args, **kwargs):
+        if any(_is_sym(a) for a in args):
+            return impl(self.rt, *args, **kwargs)
+        return numeric(self, *args, **kwargs)
+    return method
+
+
+def _only(impl, counts_outputs: bool):
+    """A function only the symbolic side has."""
+    def method(self, *args, **kwargs):
+        return impl(self.rt, *args, **kwargs)
+    method.__doc__ = impl.__doc__
+    if counts_outputs:
+        _nargout(method)
+    return method
+
+
+for _name, _impl in _symbolic.OVERLOADS.items():
+    setattr(_Library, _lib_attr(_name),
+            _either(getattr(_Library, _lib_attr(_name)), _impl))
+for _name, _impl in _symbolic.NEW.items():
+    setattr(_Library, _lib_attr(_name),
+            _only(_impl, _name in _symbolic.COUNTS_OUTPUTS))
+del _name, _impl

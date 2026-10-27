@@ -66,6 +66,10 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 [plot](plot) · [figure](figure) · [subplot](subplot) · [hold](hold) · [grid](grid) · [title](title) · [xlabel](xlabel) · [ylabel](ylabel) · [legend](legend) · [axis](axis) · [xlim](xlim) · [ylim](ylim) · [semilogx](semilogx)
 
+## Symbolic
+
+[syms](syms) · [sym](sym) · [laplace](laplace) · [ilaplace](ilaplace) · [simplify](simplify) · [expand](expand) · [factor](factor) · [partfrac](partfrac) · [numden](numden) · [sym2poly](sym2poly) · [subs](subs) · [int](int) · [limit](limit) · [solve](solve) · [double](double) · [matlabFunction](matlabFunction) · [fplot](fplot)
+
 ## Text
 
 [disp](disp) · [fprintf](fprintf) · [sprintf](sprintf) · [num2str](num2str)

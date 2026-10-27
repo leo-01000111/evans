@@ -18,6 +18,10 @@ A time delay cannot be written as `exp(-s*T)`: the exponential of a transfer fun
 
 MATLAB has no predefined `s`; a MATLAB script starts with `s = tf('s');`. That line works in Evans as well and does no harm, so keep it in scripts you want to run in both. For a discrete-time model the same idea works with `z = tf('z', Ts)`, where `Ts` is the sample time in seconds. Evans does not predefine `z`.
 
+## Symbolic s
+
+`syms s` replaces the transfer function with a symbolic variable: then `1/(s^2 + 2*s + 1)` is a formula you can [simplify](simplify), [subs](subs) into or invert with [ilaplace](ilaplace), not a model you can [step](step). A formula becomes a model through [numden](numden) and [sym2poly](sym2poly), and `s = tf('s')` brings the transfer function back.
+
 ## Overwriting s
 
 `s` is an ordinary variable. `s = 5`, or a loop variable called `s`, replaces it, and from then on `1/(s + 1)` is a number instead of a transfer function. `clear` on its own leaves `s` as it is, and `clear s` removes it altogether. In either case `s = tf('s')` brings it back.
@@ -39,4 +43,4 @@ Kv = dcgain(minreal(s*H))
 
 ## See also
 
-[tf](tf) · [zpk](zpk) · [feedback](feedback) · [pade](pade) · [python](python)
+[tf](tf) · [zpk](zpk) · [feedback](feedback) · [pade](pade) · [syms](syms) · [python](python)

@@ -208,3 +208,48 @@ def test_the_solver_combo_offers_simulink_names_first():
     for name in items:
         resolve_solver(name)
     tab.deleteLater()
+
+
+# ──────────────────────────────────────────────────────────────
+#  Progress and cancel inside one continuous span
+# ──────────────────────────────────────────────────────────────
+
+def _slow_continuous_model() -> SimModel:
+    """No discrete block, so the whole run is one span from 0 to t_end."""
+    m = SimModel()
+    m.add("Step", "r", step_time=0.0)
+    m.add("TransferFcn", "G", num="1", den="1, 0.01, 400")
+    m.connect("r", "G")
+    return m
+
+
+def test_a_continuous_run_reports_progress_before_it_ends(monkeypatch):
+    # Progress used to be reported only at sample hits: with none, the bar
+    # sat at 0 until the run was over. Report on every evaluation here.
+    from evans.sim import solver as solver_module
+    monkeypatch.setattr(solver_module, "_PULSE_SECONDS", 0.0)
+    seen: list[float] = []
+    simulate(_slow_continuous_model(), t_end=20.0, solver="RK45",
+             progress=seen.append)
+    inside = [f for f in seen if 0.0 < f < 1.0]
+    assert len(inside) > 10
+    assert seen == sorted(seen)               # never moves backwards
+    assert seen[-1] == 1.0
+
+
+def test_raising_from_progress_stops_a_continuous_run(monkeypatch):
+    # The Model tab's Stop button raises from the progress callback. With no
+    # sample hits it was never called mid-run, so Stop waited for the end.
+    from evans.sim import solver as solver_module
+    monkeypatch.setattr(solver_module, "_PULSE_SECONDS", 0.0)
+    seen: list[float] = []
+
+    def tick(fraction: float) -> None:
+        seen.append(fraction)
+        if fraction > 0.25:
+            raise SimulationError("cancelled")
+
+    with pytest.raises(SimulationError, match="cancelled"):
+        simulate(_slow_continuous_model(), t_end=20.0, solver="RK45",
+                 progress=tick)
+    assert seen[-1] < 0.5

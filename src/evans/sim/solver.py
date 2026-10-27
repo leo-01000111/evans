@@ -30,6 +30,7 @@ Within a span
 
 from __future__ import annotations
 
+import time as _time
 import warnings as _warnings
 from dataclasses import dataclass, field
 
@@ -445,6 +446,13 @@ def simulate(model: SimModel | CompiledModel,
     against hardware that will run a fixed-step controller), or a Simulink
     name — ``ode45``, ``ode23``, ``ode113``, ``ode15s``, ``ode23s``,
     ``ode23t`` — mapped by :func:`resolve_solver`.
+
+    ``progress(fraction)``, when given, is called as the run advances —
+    at every sample hit, and from inside the solver at most every
+    ``_PULSE_SECONDS`` of wall time — so a purely continuous model, which is
+    one span from 0 to ``t_end``, reports as it goes instead of jumping from
+    0 to 1 at the end. Raising from it stops the run where it is: that is how
+    the Model tab's Stop button cancels.
     """
     requested = solver
     solver, _ = resolve_solver(solver)
@@ -492,6 +500,7 @@ def simulate(model: SimModel | CompiledModel,
 
     n_steps = 0
     t_now = 0.0
+    pulse = _Pulse(progress, t_end)
 
     # Discrete blocks act at t = 0 as well. Without this first update they
     # hold their initial output through the whole first sample period, and
@@ -512,10 +521,12 @@ def simulate(model: SimModel | CompiledModel,
         if compiled.n_states:
             x, steps = _integrate(ev, compiled, x, xd, span_start, span_end,
                                   solver, max_step, rtol, atol,
-                                  t_grid, record, stop_flag=stopped)
+                                  t_grid, record, stop_flag=stopped,
+                                  pulse=pulse)
             n_steps += steps
         else:
             for t in t_grid[(t_grid > span_start) & (t_grid <= span_end)]:
+                pulse(float(t))
                 ev.update_modes(float(t), x, xd)
                 record(float(t), x, xd)
                 if stopped:
@@ -539,14 +550,47 @@ def simulate(model: SimModel | CompiledModel,
             xd = ev.update_discrete(t_now, x, xd, values, due)
             ev.update_modes(t_now, x, xd)
             record(t_now, x, xd)
-        if progress is not None:
-            progress(t_now / t_end)
+        pulse.report(t_now)
 
     run_warnings.extend(ev.warnings)
     ev.release_modes()
     result = _assemble(compiled, times, states, logged, run_warnings,
                        solver_label, n_steps)
     return result
+
+
+#: Wall-clock seconds between progress reports from inside a span.
+_PULSE_SECONDS = 0.1
+
+
+class _Pulse:
+    """
+    Progress from inside the solver, throttled by wall time.
+
+    Called on every right-hand-side evaluation, so it must be cheap: one
+    clock read, and a report only when ``_PULSE_SECONDS`` have passed. The
+    throttle is on *time*, not on simulated progress, so a stiff model that
+    grinds at one instant still reaches the callback — and with it the
+    Stop button. A trial point past the accepted solution never moves the
+    fraction backwards.
+    """
+
+    def __init__(self, progress, t_end: float) -> None:
+        self.progress = progress
+        self.t_end = t_end
+        self.best = 0.0
+        self.next = _time.monotonic() + _PULSE_SECONDS
+
+    def __call__(self, t: float) -> None:
+        if self.progress is not None and _time.monotonic() >= self.next:
+            self.report(t)
+
+    def report(self, t: float) -> None:
+        if self.progress is None:
+            return
+        self.best = max(self.best, min(float(t) / self.t_end, 1.0))
+        self.next = _time.monotonic() + _PULSE_SECONDS
+        self.progress(self.best)
 
 
 def _sample_hits(sample_times: list[float], t_end: float) -> np.ndarray:
@@ -607,7 +651,7 @@ _TINY = 1e-300
 
 
 def _integrate(ev, compiled, x, xd, t0, t1, solver, max_step, rtol, atol,
-               t_grid, record, stop_flag=()):
+               t_grid, record, stop_flag=(), pulse=None):
     """
     Integrate one continuous span, recording on the output grid.
 
@@ -630,6 +674,8 @@ def _integrate(ev, compiled, x, xd, t0, t1, solver, max_step, rtol, atol,
     inner = t_grid[(t_grid > t0) & (t_grid < t1)]
 
     def rhs(t, x_vec):
+        if pulse is not None:
+            pulse(t)
         values = ev.evaluate(t, x_vec, xd)
         return ev.derivatives(t, x_vec, xd, values)
 

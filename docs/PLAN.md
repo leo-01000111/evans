@@ -561,14 +561,41 @@ None of these is in the current round.
 
 | Feature | What it means | Who does it |
 |---|---|---|
-| Symbolic maths | `syms s`, `laplace`, `ilaplace`, `simplify`, `subs` on formulas instead of numbers, via SymPy (already a dependency for block algebra). Today `syms` is refused. | MATLAB Symbolic Toolbox, Octave `symbolic` |
+| ✅ Symbolic maths | `syms s`, `laplace`, `ilaplace`, `simplify`, `subs` on formulas instead of numbers, via SymPy (already a dependency for block algebra). **Done 2026-10-27**, see below. | MATLAB Symbolic Toolbox, Octave `symbolic` |
 | Code-first models | Build a Model-tab diagram from a script (`m = Model(); m.add(Gain(2)); m.connect(...)`), round-tripping with the canvas; export diagrams to SVG/Graphviz. | bdsim |
-| Stiff solvers + events | BDF/Radau via `solve_ivp` for stiff models, zero-crossing detection for relay/saturation/switch blocks, progress + abort on long runs. | Simulink `ode15s`, OpenModelica DASSL |
+| ✅ Stiff solvers + events | BDF/Radau via `solve_ivp` for stiff models, zero-crossing detection for relay/saturation/switch blocks, progress + abort on long runs. **Done**, see below. | Simulink `ode15s`, OpenModelica DASSL |
 | Browser build | Run the Qt-free core (numpy/scipy, FigureSpec sinks) in a web page via Pyodide — nothing to install. | mat2py, Octave Online |
 
 Deferred medium features (wanted, not crucial): variable editor, compare simulation runs,
 model workspace + parameter sweep, log a signal from a wire, `sim('model.fmdl')`/`set_param`
 from scripts, live parameter sliders.
+
+### What became of two of them (2026-10-27)
+
+**Stiff solvers and events were already in the engine** by the time this was picked up, and
+the table had not caught up: Radau, BDF and LSODA, with Simulink's names mapped onto them;
+terminal zero-crossing events with latched modes for every discontinuous block; a progress
+bar and a Stop button on a worker thread. One gap was real. Progress, and so Stop, was only
+checked at sample hits, and a purely continuous model is one span from 0 to `t_end`: the bar
+sat at 0 % and Stop waited for the run to finish. The solver now reports from inside the
+right-hand side, throttled to every 0.1 s of wall time rather than by simulated progress, so
+a stiff model grinding at one instant still reaches Stop.
+
+**Symbolic maths** is `console/symbolic.py`. A symbolic value is a `Sym` wrapping a SymPy
+expression or matrix, printed as MATLAB prints it (`s^2`, `heaviside(t)`, `[x, 1]`). The
+runtime sends any operator with a `Sym` side to `symbolic.binary`, which keeps `*` and `.*`
+apart; `exp`, `diff`, `inv`, `det`… switch to their symbolic meaning only when an argument
+is symbolic. Covered: `syms` (with assumptions), `sym`, `str2sym`, `laplace`, `ilaplace`,
+`simplify`, `expand`, `factor`, `collect`, `partfrac`, `numden`, `subs`, `diff`, `int`,
+`limit`, `taylor`, `solve`, `sym2poly`/`poly2sym`, `double`, `vpa`, `pretty`, `latex`,
+`isAlways`, `heaviside`, `dirac`, `matlabFunction`, `fplot`, and indexing, concatenation
+and matrix algebra on symbolic matrices (`C*inv(s*eye(2) - A)*B`). Not covered: symbolic
+functions (`syms y(t)`), and so `dsolve`; `ztrans`.
+
+Two places where SymPy's answer is not MATLAB's had to be bridged. `ilaplace` substitutes a
+positive `t` so the result has no `heaviside(t)` factor, as MATLAB writes it, but `laplace`
+must *not*: a positive `t` makes `dirac(t)` zero before it is integrated. And a two-sided
+`limit(1/x, x, 0)` is SymPy's complex infinity, MATLAB's `NaN`.
 
 ## Part 7 — Next up (from first hands-on use, 2026-10-16) ✅ **DONE**
 
