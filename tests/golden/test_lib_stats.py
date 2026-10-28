@@ -386,9 +386,9 @@ def test_pinv_null_orth(it):
     assert N.shape == (2, 1)
     assert np.abs(N.ravel()) == pytest.approx([1 / math.sqrt(2)] * 2)
     assert N[0, 0] == pytest.approx(-N[1, 0])
-    O = arr(it, "O")
-    assert O[0, 0] == pytest.approx(O[1, 0])
-    assert float(O.T @ O) == pytest.approx(1)
+    Q = arr(it, "O")
+    assert Q[0, 0] == pytest.approx(Q[1, 0])
+    assert float(Q.T @ Q) == pytest.approx(1)
     assert arr(it, "Z").shape == (2, 0)
 
 

@@ -850,9 +850,9 @@ def _bytes(value) -> int:
 def _is_builtin(lib, name: str) -> bool:
     if name in lib.names:
         return True
-    preset = lib.rt.base.get(name)
-    return preset is not None and callable(preset) \
-        and not isinstance(preset, types.ModuleType)
+    # A console command, not a preset value: ``s`` is a system, and a
+    # system is callable in Python without being a function.
+    return _mr._is_function(lib.rt.base.get(name))
 
 
 def _on_path(rt, name: str) -> str | None:

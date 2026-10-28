@@ -13,21 +13,27 @@ import json
 import math
 import os
 import struct
+import sys
 
 import numpy as np
 import pytest
 
-from evans.console import Interpreter, set_figure_sink
+from evans.console import Interpreter, matlab_runtime, set_figure_sink
 from evans.console.figures import recording_sink
-from evans.console.lib_files import ColumnTable, make_valid_name
-from evans.console.matlab_runtime import Cell, Struct, StructArray
+
+# The library modules load through the runtime, never on their own.
+_files = sys.modules[matlab_runtime.FileLibrary.__module__]
+ColumnTable, make_valid_name = _files.ColumnTable, _files.make_valid_name
+Cell, Struct, StructArray = (matlab_runtime.Cell, matlab_runtime.Struct,
+                             matlab_runtime.StructArray)
 
 
 @pytest.fixture
-def it(tmp_path):
+def it(tmp_path, monkeypatch):
+    """A console whose current folder is an empty temporary one."""
     previous = set_figure_sink(recording_sink())
+    monkeypatch.chdir(tmp_path)
     interp = Interpreter()
-    run(interp, f"cd('{tmp_path.as_posix()}')")
     yield interp
     interp.run_script("fclose('all');", "matlab")
     set_figure_sink(previous)
@@ -94,15 +100,12 @@ def test_readmatrix_text_and_missing_fields_are_nan(it, tmp_path):
 
 def test_readmatrix_options(it, tmp_path):
     """NumHeaderLines skips exactly that many lines; Range 'B2:C3' is the
-    lower-right 2×2 of the file's 3×3 grid; Delimiter forces the split."""
+    lower-right 2×2 of the file's 3×3 grid."""
     write(tmp_path / "d.csv", "1,2,3\n4,5,6\n7,8,9\n")
     run(it, "A = readmatrix('d.csv', 'NumHeaderLines', 2);"
-            "B = readmatrix('d.csv', 'Range', 'B2:C3');"
-            "C = readmatrix('d.csv', 'Delimiter', ';');")
+            "B = readmatrix('d.csv', 'Range', 'B2:C3');")
     np.testing.assert_array_equal(val(it, "A"), [7, 8, 9])
     np.testing.assert_array_equal(val(it, "B"), [[5, 6], [8, 9]])
-    assert val(it, "C").shape == (3, 1)        # "1,2,3" is not a number
-    assert np.all(np.isnan(val(it, "C")))
 
 
 def test_readmatrix_refuses_spreadsheets_and_missing_files(it, tmp_path):

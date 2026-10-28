@@ -330,6 +330,12 @@ class _Rows:
         return (self[i] for i in range(len(self)))
 
 
+def _positions(arg, n: int) -> list[int]:
+    """A MATLAB subscript as 0-based positions; a call's ``:`` is None."""
+    arg = _mr.COLON if arg is None else arg
+    return np.atleast_1d(_mr.Runtime._indices(None, arg, n)).tolist()
+
+
 class ColumnTable(Table):
     """
     A MATLAB table: named variables of equal height, one column each.
@@ -399,8 +405,7 @@ class ColumnTable(Table):
                         f"Unrecognized table variable name '{name}'.")
                 out.append(self.columns.index(name))
             return out
-        idx = _mr.Runtime._indices(None, arg, len(self.columns))
-        return np.atleast_1d(idx).tolist()
+        return _positions(arg, len(self.columns))
 
     # T(rows, vars)
     def __call__(self, *args, **_):
@@ -412,8 +417,7 @@ class ColumnTable(Table):
         if len(args) != 2:
             raise MatlabError("Tables are two-dimensional: index as "
                               "t(rows, vars).")
-        rows = np.atleast_1d(_mr.Runtime._indices(None, args[0],
-                                                  self.height)).tolist()
+        rows = _positions(args[0], self.height)
         ks = self._var_indices(args[1])
         data = []
         for k in ks:

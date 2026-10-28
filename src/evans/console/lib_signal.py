@@ -385,6 +385,13 @@ _DESIGNS = {
 #  The library
 # ──────────────────────────────────────────────────────────────
 
+#: designfilt's frequency specifications, as MATLAB spells them.
+_SPEC_NAMES = {"halfpowerfrequency": "HalfPowerFrequency",
+               "halfpowerfrequency1": "HalfPowerFrequency1",
+               "halfpowerfrequency2": "HalfPowerFrequency2",
+               "cutofffrequency": "CutoffFrequency"}
+
+
 class SignalLibrary:
     """filtfilt, fir1, pwelch, hann and the rest."""
 
@@ -485,7 +492,8 @@ class SignalLibrary:
         if x is None:
             raise MatlabError("Not enough input arguments.")
         X, row = _columns(x)
-        B = np.asarray(b, float)
+        # A 1×6 row is 1-D here; MATLAB's rule reads it as one section.
+        B = np.atleast_2d(np.asarray(b, float))
         if B.ndim == 2 and B.shape[1] == 6 and (
                 B.shape[0] > 1 or (B[0, 3] == 1 and _numel(a) <= 2)):
             sos = B.copy()
@@ -575,9 +583,10 @@ class SignalLibrary:
         if len(args) % 2:
             raise MatlabError("Specifications must come in name-value "
                               "pairs.")
-        spec = {}
+        spec, typed = {}, {}
         for k in range(0, len(args), 2):
             spec[str(args[k]).lower()] = args[k + 1]
+            typed[str(args[k]).lower()] = str(args[k])
         shape, impulse = _DESIGNS[kind]
         if impulse == "iir":
             freq_names = (("halfpowerfrequency1", "halfpowerfrequency2")
@@ -589,10 +598,11 @@ class SignalLibrary:
             allowed |= {"window"}
         unknown = [k for k in spec if k not in allowed]
         if unknown:
+            shown = ", ".join(_SPEC_NAMES[f] for f in freq_names)
             raise MatlabError(f"Evans's designfilt('{kind}', ...) takes "
-                              f"FilterOrder, {', '.join(freq_names)}, "
-                              f"SampleRate and DesignMethod; it does not "
-                              f"support '{unknown[0]}'.")
+                              f"FilterOrder, {shown}, SampleRate and "
+                              f"DesignMethod; it does not support "
+                              f"'{typed[unknown[0]]}'.")
         missing = [k for k in ("filterorder", *freq_names) if k not in spec]
         if missing:
             raise MatlabError(f"designfilt('{kind}', ...) needs "

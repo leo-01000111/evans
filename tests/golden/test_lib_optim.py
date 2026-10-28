@@ -466,8 +466,11 @@ def test_interp2_linear_spline_and_outside(it):
     assert G.shape == (3, 2)
     assert G == pytest.approx(np.array([1.5, 2.5])[None, :]
                               + 10 * np.array([1, 2, 3.0])[:, None])
-    # x² and y³ are reproduced by a not-a-knot spline along each axis
-    assert val(it, "s") == pytest.approx(2.5 ** 2 * 1.5 ** 3, abs=1e-10)
+    # Along x (four points) the not-a-knot spline reproduces x² exactly;
+    # along y there are only three points, so it is the parabola through
+    # (1, 1), (2, 8), (3, 27), which is 3 at y = 1.5 (Lagrange weights
+    # 0.375, 0.75, −0.125).
+    assert val(it, "s") == pytest.approx(2.5 ** 2 * 3.0, abs=1e-10)
     assert val(it, "n") == pytest.approx(2 + 10)
 
 
