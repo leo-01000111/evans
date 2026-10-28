@@ -2035,9 +2035,17 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
     f_display = f_disp
 
     def f_sprintf(self, fmt, *args) -> str:
+        for a in args:
+            # c{:} spreads a cell into arguments; the cell itself is not one.
+            if isinstance(a, (Cell, Struct, StructArray)):
+                kind = "cell" if isinstance(a, Cell) else "struct"
+                raise MatlabError(f"Function is not defined for '{kind}' "
+                                  f"inputs.")
         return _sprintf(str(fmt), args)
 
     def f_num2str(self, x, spec=None) -> str:
+        if isinstance(x, (Cell, Struct, StructArray)):
+            raise MatlabError("Input to num2str must be numeric.")
         if isinstance(x, str):
             return x
         if isinstance(spec, str):

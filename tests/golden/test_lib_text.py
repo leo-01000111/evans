@@ -361,15 +361,11 @@ def test_sprintf_comma_list_from_a_cell(it):
     assert val(it, "s") == "a,bb,"
 
 
-@pytest.mark.xfail(strict=True, reason="awaits the _sprintf change "
-                   "the text group's report describes")
 def test_sprintf_refuses_a_cell(it):
     """MATLAB: "Function is not defined for 'cell' inputs." """
     assert "'cell' inputs" in error_of(it, "sprintf('%s', {'a'})")
 
 
-@pytest.mark.xfail(strict=True, reason="awaits the f_num2str change "
-                   "the text group's report describes")
 def test_num2str_refuses_a_cell(it):
     """MATLAB: "Input to num2str must be numeric." """
     assert "must be numeric" in error_of(it, "num2str({1})")
