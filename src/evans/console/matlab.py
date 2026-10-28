@@ -1257,6 +1257,9 @@ class _Emitter:
             var = _py_name(s.var)
             self._put(i, f"for {var} in {_RT}.iterate("
                          f"{self.expr(s.iterable)}):", s.line)
+            # A global or persistent loop variable is written each time
+            # round, as an assignment to it would be.
+            self._write_back(s.var, i + 1, s.line)
             self._block(s.body, i + 1, s.line)
         elif isinstance(s, _While):
             self._put(i, f"while {_RT}.truth({self.expr(s.cond)}):", s.line)
