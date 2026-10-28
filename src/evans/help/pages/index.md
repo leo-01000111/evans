@@ -78,6 +78,38 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 [clc](clc) · [clear](clear) · [tic](tic) · [toc](toc)
 
+## Statistics
+
+[var](var) · [mode](mode) · [cov](cov) · [corrcoef](corrcoef) · [prctile](prctile) · [quantile](quantile) · [skewness](skewness) · [kurtosis](kurtosis) · [movmean](movmean) · [movmedian](movmedian) · [smoothdata](smoothdata) · [detrend](detrend) · [normpdf](normpdf) · [normcdf](normcdf) · [norminv](norminv) · [ttest](ttest) · [regress](regress) · [randi](randi) · [randperm](randperm) · [rng](rng)
+
+## Linear algebra
+
+[svd](svd) · [qr](qr) · [lu](lu) · [chol](chol) · [pinv](pinv) · [null](null) · [orth](orth) · [expm](expm) · [logm](logm) · [sqrtm](sqrtm) · [cross](cross) · [dot](dot) · [cond](cond) · [triu](triu) · [tril](tril) · [circshift](circshift) · [sub2ind](sub2ind) · [ind2sub](ind2sub)
+
+## Strings
+
+[strsplit](strsplit) · [strjoin](strjoin) · [strtrim](strtrim) · [strrep](strrep) · [regexp](regexp) · [regexpi](regexpi) · [regexprep](regexprep) · [contains](contains) · [startsWith](startsWith) · [endsWith](endsWith) · [split](split) · [join](join) · [upper](upper) · [lower](lower) · [pad](pad) · [strfind](strfind) · [strncmp](strncmp) · [strncmpi](strncmpi) · [blanks](blanks) · [deblank](deblank) · [isspace](isspace) · [isletter](isletter) · [isstrprop](isstrprop)
+
+## Cells and structs
+
+[cellfun](cellfun) · [arrayfun](arrayfun) · [cell2mat](cell2mat) · [struct2cell](struct2cell) · [cell2struct](cell2struct) · [isfield](isfield) · [rmfield](rmfield) · [orderfields](orderfields) · [getfield](getfield) · [setfield](setfield) · [iscellstr](iscellstr) · [deal](deal) · [isequal](isequal) · [isequaln](isequaln) · [ismember](ismember)
+
+## Data files
+
+[readmatrix](readmatrix) · [writematrix](writematrix) · [readtable](readtable) · [writetable](writetable) · [table](table) · [fopen](fopen) · [fclose](fclose) · [fgetl](fgetl) · [textscan](textscan) · [jsondecode](jsondecode) · [jsonencode](jsonencode)
+
+## Signal processing
+
+[filtfilt](filtfilt) · [fir1](fir1) · [pwelch](pwelch) · [hann](hann) · [xcorr](xcorr) · [resample](resample)
+
+## Fitting and optimisation
+
+[fit](fit) · [lsqcurvefit](lsqcurvefit) · [fsolve](fsolve) · [fmincon](fmincon) · [linprog](linprog) · [integral](integral) · [spline](spline)
+
+## System
+
+[who](who) · [whos](whos) · [dir](dir) · [exist](exist) · [datestr](datestr) · [nchoosek](nchoosek) · [dec2bin](dec2bin)
+
 ## Guides
 
 [s, the Laplace variable](s) · [MATLAB and Python at the prompt](python)

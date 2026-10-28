@@ -147,11 +147,23 @@ class Struct(dict):
 
 
 class StructArray(list):
-    """``info(k) = stepinfo(...)`` builds one of these."""
+    """
+    A struct array: ``struct('a', {1; 2})``, or ``info(k) = stepinfo(...)``.
+    Shaped as a :class:`Cell` is, its structs kept column by column.
+    """
+
+    def __init__(self, items=(), rows: int = 1) -> None:
+        super().__init__(items)
+        self.rows = rows
+
+    dims = Cell.dims
+    grid = Cell.grid
+    from_grid = Cell.from_grid
 
     def __repr__(self) -> str:
         fields = list(self[0]) if self else []
-        lines = [f"1×{len(self)} struct array with fields:", ""]
+        r, c = self.dims
+        lines = [f"{r}×{c} struct array with fields:", ""]
         lines += [f"    {f}" for f in fields]
         return "\n".join(lines)
 
@@ -367,10 +379,8 @@ def _shape(x) -> tuple[int, int]:
         return (0, 0)
     if isinstance(x, str):
         return (1 if x else 0, len(x))
-    if isinstance(x, Cell):
+    if isinstance(x, (Cell, StructArray)):
         return x.dims
-    if isinstance(x, StructArray):
-        return (1 if len(x) else 0, len(x))
     if isinstance(x, (Struct, PlotOptions, Table)):
         return (len(x.rows), len(x.columns)) if isinstance(x, Table) \
             else (1, 1)
@@ -941,11 +951,8 @@ class Runtime:
         if isinstance(x, Cell):
             return self._pick_cell(x, args)
         if isinstance(x, StructArray):
-            picked = self._pick_list(x, args)
-            if isinstance(picked, list) and len(picked) == 1 \
-                    and isinstance(x, StructArray):
-                return picked[0]
-            return type(x)(picked) if isinstance(picked, list) else picked
+            picked = self._pick_cell(x, args)
+            return picked[0] if len(picked) == 1 else picked
         if isinstance(x, Struct) and all(_resolve(a, 1) in (1, COLON)
                                          for a in args):
             return x
@@ -996,16 +1003,20 @@ class Runtime:
         return rows, cols
 
     def _pick_cell(self, c: Cell, args: tuple) -> Cell:
-        """``c(...)``: a cell of the chosen elements, shaped as MATLAB's."""
+        """
+        ``c(...)``: a cell of the chosen elements, shaped as MATLAB's; from
+        a struct array, a struct array.
+        """
         r, n = c.dims
+        kind = type(c)
         if len(args) == 1:
             if args[0] is COLON:
-                return Cell(c, rows=len(c))
+                return kind(c, rows=len(c))
             idx = np.atleast_1d(self._indices(args[0], len(c))).tolist()
             column = n == 1 and r > 1
-            return Cell((c[i] for i in idx), rows=len(idx) if column else 1)
+            return kind((c[i] for i in idx), rows=len(idx) if column else 1)
         rows, cols = self._cell_subscripts(c, args)
-        return Cell((c[i + j * r] for j in cols for i in rows),
+        return kind((c[i + j * r] for j in cols for i in rows),
                     rows=len(rows))
 
     def _indices(self, arg, n: int):
@@ -1107,11 +1118,10 @@ class Runtime:
             if not isinstance(array, StructArray):
                 raise MatlabError("Cannot index into this value with "
                                   "a field.")
-            k = self._grow_index(key[-1], len(array))
             template = array[0] if array else (value if isinstance(
                 value, Mapping) else {})
-            while len(array) <= k:
-                array.append(Struct({f: np.zeros((0, 0)) for f in template}))
+            k = self._cell_slot(array, key, lambda: Struct(
+                {f: np.zeros((0, 0)) for f in template}))
             element = array[k]
             array[k] = (self.assign(element, rest, value) if rest
                         else Struct(value))
@@ -1123,10 +1133,12 @@ class Runtime:
             return obj
         return self._assign_array(obj, key, value)
 
-    def _cell_slot(self, cell: Cell, key: tuple) -> int:
+    def _cell_slot(self, cell: Cell, key: tuple,
+                   empty: Callable[[], Any] = lambda: np.zeros((0, 0))) -> int:
         """
         Where ``c{key} = v`` writes, as a linear index, growing the cell
-        with empty elements first if ``key`` is past its end.
+        (or struct array) with ``empty()`` elements first if ``key`` is
+        past its end.
         """
         r, n = cell.dims
         if len(key) == 1:
@@ -1136,7 +1148,7 @@ class Runtime:
                     raise MatlabError("Attempt to grow array along "
                                       "ambiguous dimension.")
                 column = n == 1 and r > 1
-                cell.extend(np.zeros((0, 0)) for _ in range(k + 1 - len(cell)))
+                cell.extend(empty() for _ in range(k + 1 - len(cell)))
                 cell.rows = len(cell) if column else 1
             return k
         if any(_resolve(a, 1) not in (1, COLON) for a in key[2:]):
@@ -1147,9 +1159,9 @@ class Runtime:
             grid = cell.grid()
             rows, cols = max(r, i + 1), max(n, j + 1)
             grid = [grid[a] if a < r else [] for a in range(rows)]
-            grid = [row + [np.zeros((0, 0))] * (cols - len(row))
+            grid = [row + [empty() for _ in range(cols - len(row))]
                     for row in grid]
-            grown = Cell.from_grid(grid)
+            grown = type(cell).from_grid(grid)
             cell[:] = grown
             cell.rows = grown.rows
             r = rows
@@ -1284,10 +1296,19 @@ class Runtime:
                          for i in range(len(parts[0]))]
             return Cell.from_grid(grid)
         if any(isinstance(x, (Struct, StructArray)) for x in flat):
-            out = StructArray()
-            for x in flat:
-                out.extend(x if isinstance(x, StructArray) else [x])
-            return out
+            # [s; t] stacks and [s, t] joins, as with cells.
+            grid = []
+            for row in rows:
+                parts = [x.grid() if isinstance(x, StructArray) else [[x]]
+                         for x in row if not isinstance(x, StructArray) or x]
+                if not parts:
+                    continue
+                if len({len(p) for p in parts}) > 1:
+                    raise MatlabError("Dimensions of arrays being "
+                                      "concatenated are not consistent.")
+                grid += [sum((p[i] for p in parts), [])
+                         for i in range(len(parts[0]))]
+            return StructArray.from_grid(grid)
         if any(isinstance(x, str) for x in flat):
             texts = ["".join(_as_text(x) for x in row) for row in rows if row]
             return texts[0] if len(texts) == 1 else Cell(texts)
@@ -1392,7 +1413,13 @@ class Runtime:
             # A for loop takes a cell a column at a time, as a matrix.
             r = x.dims[0]
             return [Cell(x[k:k + r], rows=r) for k in range(0, len(x), r)]
-        if isinstance(x, (StructArray, str)):
+        if isinstance(x, StructArray):
+            r = x.dims[0]
+            if r <= 1:
+                return list(x)
+            return [StructArray(x[k:k + r], rows=r)
+                    for k in range(0, len(x), r)]
+        if isinstance(x, str):
             return list(x)
         return [x]
 
@@ -1580,10 +1607,10 @@ class Runtime:
             if a.ndim == 2 and a.shape[1] == 1:
                 return a.reshape(-1)
             return a.T
-        if isinstance(a, Cell):
+        if isinstance(a, (Cell, StructArray)):
             r, c = a.dims
-            return Cell((a[i + j * r] for i in range(r) for j in range(c)),
-                        rows=c)
+            return type(a)((a[i + j * r] for i in range(r)
+                            for j in range(c)), rows=c)
         return a
 
     def ctranspose(self, a):
@@ -1605,16 +1632,50 @@ class Runtime:
         self._listing.clear()
 
     def clear(self, names: tuple[str, ...]) -> None:
+        """
+        ``clear`` and ``clear variables`` empty the workspace and leave the
+        globals' values; ``clear global`` removes globals everywhere;
+        ``clear functions`` forgets function files and so their
+        persistents; ``clear all`` does all three.
+        """
         keep = self.script_functions
-        if self._clear is None:
+        word = names[0].lower().lstrip("-") if names else ""
+        if word in ("all", "functions"):
+            self._forget_functions()
+        if word in ("all", "global"):
+            gone = self._clear_targets(names[1:]) if word == "global" \
+                and names[1:] else list(self.global_vars)
+            for name in gone:
+                self.global_vars.pop(name, None)
+            if word == "global":
+                shown = [n for n in gone if n in self._workspace_globals]
+                self._workspace_globals.difference_update(gone)
+                if self._clear is not None and shown:
+                    self._clear(*shown)
+                return
+            self._workspace_globals.clear()
+        if word == "functions" or self._clear is None:
             return
-        if names and names[0] not in ("all", "-all", "variables", "-v"):
-            self._clear(*(n for n in self._clear_targets(names)
-                          if n not in keep))
+        if names and word not in ("all", "variables", "v"):
+            targets = [n for n in self._clear_targets(names) if n not in keep]
+            # The global keeps its value; the workspace loses its link.
+            self._workspace_globals.difference_update(targets)
+            self._clear(*targets)
             return
+        self._workspace_globals.clear()
         saved = {n: self.ns[n] for n in keep if n in self.ns}
         self._clear()
         self.ns.update(saved)
+
+    def _forget_functions(self) -> None:
+        """Drop loaded function files, and empty every persistent store."""
+        functions = [entry[1] for entry in self._files.values()]
+        functions += [self.ns.get(n) for n in self.script_functions]
+        for fn in functions:
+            for default in getattr(fn, "__defaults__", None) or ():
+                if isinstance(default, dict):
+                    default.clear()
+        self._files.clear()
 
     def _clear_targets(self, names: tuple[str, ...]) -> list[str]:
         """
@@ -1755,7 +1816,19 @@ def _is_linespec(x) -> bool:
     return isinstance(x, str) and bool(x) and bool(_LINESPEC.match(x))
 
 
-class _Library:
+# The everyday-data functions live in modules of their own, one mixin each;
+# a method defined here wins over a mixin's of the same name.
+from .lib_cells import CellLibrary  # noqa: E402
+from .lib_files import FileLibrary  # noqa: E402
+from .lib_optim import OptimLibrary  # noqa: E402
+from .lib_signal import SignalLibrary  # noqa: E402
+from .lib_stats import StatsLibrary  # noqa: E402
+from .lib_system import SystemLibrary  # noqa: E402
+from .lib_text import TextLibrary  # noqa: E402
+
+
+class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
+               SignalLibrary, OptimLibrary, SystemLibrary):
     """MATLAB's own functions, with MATLAB's shapes and argument rules."""
 
     def __init__(self, rt: Runtime) -> None:
@@ -1849,14 +1922,6 @@ class _Library:
         _FORMAT["long"] = bool(args) and str(args[0]).lower().startswith(
             "long")
 
-    def f_pause(self, seconds=None, *_):
-        """``pause(t)`` waits t seconds; a bare ``pause`` waits for no key."""
-        if seconds is None or isinstance(seconds, str):
-            return None
-        t = float(np.real(_scalar_of(seconds)))
-        if math.isfinite(t) and t > 0:
-            _pause_for(t)
-
     def f_tic(self):
         self.rt._tic = time.perf_counter()
 
@@ -1867,16 +1932,6 @@ class _Library:
             print(f"Elapsed time is {elapsed:.6f} seconds.")
             return None
         return elapsed
-
-    def f_exist(self, name, *_):
-        if name in self.rt.ns:
-            return 1
-        if self.rt.find_file(name, refresh=True) is not None \
-                or os.path.isfile(self.rt.resolve(name)):
-            return 2
-        if os.path.isdir(self.rt.resolve(name)):
-            return 7
-        return 5 if name in self.names else 0
 
     # ── files and folders ───────────────────────────────────────
 
@@ -1922,11 +1977,6 @@ class _Library:
         return os.path.isdir(self.rt.resolve(name))
 
     f_isdir = f_isfolder
-
-    def f_mkdir(self, *parts):
-        os.makedirs(self.rt.resolve(os.path.join(*map(_as_text, parts))),
-                    exist_ok=True)
-        return True
 
     def f_input(self, *_):
         raise MatlabError("input() needs a keyboard; scripts here run "
@@ -1984,15 +2034,18 @@ class _Library:
 
     f_display = f_disp
 
-    def f_fprintf(self, fmt, *args):
-        if isinstance(fmt, (int, float)) and fmt in (1, 2) and args:
-            fmt, args = args[0], args[1:]      # fprintf(1, ...) → stdout
-        print(self.f_sprintf(fmt, *args), end="")
-
     def f_sprintf(self, fmt, *args) -> str:
+        for a in args:
+            # c{:} spreads a cell into arguments; the cell itself is not one.
+            if isinstance(a, (Cell, Struct, StructArray)):
+                kind = "cell" if isinstance(a, Cell) else "struct"
+                raise MatlabError(f"Function is not defined for '{kind}' "
+                                  f"inputs.")
         return _sprintf(str(fmt), args)
 
     def f_num2str(self, x, spec=None) -> str:
+        if isinstance(x, (Cell, Struct, StructArray)):
+            raise MatlabError("Input to num2str must be numeric.")
         if isinstance(x, str):
             return x
         if isinstance(spec, str):
@@ -2027,18 +2080,6 @@ class _Library:
     def f_strcmpi(self, a, b):
         return isinstance(a, str) and isinstance(b, str) and \
             a.lower() == b.lower()
-
-    def f_upper(self, s):
-        return s.upper()
-
-    def f_lower(self, s):
-        return s.lower()
-
-    def f_strtrim(self, s):
-        return s.strip()
-
-    def f_strrep(self, s, old, new):
-        return s.replace(old, new)
 
     def f_newline(self):
         return "\n"
@@ -2089,9 +2130,6 @@ class _Library:
     def f_islogical(self, x):
         return self.f_class(x) == "logical"
 
-    def f_isfield(self, s, name):
-        return isinstance(s, Mapping) and name in s
-
     def f_fieldnames(self, s):
         if isinstance(s, StructArray):
             s = s[0] if s else {}
@@ -2104,18 +2142,18 @@ class _Library:
         ``{{1, 2}}`` is how a field holds the cell itself.
         """
         names, values = pairs[0::2], pairs[1::2]
-        sizes = {len(v) for v in values if isinstance(v, Cell) and len(v) != 1}
-        if len(sizes) > 1:
+        shapes = {v.dims for v in values if isinstance(v, Cell) and len(v) != 1}
+        if len(shapes) > 1:
             raise MatlabError("Array dimensions of input values must match.")
-        n = sizes.pop() if sizes else None
-        if n is None:
+        shape = shapes.pop() if shapes else None
+        if shape is None:
             return Struct({k: v[0] if isinstance(v, Cell) else v
                            for k, v in zip(names, values)})
         return StructArray(
-            Struct({k: (v[i] if len(v) != 1 else v[0])
-                    if isinstance(v, Cell) else v
-                    for k, v in zip(names, values)})
-            for i in range(n))
+            (Struct({k: (v[i] if len(v) != 1 else v[0])
+                     if isinstance(v, Cell) else v
+                     for k, v in zip(names, values)})
+             for i in range(shape[0] * shape[1])), rows=shape[0])
 
     def f_struct2table(self, s):
         rows = list(s) if isinstance(s, StructArray) else [s]
@@ -2425,7 +2463,7 @@ class _Library:
                 out = _normalise(a)
                 return (out, _normalise(np.ones(a.shape))) if nargout >= 2 \
                     else out
-        elif a.ndim == 1 or a.shape[0] == 1:
+        elif a.ndim <= 1 or a.shape[0] == 1:
             flat, k = a.reshape(-1), key.reshape(-1)
             i = int(arg(np.where(np.isnan(k), -np.inf if arg is np.argmax
                                  else np.inf, k)))

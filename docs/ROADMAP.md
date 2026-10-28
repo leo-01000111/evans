@@ -42,79 +42,121 @@ Tests: `tests/golden/test_confident_liars.py`, last section.
 
 Left over from this phase:
 
-- [ ] Struct arrays are always rows: `struct('a',{1;2})` is 1×2, not 2×1. **S**
-- [ ] A `for` loop whose variable is a `global` does not write it back. **S**
-- [ ] `clear all`, `clear global` and `clear functions` do not reset globals or
-      persistents. **S**
+- [x] Struct arrays are always rows: `struct('a',{1;2})` is 1×2, not 2×1. **S**
+      *Done 2026-10-28:* `StructArray` has a shape like `Cell`'s; indexing,
+      growing, `'`, `[s; t]` and `for` follow it.
+- [x] A `for` loop whose variable is a `global` does not write it back. **S**
+      *Done:* a global or persistent loop variable is written each time round.
+- [x] `clear all`, `clear global` and `clear functions` do not reset globals or
+      persistents. **S** *Done:* MATLAB's rules; plain `clear` keeps a global's
+      value and drops only the workspace's link.
 - [ ] `numel("hello")` is 5 and should be 1 (string arrays, Phase 4). **S–M**
+      *Deferred to Phase 4's string arrays:* it needs `"…"` to be its own type,
+      and changing `numel` alone would make `"…"` disagree with itself.
 - [ ] Writing one element of a cell, struct or array copies it, so growing one in a
       loop is quadratic. `c{end+1} = k` for 10⁴ elements takes about 3.5 s, against
       about 0.5 s before cells were copied; numeric arrays already behaved this way.
       Copy only when the value is shared, for example by marking it at `b = c` and at
-      function calls. **M**
+      function calls. **M** *Deferred:* every route a value can be shared by
+      (`b = c`, `d = c{1}`, `t = s.a`, arguments, returns, loop variables,
+      globals) must mark it, and missing one gives a silent wrong answer, the
+      failure this phase exists to remove. It wants its own change and tests.
 - [ ] Search the rest of the language for more of these, with a probe script of
       MATLAB lines run against known MATLAB answers (see Phase 6, reference
-      corpus). **M**
+      corpus). **M** *Deferred to Phase 6:* the known answers need a MATLAB
+      licence to produce.
 
-## Phase 1 — Everyday data work at the console (mostly wrapping)
+## Phase 1 — Everyday data work at the console (mostly wrapping) ✅ **DONE 2026-10-28**
 
 Needed for any "process my logged data" job, whether coursework, a hobby project or test
 data at work. All of it is in numpy and scipy already.
 
+The functions live in `src/evans/console/lib_*.py`, one mixin of `_Library` per group
+below, with tests in `tests/golden/test_lib_*.py`. **Left to do:** about 90 of the new
+commands have no help page yet (the index lists the ones that do; see the "Data files",
+"Signal processing", "Fitting and optimisation" and "System" groups), and the
+`fitlm` and `.xlsx` items below.
+
 **File I/O** **M**
-- [ ] `readmatrix`, `writematrix`, `csvread`, `csvwrite`, `dlmread`, with a header row
+- [x] `readmatrix`, `writematrix`, `csvread`, `csvwrite`, `dlmread`, with a header row
       skipped.
-- [ ] `readtable` and `writetable` with column names, together with a real `table`
+      *Also `dlmwrite`.*
+- [x] `readtable` and `writetable` with column names, together with a real `table`
       (see Phase 4). Pandas is excluded from the bundle, so it is built on numpy.
-- [ ] `fopen`, `fclose`, `fgetl`, `fgets`, `fprintf(fid, …)` to a file, `fscanf`,
+      *A small column table, not Phase 4's:* `T.col`, `T(rows, vars)`,
+      `Properties.VariableNames`, `height`/`width`, `table(x, y)` named after
+      its arguments, `array2table`/`table2array`. No `T{…}`, assignment into
+      a table, `sortrows` or `join` yet.
+- [x] `fopen`, `fclose`, `fgetl`, `fgets`, `fprintf(fid, …)` to a file, `fscanf`,
       `textscan`, `fread`, `fwrite`.
-- [ ] `jsondecode` and `jsonencode`.
+      *Also `feof`, `frewind`, `ftell`, `fseek`. `cd` lasts one run, as before.*
+- [x] `jsondecode` and `jsonencode`.
 - [ ] `xlsread`/`readtable` on `.xlsx`. This needs openpyxl, a new dependency, so
-      decide first. **M**
+      decide first. **M** *Not decided; still open.* `readmatrix`,
+      `readtable` and `writematrix` refuse `.xlsx` by name.
 
 **Statistics and linear algebra** **S**
-- [ ] `var`, `mode`, `cov`, `corrcoef`, `prctile`, `quantile`, `skewness`,
+- [x] `var`, `mode`, `cov`, `corrcoef`, `prctile`, `quantile`, `skewness`,
       `kurtosis`, `movmean`, `movmedian`, `smoothdata`, `detrend`.
-- [ ] `normpdf`, `normcdf`, `norminv`, `ttest`, `regress`. `fitlm` with its summary
-      table is **M**.
-- [ ] `svd`, `qr`, `lu`, `chol`, `pinv`, `null`, `orth`, `expm`, `logm`, `sqrtm`,
+- [x] `normpdf`, `normcdf`, `norminv`, `ttest`, `regress`. `fitlm` with its summary
+      table is **M**. *`fitlm` left out:* its summary table waits for
+      Phase 4's `table`.
+- [x] `svd`, `qr`, `lu`, `chol`, `pinv`, `null`, `orth`, `expm`, `logm`, `sqrtm`,
       `cross`, `dot`, `cond`, `trace`, `triu`, `tril`, `circshift`, `sub2ind`,
-      `ind2sub`.
-- [ ] `randi`, `randperm`, `rng`.
+      `ind2sub`. *`trace` existed already.* `rng` seeds the generator `rand`
+      and `randn` use; the streams are not MATLAB's.
+- [x] `randi`, `randperm`, `rng`.
 
 **Strings** **M**
-- [ ] `strsplit`, `strjoin`, `strtrim`, `strrep`, `regexp`, `regexprep`, `contains`,
+- [x] `strsplit`, `strjoin`, `strtrim`, `strrep`, `regexp`, `regexprep`, `contains`,
       `startsWith`, `endsWith`, `split`, `join`, `upper`, `lower`, `pad`.
-- [ ] `sprintf` and `num2str` over cell arrays. Decide how far `"…"` string arrays go
-      beyond `char` (Phase 4).
+      *Also `regexpi`, `strfind`, `strncmp(i)`, `blanks`, `deblank`, `isspace`,
+      `isletter`, `isstrprop`. `split` returns a column cell, as Evans has no
+      string arrays.*
+- [x] `sprintf` and `num2str` over cell arrays. Decide how far `"…"` string arrays go
+      beyond `char` (Phase 4). *As in MATLAB, `sprintf('%s,', c{:})` works and
+      `sprintf('%s', c)` and `num2str(c)` refuse the cell. `"…"` stays char
+      until Phase 4.*
 
 **Cells and structs** **S**
-- [ ] `cellfun` and `arrayfun` (with `'UniformOutput', false`), `cell2mat`,
+- [x] `cellfun` and `arrayfun` (with `'UniformOutput', false`), `cell2mat`,
       `struct2cell`, `cell2struct`, `rmfield`, `orderfields`, `isequal`,
-      `ismember` on cells of text.
+      `ismember` on cells of text. *Also `isequaln`, `iscellstr`, `getfield`,
+      `setfield`, `deal`, and `isfield` with a cell of names. `'ErrorHandler'`
+      is refused. An anonymous function still returns one output, so
+      `[a, b] = cellfun(@(x) max(x), c)` needs a function file.*
 
 **Signal processing for measured data** **M**
-- [ ] `filtfilt`, `fir1`, `fir2`, `designfilt` (the common forms), `pwelch`,
+- [x] `filtfilt`, `fir1`, `fir2`, `designfilt` (the common forms), `pwelch`,
       `periodogram`, `spectrogram`, `resample`, `decimate`, `interp`, `xcorr`,
-      `impz`, `grpdelay`.
-- [ ] Windows: `hann`, `hamming`, `blackman`, `kaiser`, `window`.
-- [ ] Start from the `_iir`/`freqz` code in `matlab_runtime.py`.
+      `impz`, `grpdelay`. *`designfilt` covers the Butterworth IIR and window
+      FIR forms and works with `filtfilt(d, x)`; `filter(d, x)` and
+      `freqz(d)` don't take it yet.*
+- [x] Windows: `hann`, `hamming`, `blackman`, `kaiser`, `window`.
+      *Also `hanning`, `rectwin`, `triang`, `bartlett`.*
+- [x] Start from the `_iir`/`freqz` code in `matlab_runtime.py`.
 
 **Fitting, optimisation, integration** **S–M**
-- [ ] `lsqcurvefit`, `lsqnonlin` (on `scipy.optimize.least_squares`), `fsolve`,
+- [x] `lsqcurvefit`, `lsqnonlin` (on `scipy.optimize.least_squares`), `fsolve`,
       `fminunc`, `fmincon` (on `minimize`), `linprog`, `intlinprog` (`milp`),
-      `quadprog`.
-- [ ] `integral`, `integral2`, `quadgk`, `polyder`, `polyint`, `spline` and `pchip`
-      as functions, `interp2`, `griddata`.
-- [ ] `fit` with the common `fittype` names (poly1…poly9, exp1, exp2, power1, sin1).
-      A `cftool` GUI is **L** and waits.
+      `quadprog`. *Also `optimoptions`. `fmincon` uses SQP, not MATLAB's
+      interior-point: the same local minimum on well-posed problems.*
+- [x] `integral`, `integral2`, `quadgk`, `polyder`, `polyint`, `spline` and `pchip`
+      as functions, `interp2`, `griddata`. *Also `ppval`.*
+- [x] `fit` with the common `fittype` names (poly1…poly9, exp1, exp2, power1, sin1).
+      A `cftool` GUI is **L** and waits. *Also `coeffvalues`, `coeffnames`,
+      `confint`; custom equations are refused.*
 
 **Workspace and system helpers** **S**
-- [ ] `who`, `whos`, `which`, `exist` with a type, `dir`, `ls`, `delete`, `copyfile`,
-      `movefile`, `mkdir`, `system`, `getenv`.
-- [ ] `clock`, `now`, `datestr`, `datetime` (Phase 4), `pause` that honours Stop.
-- [ ] `dec2bin`, `bin2dec`, `dec2hex`, `factorial`, `nchoosek`, `primes`, `isprime`,
-      `gcd`, `lcm`, `erf`, `gamma`, `beta`.
+- [x] `who`, `whos`, `which`, `exist` with a type, `dir`, `ls`, `delete`, `copyfile`,
+      `movefile`, `mkdir`, `system`, `getenv`. *Also `rmdir`, `setenv`,
+      `computer`, `ispc`/`isunix`/`ismac`. `who` inside a function lists the
+      workspace, not the function's variables.*
+- [x] `clock`, `now`, `datestr`, `datetime` (Phase 4), `pause` that honours Stop.
+      *Also `datenum`, `datevec`, `date`. `datetime` waits for Phase 4.*
+- [x] `dec2bin`, `bin2dec`, `dec2hex`, `factorial`, `nchoosek`, `primes`, `isprime`,
+      `gcd`, `lcm`, `erf`, `gamma`, `beta`. *Also `hex2dec`, `dec2base`,
+      `base2dec`, `erfc`, `erfinv`, `erfcinv`, `gammaln`, `betaln`, `nthroot`.*
 
 ## Phase 2 — Simulink for daily use
 

@@ -278,6 +278,107 @@ heaviside(x)                | Unit step, 1/2 at 0
 dirac(x)                    | Dirac delta
 matlabFunction(f)           | Function handle that evaluates a formula
 fplot(f, [a b])             | Plot a formula or function over an interval
+var(A)                      | Variance of a vector, or of each column of a matrix
+mode(A)                     | Most frequent value of a vector, or of each column of a matrix
+cov(x)                      | Covariance of a vector, of the columns of a matrix, or of two vectors
+corrcoef(A)                 | Correlation coefficients of the columns of a matrix, or of two vectors
+prctile(X, p)               | Percentiles of a vector, or of each column of a matrix
+quantile(X, p)              | Quantiles of a vector, or of each column of a matrix
+skewness(X)                 | Sample skewness of a vector, or of each column of a matrix
+kurtosis(X)                 | Sample kurtosis of a vector, or of each column of a matrix
+movmean(A, k)               | Moving average over a sliding window
+movmedian(A, k)             | Moving median over a sliding window
+smoothdata(A, 'movmean', k) | Smooth noisy data with a moving average or moving median
+detrend(x)                  | Remove a straight-line (or polynomial) trend from data
+normpdf(x)                  | Probability density of the normal distribution
+normcdf(x)                  | Cumulative distribution function of the normal distribution
+norminv(p)                  | Inverse of the normal cumulative distribution function
+ttest(x)                    | One-sample or paired-sample t-test
+regress(y, X)               | Multiple linear regression by least squares
+randi(imax)                 | Random integers, uniformly distributed
+randperm(n)                 | Random permutation of the integers 1 to n
+rng(seed)                   | Seed or save the random number generator used by rand, randn, randi and randperm
+svd(A)                      | Singular value decomposition
+qr(A)                       | QR decomposition: an orthogonal times an upper-triangular matrix
+lu(A)                       | LU decomposition with partial pivoting
+chol(A)                     | Cholesky factorisation of a symmetric positive definite matrix
+pinv(A)                     | Moore-Penrose pseudo-inverse
+null(A)                     | Orthonormal basis for the null space of a matrix
+orth(A)                     | Orthonormal basis for the range of a matrix
+expm(A)                     | Matrix exponential
+logm(A)                     | Matrix logarithm
+sqrtm(A)                    | Matrix square root
+cross(A, B)                 | Cross product of 3-element vectors
+dot(A, B)                   | Dot product of two vectors, or of the columns of two matrices
+cond(A)                     | Condition number of a matrix
+triu(A)                     | Upper triangular part of a matrix
+tril(A)                     | Lower triangular part of a matrix
+circshift(A, k)             | Shift the elements of an array round in a circle
+sub2ind(sz, row, col)       | Convert row and column subscripts to linear indices
+ind2sub(sz, ind)            | Convert linear indices to row and column subscripts
+strsplit(str)               | Split a character vector at a delimiter into a cell array
+strjoin(C)                  | Join the character vectors of a cell array into one
+regexp(str, expression)     | Match a regular expression
+regexpi(str, expression)    | Match a regular expression, ignoring case
+regexprep(str, expression, replace) | Replace text that matches a regular expression
+contains(str, pattern)      | True where text contains a pattern
+startsWith(str, pattern)    | True where text starts with a pattern
+endsWith(str, pattern)      | True where text ends with a pattern
+split(str)                  | Split text at delimiters into a column cell array
+join(C)                     | Join the text in a cell array, with spaces or a delimiter
+pad(str)                    | Pad text with spaces or another character to a common length
+strfind(str, pattern)       | Starting positions of a pattern in text
+strncmp(s1, s2, n)          | Compare the first n characters of text
+strncmpi(s1, s2, n)         | Compare the first n characters of text, ignoring case
+blanks(n)                   | A character vector of spaces
+deblank(str)                | Remove trailing whitespace and null characters
+isspace(str)                | True for whitespace characters
+isletter(str)               | True for letters
+isstrprop(str, category)    | True where characters belong to a category
+cellfun(func, C)            | Apply a function to each element of a cell array
+arrayfun(func, X)           | Apply a function to each element of an array
+cell2mat(C)                 | Join the contents of a cell array into one matrix
+struct2cell(s)              | The values of a struct's fields, as a cell array
+cell2struct(C, fields)      | Build a struct from a cell array of values and a list of field names
+rmfield(s, name)            | Remove fields from a struct
+orderfields(s)              | Reorder the fields of a struct
+getfield(s, name)           | The value of a struct field named by a string
+setfield(s, name, value)    | A copy of a struct with a field set to a value
+iscellstr(C)                | True for a cell array whose elements are all character vectors
+deal(X)                     | Copy inputs to outputs
+isequal(A, B)               | True when values are equal in size and content
+isequaln(A, B)              | True when values are equal, treating NaN as equal to NaN
+ismember(A, S)              | Which elements of one array occur in another
+readmatrix(filename)        | Read a matrix of numbers from a delimited text file
+writematrix(A)              | Write a matrix to a delimited text file
+readtable(filename)         | Read a table with named columns from a delimited text file
+writetable(T)               | Write a table to a delimited text file, names first
+table(var1, ..., varN)      | A table of named columns, built from column vectors
+fopen(filename)             | Open a file and return its file identifier
+fclose(fid)                 | Close an open file
+fgetl(fid)                  | Read the next line of a file, without its newline
+textscan(fid, format)       | Read columns of formatted data from a file or text
+jsondecode(text)            | Read JSON text into structs, arrays and cells
+jsonencode(value)           | Write a value as JSON text
+filtfilt(b, a, x)           | Zero-phase digital filtering: filter forwards, then backwards
+fir1(n, Wn)                 | Window-method FIR filter design
+pwelch(x)                   | Power spectral density by Welch's averaged periodogram
+hann(n)                     | Hann (raised-cosine) window
+xcorr(x)                    | Cross-correlation of two signals, or autocorrelation of one
+resample(x, p, q)           | Change the sample rate by a rational factor p/q
+fit(x, y, fittype)          | Fit a library curve model to data
+lsqcurvefit(fun, x0, xdata, ydata) | Nonlinear least-squares fit of a model's parameters to data
+fsolve(fun, x0)             | Solve a system of nonlinear equations F(x) = 0
+fmincon(fun, x0, A, b)      | Minimise a function subject to constraints
+linprog(f, A, b)            | Linear programming: minimise f'*x subject to linear constraints
+integral(fun, a, b)         | Numerical integration of a function over an interval
+spline(x, y, xq)            | Cubic spline interpolation, MATLAB's not-a-knot spline
+who                         | List the variables in the workspace
+whos                        | List the workspace's variables with their sizes and classes
+dir                         | List the files and folders in a folder
+datestr(t)                  | Convert a date to text
+nchoosek(n, k)              | Binomial coefficient, or all combinations of a vector's elements
+dec2bin(d)                  | Convert a nonnegative integer to its binary digits as text
 """
 
 

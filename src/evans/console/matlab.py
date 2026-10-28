@@ -1257,6 +1257,9 @@ class _Emitter:
             var = _py_name(s.var)
             self._put(i, f"for {var} in {_RT}.iterate("
                          f"{self.expr(s.iterable)}):", s.line)
+            # A global or persistent loop variable is written each time
+            # round, as an assignment to it would be.
+            self._write_back(s.var, i + 1, s.line)
             self._block(s.body, i + 1, s.line)
         elif isinstance(s, _While):
             self._put(i, f"while {_RT}.truth({self.expr(s.cond)}):", s.line)
@@ -1505,9 +1508,10 @@ class _Emitter:
             args = self._arglist(node.args)
             if isinstance(target, _Name):
                 # A plot names its curves after the variables passed, the way
-                # MATLAB's legend does — so pass those names along.
+                # MATLAB's legend does, and a table its columns after them —
+                # so pass those names along.
                 names = ""
-                if nargout == 0 and target.name not in self.vars and any(
+                if target.name not in self.vars and any(
                         isinstance(a, _Name) for a in node.args):
                     names = ", names=(" + "".join(
                         f"{a.name!r}, " if isinstance(a, _Name) else "None, "

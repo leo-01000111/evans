@@ -425,3 +425,71 @@ def test_cells_and_structs_are_values_not_shared(it):
     assert val(it, "sa") == 1
     assert val(it, "qv") == 2
     assert val(it, "c2") == 2
+
+
+def test_struct_arrays_have_a_shape(it):
+    """
+    ``struct('a',{1;2})`` was 1×2, so ``s(2,1)`` failed and ``s(1,2)``
+    worked. The shape follows the cell's, and indexing, growing, ``'``,
+    ``[s; t]`` and ``for`` follow the shape as they do for a numeric array.
+    """
+    run(it, "s = struct('a',{1;2;3}); sz = size(s); b = s(2,1).a; "
+            "t = s'; tz = size(t); u = [s(1); s(2)]; uz = size(u); "
+            "w = [s(1), s(2)]; wz = size(w); "
+            "m = struct('a',{1 2; 3 4}); m21 = m(2,1).a; m3 = m(3).a; "
+            "q = struct('a',{1,2}); q(2,2).a = 7; qz = size(q); "
+            "q12 = q(1,2).a; q22 = q(4).a; "
+            "n = 0; for k = q, n = n + 1; kz = size(k); end")
+    assert list(val(it, "sz")) == [3, 1]
+    assert val(it, "b") == 2
+    assert list(val(it, "tz")) == [1, 3]
+    assert list(val(it, "uz")) == [2, 1]
+    assert list(val(it, "wz")) == [1, 2]
+    assert (val(it, "m21"), val(it, "m3")) == (3, 2)    # column order
+    assert list(val(it, "qz")) == [2, 2]
+    assert (val(it, "q12"), val(it, "q22")) == (2, 7)
+    assert val(it, "n") == 2                           # one per column
+    assert list(val(it, "kz")) == [2, 1]
+
+
+def test_a_global_loop_variable_is_written_back(it, tmp_path):
+    """``for g = 1:3`` with ``g`` global left the global at its old value."""
+    (tmp_path / "readg.m").write_text(
+        "function v = readg()\nglobal g\nv = g;\nend\n")
+    (tmp_path / "loopg.m").write_text(
+        "function loopg()\nglobal g\nfor g = 4:6\nend\nend\n")
+    folder = str(tmp_path).replace("\\", "/")
+    run(it, f"addpath('{folder}'); global g; g = 0; "
+            "for g = 1:3\nend\na = readg(); loopg(); b = g;")
+    assert val(it, "a") == 3
+    assert val(it, "b") == 6
+
+
+def test_clear_resets_globals_and_persistents(it, tmp_path):
+    """
+    MATLAB's rules: ``clear`` keeps a global's value (only the workspace's
+    link goes), ``clear global`` and ``clear all`` remove it, and
+    ``clear functions`` and ``clear all`` restart persistents. None of the
+    three did anything to globals or persistents.
+    """
+    (tmp_path / "tick.m").write_text(
+        "function n = tick()\npersistent k\nif isempty(k)\n    k = 0;\nend\n"
+        "k = k + 1;\nn = k;\nend\n")
+    (tmp_path / "readg.m").write_text(
+        "function v = readg()\nglobal G\nv = G;\nend\n")
+    folder = str(tmp_path).replace("\\", "/")
+    run(it, f"addpath('{folder}'); tick(); tick(); clear functions")
+    run(it, "a = tick();")
+    assert val(it, "a") == 1
+    run(it, "tick(); clear all")
+    run(it, f"addpath('{folder}'); b = tick();")
+    assert val(it, "b") == 1
+    run(it, "global G; G = 4; clear")
+    run(it, "c = readg(); cx = exist('G');")
+    assert (val(it, "c"), val(it, "cx")) == (4, 0)
+    run(it, "clear global")
+    run(it, "d = isempty(readg());")
+    assert val(it, "d") is True
+    run(it, "global G; G = 5; clear all")
+    run(it, f"addpath('{folder}'); e = isempty(readg());")
+    assert val(it, "e") is True
