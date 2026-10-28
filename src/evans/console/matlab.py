@@ -1508,9 +1508,10 @@ class _Emitter:
             args = self._arglist(node.args)
             if isinstance(target, _Name):
                 # A plot names its curves after the variables passed, the way
-                # MATLAB's legend does — so pass those names along.
+                # MATLAB's legend does, and a table its columns after them —
+                # so pass those names along.
                 names = ""
-                if nargout == 0 and target.name not in self.vars and any(
+                if target.name not in self.vars and any(
                         isinstance(a, _Name) for a in node.args):
                     names = ", names=(" + "".join(
                         f"{a.name!r}, " if isinstance(a, _Name) else "None, "

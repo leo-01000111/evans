@@ -349,6 +349,36 @@ deal(X)                     | Copy inputs to outputs
 isequal(A, B)               | True when values are equal in size and content
 isequaln(A, B)              | True when values are equal, treating NaN as equal to NaN
 ismember(A, S)              | Which elements of one array occur in another
+readmatrix(filename)        | Read a matrix of numbers from a delimited text file
+writematrix(A)              | Write a matrix to a delimited text file
+readtable(filename)         | Read a table with named columns from a delimited text file
+writetable(T)               | Write a table to a delimited text file, names first
+table(var1, ..., varN)      | A table of named columns, built from column vectors
+fopen(filename)             | Open a file and return its file identifier
+fclose(fid)                 | Close an open file
+fgetl(fid)                  | Read the next line of a file, without its newline
+textscan(fid, format)       | Read columns of formatted data from a file or text
+jsondecode(text)            | Read JSON text into structs, arrays and cells
+jsonencode(value)           | Write a value as JSON text
+filtfilt(b, a, x)           | Zero-phase digital filtering: filter forwards, then backwards
+fir1(n, Wn)                 | Window-method FIR filter design
+pwelch(x)                   | Power spectral density by Welch's averaged periodogram
+hann(n)                     | Hann (raised-cosine) window
+xcorr(x)                    | Cross-correlation of two signals, or autocorrelation of one
+resample(x, p, q)           | Change the sample rate by a rational factor p/q
+fit(x, y, fittype)          | Fit a library curve model to data
+lsqcurvefit(fun, x0, xdata, ydata) | Nonlinear least-squares fit of a model's parameters to data
+fsolve(fun, x0)             | Solve a system of nonlinear equations F(x) = 0
+fmincon(fun, x0, A, b)      | Minimise a function subject to constraints
+linprog(f, A, b)            | Linear programming: minimise f'*x subject to linear constraints
+integral(fun, a, b)         | Numerical integration of a function over an interval
+spline(x, y, xq)            | Cubic spline interpolation, MATLAB's not-a-knot spline
+who                         | List the variables in the workspace
+whos                        | List the workspace's variables with their sizes and classes
+dir                         | List the files and folders in a folder
+datestr(t)                  | Convert a date to text
+nchoosek(n, k)              | Binomial coefficient, or all combinations of a vector's elements
+dec2bin(d)                  | Convert a nonnegative integer to its binary digits as text
 """
 
 

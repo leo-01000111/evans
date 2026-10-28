@@ -94,6 +94,22 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 [cellfun](cellfun) · [arrayfun](arrayfun) · [cell2mat](cell2mat) · [struct2cell](struct2cell) · [cell2struct](cell2struct) · [isfield](isfield) · [rmfield](rmfield) · [orderfields](orderfields) · [getfield](getfield) · [setfield](setfield) · [iscellstr](iscellstr) · [deal](deal) · [isequal](isequal) · [isequaln](isequaln) · [ismember](ismember)
 
+## Data files
+
+[readmatrix](readmatrix) · [writematrix](writematrix) · [readtable](readtable) · [writetable](writetable) · [table](table) · [fopen](fopen) · [fclose](fclose) · [fgetl](fgetl) · [textscan](textscan) · [jsondecode](jsondecode) · [jsonencode](jsonencode)
+
+## Signal processing
+
+[filtfilt](filtfilt) · [fir1](fir1) · [pwelch](pwelch) · [hann](hann) · [xcorr](xcorr) · [resample](resample)
+
+## Fitting and optimisation
+
+[fit](fit) · [lsqcurvefit](lsqcurvefit) · [fsolve](fsolve) · [fmincon](fmincon) · [linprog](linprog) · [integral](integral) · [spline](spline)
+
+## System
+
+[who](who) · [whos](whos) · [dir](dir) · [exist](exist) · [datestr](datestr) · [nchoosek](nchoosek) · [dec2bin](dec2bin)
+
 ## Guides
 
 [s, the Laplace variable](s) · [MATLAB and Python at the prompt](python)

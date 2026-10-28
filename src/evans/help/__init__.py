@@ -96,6 +96,15 @@ GROUPS: dict[str, tuple[str, ...]] = {
                          "cell2struct", "isfield", "rmfield", "orderfields",
                          "getfield", "setfield", "iscellstr", "deal",
                          "isequal", "isequaln", "ismember"),
+    "Data files": ("readmatrix", "writematrix", "readtable", "writetable",
+                  "table", "fopen", "fclose", "fgetl", "textscan",
+                  "jsondecode", "jsonencode"),
+    "Signal processing": ("filtfilt", "fir1", "pwelch", "hann", "xcorr",
+                         "resample"),
+    "Fitting and optimisation": ("fit", "lsqcurvefit", "fsolve", "fmincon",
+                                "linprog", "integral", "spline"),
+    "System": ("who", "whos", "dir", "exist", "datestr", "nchoosek",
+              "dec2bin"),
 }
 
 #: The parts of a function page, in order.
