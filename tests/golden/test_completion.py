@@ -358,6 +358,10 @@ def test_script_popup_keys(script):
     assert popup.is_open()
     assert [c.text for c in popup.items()][:3] == ["lqe", "lqi", "lqr"]
     _key(script, Qt.Key_Up)                           # wraps to the last
+    assert popup.current().text == popup.items()[-1].text
+    _key(script, Qt.Key_Down)                         # and back to the first
+    _key(script, Qt.Key_Down)
+    _key(script, Qt.Key_Down)
     assert popup.current().resolved().signature == "lqr(A, B, Q, R)"
     _key(script, Qt.Key_Up)
     _key(script, Qt.Key_Tab)

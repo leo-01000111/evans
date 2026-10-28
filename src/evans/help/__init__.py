@@ -80,6 +80,22 @@ GROUPS: dict[str, tuple[str, ...]] = {
                  "limit", "solve", "double", "matlabFunction", "fplot"),
     "Text": ("disp", "fprintf", "sprintf", "num2str"),
     "Session": ("clc", "clear", "tic", "toc"),
+    "Statistics": ("var", "mode", "cov", "corrcoef", "prctile", "quantile",
+                  "skewness", "kurtosis", "movmean", "movmedian",
+                  "smoothdata", "detrend", "normpdf", "normcdf", "norminv",
+                  "ttest", "regress", "randi", "randperm", "rng"),
+    "Linear algebra": ("svd", "qr", "lu", "chol", "pinv", "null", "orth",
+                      "expm", "logm", "sqrtm", "cross", "dot", "cond",
+                      "triu", "tril", "circshift", "sub2ind", "ind2sub"),
+    "Strings": ("strsplit", "strjoin", "strtrim", "strrep", "regexp",
+               "regexpi", "regexprep", "contains", "startsWith", "endsWith",
+               "split", "join", "upper", "lower", "pad", "strfind",
+               "strncmp", "strncmpi", "blanks", "deblank", "isspace",
+               "isletter", "isstrprop"),
+    "Cells and structs": ("cellfun", "arrayfun", "cell2mat", "struct2cell",
+                         "cell2struct", "isfield", "rmfield", "orderfields",
+                         "getfield", "setfield", "iscellstr", "deal",
+                         "isequal", "isequaln", "ismember"),
 }
 
 #: The parts of a function page, in order.
