@@ -231,7 +231,11 @@ def test_palette_lists_every_block(app):
         group = palette._tree.topLevelItem(i)
         for j in range(group.childCount()):
             listed.add(group.child(j).text(0))
-    assert listed == set(block_types())
+    # Every block a user places; the compiler's own gate and hold blocks,
+    # which a conditional subsystem gets automatically, are not offered.
+    assert listed == {name for name, cls in block_types().items()
+                      if not cls.hidden}
+    assert "_Hold" not in listed and "Enable" in listed
     palette.deleteLater()
 
 

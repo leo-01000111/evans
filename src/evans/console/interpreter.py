@@ -83,6 +83,9 @@ class Interpreter:
         self.tracer = Tracer()
         #: Output of the statement now running, so far (see drain_output).
         self._buffers: list[io.StringIO] = []
+        #: Set by the UI: the Model tab, as the Simulink commands see it
+        #: (see :class:`evans.ui.sim.sim_tab.CanvasBridge`).
+        self.simulink = None
 
     # ── execution ───────────────────────────────────────────────
 
@@ -208,6 +211,17 @@ class Interpreter:
                 merged.error, merged.hint, merged.line = r.error, r.hint, \
                     r.line
         return merged
+
+    def evaluate(self, text: str):
+        """
+        The value of one MATLAB expression in the workspace.
+
+        Nothing is assigned and nothing is printed: this is how a Simulink
+        block's ``Kp`` or ``2*pi*f`` is read. The text is parenthesised
+        before translation, so it must be one expression; ``a = 1`` or two
+        statements are a syntax error rather than a side effect.
+        """
+        return self._matlab_runtime().evaluate(text)
 
     def drain_output(self) -> str:
         """
@@ -398,6 +412,7 @@ class Interpreter:
             self._matlab = Runtime(self.namespace, base=self._presets,
                                    clear=self.clear)
             self._matlab.tracer = self.tracer
+            self._matlab.host = self
             self.namespace["__ml__"] = self._matlab
         return self._matlab
 

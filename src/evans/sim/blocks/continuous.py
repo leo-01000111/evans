@@ -144,7 +144,21 @@ class Integrator(Block):
         ParamSpec("limit", "Limit output", False, kind="bool"),
         ParamSpec("upper", "Upper limit", 1.0),
         ParamSpec("lower", "Lower limit", -1.0),
+        ParamSpec("reset", "External reset", "none", kind="choice",
+                  choices=("none", "rising", "falling", "either", "level"),
+                  help="Adds a reset input. On its edge the state goes back "
+                       "to the initial condition; 'level' holds it there "
+                       "while the reset is non-zero."),
     )
+
+    def configure(self) -> None:
+        self.inputs = ["in"] if self.params["reset"] == "none" \
+            else ["in", "reset"]
+        self.reset()
+
+    def reset(self) -> None:
+        self._side: float | None = None
+        self._acted: float | None = None
 
     @property
     def n_states(self) -> int:
@@ -165,8 +179,52 @@ class Integrator(Block):
             return x
         return np.clip(x, self.params["lower"], self.params["upper"])
 
+    # ── the reset port ──
+    # Its signal r is watched as −r (and r, for 'level'), so that "high"
+    # means r > 0: a 0 → 1 pulse is a rising edge, as in Simulink.
+
+    def _reset_values(self, u) -> np.ndarray:
+        kind = self.params["reset"]
+        if kind == "none":
+            return np.zeros(0)
+        r = float(np.atleast_1d(u[1])[0]) if len(u) > 1 else 0.0
+        return np.array([-r, r]) if kind == "level" else np.array([-r])
+
+    def _fresh_side(self, u) -> float:
+        z = self._reset_values(u)
+        return 1.0 if np.any(z < 0) else 0.0
+
+    def update_modes(self, t, x, xd, u):
+        if self.params["reset"] == "none":
+            return False
+        side = self._fresh_side(u)
+        changed = side != self._side
+        self._side = side
+        return changed
+
+    def init_modes(self, t, x, xd, u):
+        if self.params["reset"] != "none":
+            self._side = self._acted = self._fresh_side(u)
+
+    def fire(self, ev, t, x, xd) -> bool:
+        """Put the state back to the initial condition on a reset edge."""
+        kind = self.params["reset"]
+        if kind == "none" or self._side is None:
+            return False
+        before, self._acted = self._acted, self._side
+        if before is None or before == self._side:
+            return False
+        rising = self._side > before
+        if (kind == "rising" and not rising) or (kind == "falling" and rising) \
+                or (kind == "level" and not rising):
+            return False
+        x[ev.c.plans[self.block_id].x_slice] = self.initial_continuous_state()
+        return True
+
     def derivative(self, t, x, xd, u):
         rate = np.atleast_1d(u[0])[:1] if u else np.zeros(1)
+        if self.params["reset"] == "level" and self._side:
+            return np.zeros(1)              # held at x0 while reset is high
         if not self.params["limit"]:
             return rate
         # Anti-windup: hold the state at the limit while the input pushes
@@ -178,13 +236,15 @@ class Integrator(Block):
         return np.zeros(1) if held else rate
 
     def zero_crossings(self, t, x, xd, u):
-        if not self.params["limit"]:
-            return np.zeros(0)
-        return np.array([x[0] - self.params["upper"],
-                         x[0] - self.params["lower"]])
+        limits = np.array([x[0] - self.params["upper"],
+                           x[0] - self.params["lower"]]) \
+            if self.params["limit"] else np.zeros(0)
+        return np.concatenate([limits, self._reset_values(u)])
 
     def n_zero_crossings(self, input_widths):
-        return 2 if self.params["limit"] else 0
+        kind = self.params["reset"]
+        return (2 if self.params["limit"] else 0) + \
+            (0 if kind == "none" else 2 if kind == "level" else 1)
 
     def label(self):
         return "1/s"
@@ -281,13 +341,14 @@ class PID(Block):
     def n_zero_crossings(self, input_widths):
         return 2 if self.params["limit"] else 0
 
+    labels_expressions = True
+
     def label(self):
         p = self.params
-        parts = [f"Kp={p['Kp']:g}"]
-        if p["Ki"]:
-            parts.append(f"Ki={p['Ki']:g}")
-        if p["Kd"]:
-            parts.append(f"Kd={p['Kd']:g}")
+        parts = [f"Kp={self.shown('Kp')}"]
+        for name in ("Ki", "Kd"):
+            if p[name] or name in self.expressions:
+                parts.append(f"{name}={self.shown(name)}")
         return "PID\n" + " ".join(parts)
 
 

@@ -673,13 +673,27 @@ def test_nested_subsystems_flatten_all_the_way_down():
     assert result.trace("G.out")[-1] == pytest.approx(6.0, rel=1e-3)
 
 
-def test_stray_boundary_ports_are_refused():
+def test_a_top_level_inport_is_refused():
     m = SimModel("stray")
-    m.add("Step", "r", step_time=0.0)
-    m.add("Outport", "o", port_name="out", order=1)
-    m.connect("r", "o")
-    with pytest.raises(CompileError, match="boundary of a subsystem"):
+    m.add("Inport", "i", port_name="in", order=1)
+    m.add("Gain", "g")
+    m.connect("i", "g")
+    with pytest.raises(CompileError, match="input of a subsystem"):
         compile_model(m)
+
+
+def test_top_level_outports_are_the_runs_outputs_in_port_order():
+    # As in Simulink, an Outport at the top is a sink whose signal is a
+    # column of yout, ordered by the port number, not by the block's name.
+    m = SimModel("yout")
+    m.add("Constant", "a", value=3.0)
+    m.add("Constant", "b", value=5.0)
+    m.add("Outport", "first", port_name="b_out", order=2)
+    m.add("Outport", "second", port_name="a_out", order=1)
+    m.connect("a", "second")
+    m.connect("b", "first")
+    result = simulate(m, t_end=1.0, n_points=10)
+    assert result.outputs == ["a.out", "b.out"]
 
 
 def test_a_subsystem_round_trips_through_json(tmp_path):

@@ -1,46 +1,49 @@
 # sim
 
-Simulate a block diagram model (the Simulation tab's canvas) from t = 0 to a final time, and return every logged signal.
+Run a Simulink model and return its output: the times, the top-level Outports, and every To Workspace block.
 
 ## Syntax
 
-    out = sim(model)
-    out = sim(model, Tfinal)
+    out = sim('model')
+    out = sim('model', Tfinal)
+    out = sim('model', 'StopTime', '20', 'Solver', 'ode15s')
+    r = sim(model, Tfinal)
 
 ## Description
 
-`out = sim(model)` runs the model for 10 seconds. `sim(model, Tfinal)` runs it from 0 to `Tfinal` seconds. The model is a block diagram of the kind you draw on the Simulation tab: sources, sums, gains, transfer functions, PID blocks, saturations, discrete blocks, and the wires between them. Continuous and discrete blocks can sit in the same model, so a sampled controller can drive a continuous plant.
+`out = sim('model')` runs the model named `model`: the one on the Model tab if it has that name, one loaded with [load_system](load_system) or [new_system](new_system), or else `model.fmdl` from the current folder or the path. It runs with the model's own settings (stop time, solver, step, tolerances), which the Model tab's toolbar shows and [set_param](set_param) changes. Name-value pairs override them for this run: `StopTime`, `Solver`, `MaxStep` (or `FixedStep`), `RelTol` and `AbsTol`. A number after the name is the stop time.
 
-At the app's console the model on the Simulation canvas is already in the workspace as `model`. It is the live model, so `sim(model, 20)` runs exactly what the canvas shows, including edits made a moment ago. Type `out = sim(model, 20);` with the semicolon: the result holds every signal at every time step, and displaying it fills the console.
+Block parameters written as workspace variables or expressions, such as a Gain of `Kp` or a frequency of `2*pi*f`, are evaluated in the workspace when the model runs. A loop that sets `Kp` and calls `sim` is therefore a parameter sweep.
 
-The result `out` has these fields and methods:
+`out` is a structure like Simulink's `SimulationOutput`:
 
-- `out.t`: the time points, a vector from 0 to `Tfinal`.
-- `out.trace('G')`: the output of block `G` over time, one value per time point. A block with several outputs is named with its port, as in `out.trace('K2.out')`.
-- `out.signals`: every logged signal, keyed by `'block.port'`.
-- `out.states`: the continuous states, one row per time point.
-- `out.warnings`: anything the solver or compiler reported, for example an algebraic loop.
+- `out.tout`: the times, a column.
+- `out.yout`: the top-level Outports' signals, one column each, in port order, when the model has any.
+- one field per To Workspace block, named by its variable name and shaped by its save format: a matrix (`Array`), a struct with `time` and `signals.values` (`Structure With Time`), or a struct with `Time` and `Data` (`Timeseries`, which `plot` draws directly).
 
-`plot(out.t, out.trace('G'))` draws the output of `G`.
+A run started with the Model tab's Run button leaves the same structure in the workspace as `out`.
 
-Evans does not run a model from a file name (`sim('mymodel')`), and it does not accept MATLAB's name-value pairs such as `'StopTime'`. From a Python line you can choose the solver with a keyword, for example `sim(m, 5, solver='ode4')`: the variable-step names `ode45`, `ode23`, `ode15s` and the fixed-step `ode1` to `ode5` are accepted.
-
-A fresh console (or a script) has no `model`, and there is no MATLAB function that makes one. You build it with a Python import, as in the example below: `SimModel` holds the diagram, `add(type, name, ...)` places a block with its parameters, and `connect('from', 'to')` draws a wire, naming a port as `'block.port'` when the block has more than one. Run as one block, the example is read entirely as Python because it starts with an import, so it prints with `print` rather than `fprintf`. Typed line by line, only the import needs Python; the other lines read as MATLAB too. See [python](python) for how the console tells the two languages apart.
+`r = sim(model, Tfinal)`, given a model object rather than a name (the Model tab's model is in the workspace as `model`), returns the Python result instead: `r.t`, `r.trace('G')`, `r.signals`, `r.states` and `r.warnings`.
 
 To get a transfer function out of the model instead of a time response, use [linearize](linearize).
 
 ## Example
 
 ```matlab
-from evans.sim import SimModel
-m = SimModel('demo')
-m.add('Step', 'r', step_time=0)
-m.add('TransferFcn', 'G', num='4', den='1, 2, 4')
-m.connect('r', 'G')
-out = sim(m, 8)
-print(f"y(8) = {out.trace('G')[-1]:.4f}")
+new_system('loop');
+add_block('Step', 'loop/r', 'StepTime', '0');
+add_block('Gain', 'loop/K', 'Gain', 'Kp');
+add_block('Transfer Fcn', 'loop/G', 'Denominator', '[1 1]');
+add_block('Out1', 'loop/y');
+add_line('loop', 'r/1', 'K/1');
+add_line('loop', 'K/1', 'G/1');
+add_line('loop', 'G/1', 'y/1');
+for Kp = [1 4]
+    out = sim('loop', 5);
+    fprintf('Kp = %g: y(5) = %.4f\n', Kp, out.yout(end));
+end
 ```
 
 ## See also
 
-[linearize](linearize) · [step](step) · [lsim](lsim) · [python](python)
+[new_system](new_system) · [set_param](set_param) · [get_param](get_param) · [linearize](linearize) · [lsim](lsim)

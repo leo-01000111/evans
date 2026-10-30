@@ -42,6 +42,10 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 [sim](sim) · [linearize](linearize)
 
+## Simulink models
+
+[new_system](new_system) · [load_system](load_system) · [open_system](open_system) · [save_system](save_system) · [get_param](get_param) · [set_param](set_param) · [add_block](add_block) · [add_line](add_line) · [delete_block](delete_block) · [find_system](find_system)
+
 ## Apps
 
 [pidtune](pidtune) · [ltiview](ltiview) · [sisotool](sisotool) · [pidtuner](pidtuner)

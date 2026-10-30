@@ -370,6 +370,10 @@ class MainWindow(QMainWindow):
         self._figures = FigureArea()
         self._console = ConsolePanel(self._figures,
                                      extra=self._console_state())
+        self._sim_tab.set_evaluator(self._console.interpreter.evaluate)
+        self._console.interpreter.simulink = self._sim_tab.bridge(
+            lambda model: self._on_console_model(model.name, model))
+        self._sim_tab.simulated.connect(self._on_simulated)
         self._console.open_system.connect(self._on_console_system)
         self._console.open_model.connect(self._on_console_model)
         help.set_console(self._run_from_help, lambda: self._console.running)
@@ -469,6 +473,13 @@ class MainWindow(QMainWindow):
         self._refresh_status()
         self._stack.set_current(Workspace.ANALYSE)
         self._status.showMessage(f"{name} loaded as G(s)", 6000)
+
+    def _on_simulated(self, result) -> None:
+        """A run on the Model tab: its output goes to the workspace as out."""
+        from ..console import matlab_runtime  # noqa: F401  (imports lib_sim)
+        from ..console.lib_sim import simulation_output
+        self._console.interpreter.namespace["out"] = simulation_output(result)
+        self._console.workspace.refresh()
 
     def _on_console_model(self, name: str, model) -> None:
         """A Simulink model was double-clicked: open it on the canvas."""
@@ -897,6 +908,9 @@ class MainWindow(QMainWindow):
         self._recent_menu.setToolTipsVisible(True)
         self._recent_menu.aboutToShow.connect(self._fill_recent_menu)
         self._fill_recent_menu()
+        self._examples_menu = file_menu.addMenu("E&xamples")
+        self._examples_menu.setToolTipsVisible(True)
+        self._fill_examples_menu()
         file_menu.addSeparator()
         file_menu.addAction(act_quit)
 
@@ -911,6 +925,18 @@ class MainWindow(QMainWindow):
         act_png.setShortcut("Ctrl+Shift+P")
         act_png.triggered.connect(self._export_plot_png)
         for a in (act_copy, act_report, act_png):
+            export_menu.addAction(a)
+        export_menu.addSeparator()
+        act_diagram = QAction("Model &diagram…", self)
+        act_diagram.setToolTip("The Model tab's block diagram as SVG, PDF "
+                               "or PNG")
+        act_diagram.triggered.connect(self._sim_tab.export_diagram)
+        act_print = QAction("Print model diagram…", self)
+        act_print.triggered.connect(self._sim_tab.print_diagram)
+        act_data = QAction("Model &scope data…", self)
+        act_data.setToolTip("The last run's signals as CSV or .mat")
+        act_data.triggered.connect(self._sim_tab.export_data)
+        for a in (act_diagram, act_print, act_data):
             export_menu.addAction(a)
 
         # View menu
@@ -1180,6 +1206,28 @@ class MainWindow(QMainWindow):
             self._status.showMessage(f"Loaded {path}", 4000)
         except Exception as exc:
             QMessageBox.critical(self, "Load error", str(exc))
+
+    def _fill_examples_menu(self) -> None:
+        """One entry per example model; each opens on the Model tab."""
+        from ..examples import examples
+        menu = self._examples_menu
+        menu.clear()
+        for example in examples():
+            action = QAction(example.title, menu)
+            action.setToolTip(example.summary)
+            action.triggered.connect(
+                lambda _checked=False, e=example: self.open_example(e))
+            menu.addAction(action)
+        if menu.isEmpty():
+            empty = QAction("No examples installed", menu)
+            empty.setEnabled(False)
+            menu.addAction(empty)
+
+    def open_example(self, example) -> None:
+        """Open an example model on the Model tab, as a copy to change."""
+        self._sim_tab.load_model(example.path, remember=False)
+        self._stack.set_current(Workspace.MODEL)
+        self._status.showMessage(f"{example.title}: {example.summary}", 8000)
 
     def _fill_recent_menu(self) -> None:
         """

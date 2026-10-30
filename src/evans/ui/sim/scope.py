@@ -1,5 +1,11 @@
 """
 Scope: plot the signals a run recorded.
+
+The last few runs are kept, so a change can be judged against what it
+replaced: with "Compare" ticked, the same signals from earlier runs are drawn
+under the new ones, dashed and fading with age. A model with an XY Graph
+block can show that graph instead of the time plot. "Export…" writes the
+run's signals to CSV or ``.mat``.
 """
 
 from __future__ import annotations
@@ -9,9 +15,13 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QScrollArea,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -23,6 +33,10 @@ from ..plots import add_hline, apply_theme, curve_pen, make_plot, role_colour
 #: export — only the drawing is thinned, because a pyqtgraph curve of a
 #: million points makes panning unusable and shows nothing extra on screen.
 MAX_DRAWN = 20_000
+#: How many earlier runs are kept for comparison.
+HISTORY = 5
+#: The view choice that means "against time" rather than an XY graph.
+TIME_VIEW = "Time"
 
 
 class ScopeWidget(QWidget):
@@ -36,10 +50,40 @@ class ScopeWidget(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._result = None
+        #: Earlier runs, the most recent first.
+        self.history: list = []
         self._checks: dict[str, QCheckBox] = {}
 
         root = QVBoxLayout(self)
         root.setContentsMargins(2, 2, 2, 2)
+
+        bar = QHBoxLayout()
+        bar.setContentsMargins(0, 0, 0, 0)
+        self._view = QComboBox()
+        self._view.addItem(TIME_VIEW)
+        self._view.setToolTip("Signals against time, or an XY Graph block's "
+                              "y against x")
+        self._view.currentTextChanged.connect(lambda _t: self._redraw())
+        bar.addWidget(self._view)
+        self._compare = QCheckBox("Compare with earlier runs")
+        self._compare.setToolTip(
+            "Draw the same signals from earlier runs, dashed, under this one")
+        self._compare.toggled.connect(lambda _on: self._redraw())
+        bar.addWidget(self._compare)
+        self._depth = QSpinBox()
+        self._depth.setRange(1, HISTORY)
+        self._depth.setValue(2)
+        self._depth.setSuffix(" runs")
+        self._depth.setToolTip("How many earlier runs to draw")
+        self._depth.valueChanged.connect(lambda _v: self._redraw())
+        bar.addWidget(self._depth)
+        bar.addStretch()
+        self._export = QPushButton("Export…")
+        self._export.setToolTip("Save the run's signals as CSV or .mat")
+        self._export.clicked.connect(self._ask_export)
+        self._export.setEnabled(False)
+        bar.addWidget(self._export)
+        root.addLayout(bar)
 
         self._plot = make_plot("Scope", "Time (s)", "Amplitude")
         self._plot.getPlotItem().addLegend(offset=(-10, 10))
@@ -69,7 +113,16 @@ class ScopeWidget(QWidget):
     # ── data ────────────────────────────────────────────────────
 
     def show_result(self, result, preferred: list[str] | None = None) -> None:
-        """Display a :class:`~evans.sim.solver.SimResult`."""
+        """
+        Display a :class:`~evans.sim.solver.SimResult`.
+
+        The channels ticked before stay ticked when the new run has them, so
+        a parameter change can be watched on the same signals run after run.
+        """
+        previous = [n for n, c in self._checks.items() if c.isChecked()]
+        if self._result is not None:
+            self.history.insert(0, self._result)
+            del self.history[HISTORY:]
         self._result = result
         for check in self._checks.values():
             check.setParent(None)
@@ -77,7 +130,19 @@ class ScopeWidget(QWidget):
 
         names = sorted(result.signals)
         if preferred is None:
-            preferred = _default_channels(result, names)
+            kept = [n for n in previous if n in result.signals]
+            preferred = kept or _default_channels(result, names)
+
+        view = self._view.currentText()
+        self._view.blockSignals(True)
+        self._view.clear()
+        self._view.addItem(TIME_VIEW)
+        for title in result.xy:
+            self._view.addItem(title)
+        index = self._view.findText(view)
+        self._view.setCurrentIndex(max(index, 0))
+        self._view.blockSignals(False)
+        self._export.setEnabled(True)
 
         for name in names:
             check = QCheckBox(name)
@@ -88,9 +153,19 @@ class ScopeWidget(QWidget):
             self._checks[name] = check
         self._redraw()
 
+    def _earlier(self) -> list:
+        """The earlier runs to draw, the most recent first."""
+        if not self._compare.isChecked():
+            return []
+        return self.history[:self._depth.value()]
+
     def _redraw(self) -> None:
         plot = self._plot.getPlotItem()
         plot.clear()
+        view = self._view.currentText()
+        if self._result is not None and view in self._result.xy:
+            self._draw_xy(plot, view)
+            return
         apply_theme(plot, "Scope", "Time (s)", "Amplitude")
         plot.addLegend(offset=(-10, 10))
         if self._result is None:
@@ -105,6 +180,15 @@ class ScopeWidget(QWidget):
             data = self._result.signals[name]
             for channel in range(data.shape[1]):
                 label = name if data.shape[1] == 1 else f"{name}[{channel}]"
+                for age, old in enumerate(self._earlier(), start=1):
+                    if name in old.signals and \
+                            old.signals[name].shape[1] > channel:
+                        ot = old.t
+                        step = max(1, len(ot) // MAX_DRAWN)
+                        plot.plot(ot[::step],
+                                  old.signals[name][::step, channel],
+                                  pen=_faded(drawn, age),
+                                  name=f"{label} (run −{age})")
                 plot.plot(t[::stride], data[::stride, channel],
                           pen=curve_pen(drawn, 1.9), name=label)
                 drawn += 1
@@ -116,6 +200,36 @@ class ScopeWidget(QWidget):
             self._update_readout()
         else:
             self._readout.setText("")
+
+    def _draw_xy(self, plot, title: str) -> None:
+        """An XY Graph block's y against x, with earlier runs' if asked."""
+        x_name, y_name = self._result.xy[title]
+        apply_theme(plot, title, x_name, y_name)
+        plot.addLegend(offset=(-10, 10))
+        for age, old in enumerate(self._earlier(), start=1):
+            if x_name in old.signals and y_name in old.signals:
+                plot.plot(old.signals[x_name][:, 0], old.signals[y_name][:, 0],
+                          pen=_faded(0, age), name=f"run −{age}")
+        plot.plot(self._result.signals[x_name][:, 0],
+                  self._result.signals[y_name][:, 0],
+                  pen=curve_pen(0, 1.9), name=f"{y_name} vs {x_name}")
+        self._readout.setText("")
+
+    def export(self, path, names: list[str] | None = None):
+        """Write this run's signals (all, or ``names``) to CSV or .mat."""
+        from ...sim.export import export_signals
+        if self._result is None:
+            raise ValueError("there is no run to export yet")
+        return export_signals(self._result, path, names)
+
+    def _ask_export(self) -> None:
+        if self._result is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export signals", "signals.csv",
+            "CSV (*.csv);;MATLAB data (*.mat)")
+        if path:
+            self.export(path)
 
     def _update_readout(self) -> None:
         if self._result is None or not len(self._result.t):
@@ -133,12 +247,25 @@ class ScopeWidget(QWidget):
         self._readout.setText("   ".join(parts))
 
     def clear(self) -> None:
+        """Forget the run and the ones before it: a different model is open."""
         self._result = None
+        self.history.clear()
+        self._export.setEnabled(False)
         for check in self._checks.values():
             check.setParent(None)
         self._checks.clear()
         self._plot.getPlotItem().clear()
         self._readout.setText("")
+
+
+def _faded(index: int, age: int):
+    """An earlier run's pen: the channel's colour, dashed, fading with age."""
+    pen = curve_pen(index, 1.4)
+    colour = pen.color()
+    colour.setAlphaF(max(0.15, 0.6 / age))
+    pen.setColor(colour)
+    pen.setStyle(Qt.DashLine)
+    return pen
 
 
 #: The course's own names for the reference and the plant output. A loop drawn

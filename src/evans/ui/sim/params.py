@@ -6,18 +6,23 @@ follows from its declared ``kind``, so a new block gets a working editor with
 no UI changes. Values are validated by handing them to a throwaway copy of the
 block before the dialog closes — if the block would reject them, the dialog
 says so instead of letting a broken model reach the canvas.
+
+A numeric parameter is a text box, not a spin box, because it takes a MATLAB
+expression as readily as a number: ``Kp``, ``2*pi*f``, ``[1 2 3]``. The
+expression is evaluated in the console workspace when the model runs (see
+:mod:`evans.sim.workspace`), so it is not checked here beyond its syntax.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QDoubleSpinBox,
     QFormLayout,
     QLabel,
     QLineEdit,
@@ -27,7 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...sim.block import Block, BlockError, create
+from ...sim.block import Block, BlockError, create, is_expression
 from .. import theme
 
 
@@ -55,8 +60,11 @@ class ParamForm(QWidget):
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         self._editors: dict[str, Any] = {}
+        raw = block.raw_params()
         for spec in block.params_spec:
-            widget = self._make_editor(spec, block.params[spec.name])
+            if spec.kind == "model":
+                continue                    # a subsystem's contents
+            widget = self._make_editor(spec, raw[spec.name])
             if spec.help:
                 widget.setToolTip(spec.help)
             widget.setAccessibleName(spec.label)
@@ -93,17 +101,21 @@ class ParamForm(QWidget):
             idx = w.findText(str(value))
             w.setCurrentIndex(max(idx, 0))
             return w
-        if spec.kind == "matrix":
+        if spec.kind == "code":
             w = QPlainTextEdit(str(value))
-            w.setMaximumHeight(72)
-            w.setPlaceholderText("rows separated by ';', e.g. 0 1; -2 -3")
+            w.setFont(theme.data_font(9))
+            lines = str(value).count("\n") + 1
+            w.setMinimumHeight(40 if lines == 1 else 140)
+            w.setPlaceholderText("MATLAB code")
             return w
-        if spec.kind in ("vector", "str"):
-            return QLineEdit(str(value))
-        w = QDoubleSpinBox()
-        w.setRange(-1e12, 1e12)
-        w.setDecimals(6)
-        w.setValue(float(value))
+        if spec.kind == "matrix":
+            w = QPlainTextEdit(_text(value))
+            w.setMaximumHeight(72)
+            w.setPlaceholderText("0 1; -2 -3, or a variable such as A")
+            return w
+        w = QLineEdit(_text(value))
+        if spec.kind in ("float", "vector", "data"):
+            w.setPlaceholderText("a number, or an expression such as Kp")
         return w
 
     def _value(self, name: str) -> Any:
@@ -111,8 +123,6 @@ class ParamForm(QWidget):
         if isinstance(widget, QCheckBox):
             return widget.isChecked()
         if isinstance(widget, QSpinBox):
-            return widget.value()
-        if isinstance(widget, QDoubleSpinBox):
             return widget.value()
         if isinstance(widget, QComboBox):
             return widget.currentText()
@@ -130,18 +140,52 @@ class ParamForm(QWidget):
         parameters until the undo command applies the new ones, so a rejected
         edit cannot leave a half-configured block behind.
         """
-        values = {spec.name: self._value(spec.name)
-                  for spec in self.block.params_spec}
+        values = {name: self._value(name) for name in self._editors}
+        for spec in self.block.params_spec:
+            text = values.get(spec.name)
+            if spec.kind == "float" and isinstance(text, str):
+                if not text.strip():
+                    self._fail(f"{spec.label} is empty")
+                    return None
+                if not is_expression("float", text):
+                    values[spec.name] = float(text)
         try:
             create(self.block.type_name, "__validate__", **values)
         except (BlockError, ValueError) as exc:
-            self._error.setText(str(exc))
-            self._error.show()
+            self._fail(str(exc))
             return None
 
         self._error.hide()
-        return {k: v for k, v in values.items()
-                if v != self.block.params[k]}
+        raw = self.block.raw_params()
+        return {k: v for k, v in values.items() if not _same(v, raw[k])}
+
+    def _fail(self, message: str) -> None:
+        self._error.setText(message)
+        self._error.show()
+
+
+def _text(value) -> str:
+    """A parameter as its editor shows it."""
+    if isinstance(value, float):
+        return f"{value:.12g}"
+    if isinstance(value, np.ndarray):
+        if value.ndim == 2:
+            return "; ".join(" ".join(f"{v:.12g}" for v in row)
+                             for row in value)
+        return ", ".join(f"{v:.12g}" for v in value)
+    if isinstance(value, (list, tuple)):
+        return ", ".join(_text(v) for v in value)
+    return str(value)
+
+
+def _same(a, b) -> bool:
+    """Whether an edited value is the one already there."""
+    if isinstance(a, str) or isinstance(b, str):
+        return a == b
+    try:
+        return bool(np.array_equal(np.asarray(a), np.asarray(b)))
+    except (TypeError, ValueError):
+        return a == b
 
 
 class ParamDialog(QDialog):

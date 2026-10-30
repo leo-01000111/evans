@@ -158,43 +158,97 @@ commands have no help page yet (the index lists the ones that do; see the "Data 
       `gcd`, `lcm`, `erf`, `gamma`, `beta`. *Also `hex2dec`, `dec2base`,
       `base2dec`, `erfc`, `erfinv`, `erfcinv`, `gammaln`, `betaln`, `nthroot`.*
 
-## Phase 2 — Simulink for daily use
+## Phase 2 — Simulink for daily use ✅ **DONE 2026-10-30**
 
-The engine is ahead of the editor and of its links to the console. The first five items
-change daily use the most.
+The engine was ahead of the editor and of its links to the console. Tests:
+`tests/golden/test_sim_workspace.py`, `test_sim_library.py` and
+`test_sim_editing.py`.
 
-- [ ] **Block parameters take workspace expressions.** `Kp`, `2*pi*f` and `[1 2 3]`
+- [x] **Block parameters take workspace expressions.** `Kp`, `2*pi*f` and `[1 2 3]`
       instead of a `QDoubleSpinBox` (`ui/sim/params.py`), evaluated in the console
       workspace at compile time, with a clear error naming the block and the
       parameter. This opens model variables and parameter sweeps. **M**
-- [ ] **To Workspace output reaches the console.** `SimResult.workspace` is filled
+      *`sim/workspace.py`. The block keeps the text (saved as written) and runs
+      on a stand-in until compile; a constant expression is evaluated at once
+      so the canvas has its value. The Model tab evaluates on the GUI thread
+      and hands the solver a compiled copy. Integer parameters (port counts,
+      indices) stay numbers.*
+- [x] **To Workspace output reaches the console.** `SimResult.workspace` is filled
       but dropped in `ui/sim/sim_tab.py` `_on_finished`. Add a From Workspace block
-      too. **S**
-- [ ] **`sim`, `open_system`, `load_system`, `set_param`, `get_param` in MATLAB
+      too. **S** *A run on the Model tab leaves `out` in the workspace, as
+      Simulink's single-output default does. To Workspace has Simulink's three
+      save formats (Timeseries by default; `plot` draws one). From Workspace
+      reads `[t, u]`, a struct with `time`/`signals.values`, or a timeseries.*
+- [x] **`sim`, `open_system`, `load_system`, `set_param`, `get_param` in MATLAB
       syntax,** returning a `SimulationOutput`-like struct (`out.tout`, `out.yout`,
-      logged signals). **M**
-- [ ] **A Fcn / MATLAB Function block** whose body is a MATLAB expression or a
+      logged signals). **M** *`console/lib_sim.py`, with `new_system`,
+      `save_system`, `close_system`, `add_block`, `delete_block`, `add_line`,
+      `delete_line`, `find_system` and `gcs` too. A top-level Outport is now
+      allowed and is a column of `yout`. The run settings moved from the
+      toolbar into the model (`StopTime`, `Solver`, `MaxStep`, `RelTol`,
+      `AbsTol`, saved in the `.fmdl`); a model takes its file's name. `sim`
+      given a model object still returns the Python result.*
+- [x] **A Fcn / MATLAB Function block** whose body is a MATLAB expression or a
       function, run through the same translator. Watch the per-step cost. **M**
-- [ ] **Logic blocks:** Relational Operator, Logical Operator, Compare To Constant,
-      Compare To Zero, Bitwise Operator. **S**
-- [ ] **Missing common blocks:** Memory, Discrete-Time Integrator, Discrete FIR/Filter,
+      *`sim/blocks/user.py`: translated once, about half a second for a 10 s
+      run with both blocks. Workspace variables are read at compile time.
+      `persistent` gives no memory (it updates at every solver stage).*
+- [x] **Logic blocks:** Relational Operator, Logical Operator, Compare To Constant,
+      Compare To Zero, Bitwise Operator. **S** *The comparisons latch and
+      declare zero crossings, so a switch lands on the instant.*
+- [x] **Missing common blocks:** Memory, Discrete-Time Integrator, Discrete FIR/Filter,
       Repeating Sequence, Signal Builder, Counter, Data Store Read/Write, XY Graph,
-      2-D Lookup Table, Prelookup. **M**
-- [ ] **Conditionally executed subsystems:** enabled, triggered, If/Switch Case
-      action, and an Integrator reset port. **M–L**
-- [ ] **Goto/From.** Buses were cut on purpose; reconsider them after Goto/From. **M**
-- [ ] **Diagram editing:** rotate and flip, text annotations, signal labels on wires,
-      Create Subsystem from Selection, draggable wire bends. **M**
-- [ ] **Export:** the diagram to SVG/PNG/PDF and to the printer, and scope data to CSV
-      and `.mat`. **S**
-- [ ] **Compare runs:** overlay the last N runs in a scope (deferred in PLAN Part 6).
-      **M**
-- [ ] **Sample models:** a few `.fmdl` files from the courses (DC motor, cruise control,
+      2-D Lookup Table, Prelookup. **M** *Memory needs its sample time stated
+      (Simulink's inherits). Signal Builder takes typed points, not a graph
+      editor. Counter is Counter Limited. Prelookup comes with an
+      Interpolation (Prelookup) block. Data stores are wired through at
+      compile time, one writer per store, so a read feeding its own write is
+      reported as an algebraic loop.*
+- [x] **Conditionally executed subsystems:** enabled, triggered, If/Switch Case
+      action, and an Integrator reset port. **M–L** *`sim/blocks/conditional.py`.
+      Flattening adds a hidden gate on the control input and a hold on each
+      output; the solver freezes a closed gate's members and lets gates and
+      the Integrator's reset act at events, sample hits and fixed steps
+      (`fire`). States held or reset on enabling; outputs held or reset while
+      disabled. A triggered subsystem refuses continuous states, as Simulink
+      does. One control port per subsystem (no enabled-and-triggered).*
+- [x] **Goto/From.** Buses were cut on purpose; reconsider them after Goto/From. **M**
+      *Local and global tags, dissolved into wires at compile time. Buses are
+      still not reconsidered.*
+- [x] **Diagram editing:** rotate and flip, text annotations, signal labels on wires,
+      Create Subsystem from Selection, draggable wire bends. **M** *From the
+      canvas's context menu; each is one undo step. Routes follow the port
+      directions, so a flipped feedback block wires cleanly. Grouping is
+      `sim/edit.py`, one Inport per entering signal.*
+- [x] **Export:** the diagram to SVG/PNG/PDF and to the printer, and scope data to CSV
+      and `.mat`. **S** *Export menu and the canvas's context menu; the
+      scope's Export… button.*
+- [x] **Compare runs:** overlay the last N runs in a scope (deferred in PLAN Part 6).
+      **M** *The last five are kept; "Compare with earlier runs" draws up to
+      five, dashed and fading. The ticked channels survive a rerun. An XY
+      Graph block gets its own view in the scope.*
+- [x] **Sample models:** a few `.fmdl` files from the courses (DC motor, cruise control,
       inverted pendulum, PID loop with saturation), reachable from File ▸ Examples.
-      There are none in the repo now. **S**
+      There are none in the repo now. **S** *`src/evans/examples/`, rebuilt by
+      `tools/build_examples.py`. The PID example builds its anti-windup loop
+      from blocks: see the PID limit below.*
 - [ ] **Later:** masks and block libraries, referenced models, MIMO `linearize`, live
       parameter sliders during a run, and a user block API (S-function
       equivalent). **M each**
+
+Found while doing this phase, not fixed in it:
+
+- [ ] A **PID block with "Limit output" on stalls the solver** once its output reaches
+      the limit (already so on `main`): the conditional integration in its
+      derivative is not latched, so the step size collapses. Give the PID modes,
+      as Saturation has. **S–M**
+- [ ] A **Unit Delay fed by a continuous signal acts as a zero-order hold**: it
+      outputs u(k) over [k, k+1), not u(k−1). Fed by another discrete block it
+      delays correctly, because it reads that block's value before the update.
+      Simulink gives u(k−1) either way. Decide the update order before changing
+      it; the triggered subsystem's held outputs follow the same convention. **S–M**
+- [ ] A fixed-step run does not log its final instant (`_fixed_step` records
+      only the edges before `t1`). **S**
 
 ## Phase 3 — Plotting
 

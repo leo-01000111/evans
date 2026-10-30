@@ -706,6 +706,10 @@ class Runtime:
         #: them; those declared at the prompt are mirrored in the workspace.
         self.global_vars: dict[str, Any] = {}
         self._workspace_globals: set[str] = set()
+        #: The :class:`~.interpreter.Interpreter` this runtime serves, if any.
+        self.host = None
+        #: Simulink models loaded with ``load_system`` and friends, by name.
+        self.models: dict[str, Any] = {}
         self.lib = _Library(self)
 
     # ── names ───────────────────────────────────────────────────
@@ -736,6 +740,36 @@ class Runtime:
         if path is not None:
             return self._file_function(name, path)
         raise MatlabError(f"Unrecognized function or variable '{name}'.")
+
+    def evaluate(self, text: str):
+        """
+        The value of one MATLAB expression in the base workspace.
+
+        Nothing is assigned and nothing is printed: this is how a Simulink
+        block's ``Kp`` or ``2*pi*f`` is read. The text is parenthesised
+        before translation, so it must be one expression; ``a = 1`` or two
+        statements are a syntax error rather than a side effect.
+        """
+        import contextlib
+        import io
+
+        from .matlab import MatlabSyntaxError, translate
+        text = str(text).strip()
+        if not text:
+            raise MatlabError("the expression is empty.")
+        try:
+            chunks = translate(f"__evans_value__ = ({text});")
+        except MatlabSyntaxError as exc:
+            raise MatlabError(
+                f"not a MATLAB expression ({exc.message}).") from None
+        self.ns.setdefault("__ml__", self)
+        scope: dict[str, Any] = {}
+        sink = io.StringIO()
+        with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+            for chunk in chunks:
+                exec(compile(chunk.python, "<expression>", "exec"),
+                     self.ns, scope)
+        return scope["__evans_value__"]
 
     # ── global and persistent ───────────────────────────────────
 
@@ -1822,13 +1856,14 @@ from .lib_cells import CellLibrary  # noqa: E402
 from .lib_files import FileLibrary  # noqa: E402
 from .lib_optim import OptimLibrary  # noqa: E402
 from .lib_signal import SignalLibrary  # noqa: E402
+from .lib_sim import SimulinkLibrary  # noqa: E402
 from .lib_stats import StatsLibrary  # noqa: E402
 from .lib_system import SystemLibrary  # noqa: E402
 from .lib_text import TextLibrary  # noqa: E402
 
 
 class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
-               SignalLibrary, OptimLibrary, SystemLibrary):
+               SignalLibrary, OptimLibrary, SystemLibrary, SimulinkLibrary):
     """MATLAB's own functions, with MATLAB's shapes and argument rules."""
 
     def __init__(self, rt: Runtime) -> None:
