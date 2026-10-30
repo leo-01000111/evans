@@ -39,10 +39,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...sim.compile import CompileError
+from ...sim.compile import CompileError, compile_model
 from ...sim.linearize import LinearizationError, linearize, steady_state
 from ...sim.model import ModelError, PortRef, SimModel
 from ...sim.solver import SimulationError, resolve_solver, simulate
+from ...sim.workspace import resolve_model
 from .. import iconset, keys, theme
 from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
@@ -121,6 +122,8 @@ class SimTab(QWidget, GuardedPanel):
     linearised = Signal(object, str)       # TransferFunction, description
     #: A model file was opened or saved — the recent-files list listens.
     file_used = Signal(object)             # Path
+    #: A run finished; the console writes it to the workspace as ``out``.
+    simulated = Signal(object)             # SimResult
 
     #: Where the palette's folded/unfolded state is remembered.
     SETTINGS_ORG = "Evans"
@@ -198,6 +201,7 @@ class SimTab(QWidget, GuardedPanel):
         self._palette.block_chosen.connect(self._canvas.add_block)
         self._canvas.status.connect(self._status.setText)
         self._canvas.model_changed.connect(self._on_model_changed)
+        self._canvas.model_replaced.connect(self._settings_from_model)
         self._canvas.path_changed.connect(self._on_path_changed)
         self._canvas.selection_changed.connect(self._on_block_selected)
         self._inspector.apply_requested.connect(self._apply_params)
@@ -280,6 +284,8 @@ class SimTab(QWidget, GuardedPanel):
         self._t_end.setDecimals(3)
         self._t_end.setAccessibleName("stop time")
         self._t_end.setToolTip("Stop time (s)")
+        self._t_end.valueChanged.connect(
+            lambda v: self._store_setting("StopTime", float(v)))
         bar.addWidget(_labelled("Stop", self._t_end))
 
         # Simulink's names first, since that is what people type; the scipy
@@ -291,6 +297,8 @@ class SimTab(QWidget, GuardedPanel):
             self._solver.insertSeparator(self._solver.count())
             self._solver.addItems(group)
         self._solver.setAccessibleName("solver")
+        self._solver.currentTextChanged.connect(
+            lambda text: self._store_setting("Solver", text))
         self._solver.setToolTip(
             "ode45 is a good default. ode15s or ode23s for stiff models "
             "(widely separated time constants); ode113 for tight tolerances. "
@@ -307,6 +315,8 @@ class SimTab(QWidget, GuardedPanel):
         self._step.setAccessibleName("maximum step")
         self._step.setToolTip(
             "Maximum step; required for the fixed-step solvers.")
+        self._step.valueChanged.connect(
+            lambda v: self._store_setting("MaxStep", float(v)))
         bar.addWidget(_labelled("Step", self._step))
         bar.addSeparator()
 
@@ -454,6 +464,54 @@ class SimTab(QWidget, GuardedPanel):
         finally:
             self._restoring_palette = False
 
+    # ── the workspace ───────────────────────────────────────────
+
+    @property
+    def evaluate(self):
+        """What reads ``Kp`` in a block parameter: the console, in the app."""
+        return self._canvas.evaluate
+
+    def set_evaluator(self, evaluate) -> None:
+        self._canvas.evaluate = evaluate
+        self._canvas.validate()
+
+    def bridge(self, show) -> CanvasBridge:
+        """The tab as the console's Simulink commands see it."""
+        return CanvasBridge(self, show)
+
+    def model_edited(self, model: SimModel) -> None:
+        """The console changed ``model``; redraw it if it is the one shown."""
+        if model is not self._canvas.root_model():
+            return
+        if self._canvas.inside_subsystem:
+            self._canvas.set_model(model)
+        else:
+            self._canvas.rebuild()
+            self._settings_from_model()
+
+    # ── run settings ────────────────────────────────────────────
+    #
+    # The stop time, solver and step belong to the model, as in Simulink:
+    # they are saved in the .fmdl, and get_param/set_param read and write
+    # them. The toolbar shows the model's and writes back to it.
+
+    def _settings_from_model(self) -> None:
+        settings = self._canvas.root_model().settings
+        self._syncing = True
+        try:
+            self._t_end.setValue(float(settings.get("StopTime", 10.0)))
+            index = self._solver.findText(str(settings.get("Solver", "ode45")))
+            if index >= 0:
+                self._solver.setCurrentIndex(index)
+            self._step.setValue(float(settings.get("MaxStep", 0.0) or 0.0))
+        finally:
+            self._syncing = False
+
+    def _store_setting(self, name: str, value) -> None:
+        if getattr(self, "_syncing", False) or not hasattr(self, "_canvas"):
+            return
+        self._canvas.root_model().settings[name] = value
+
     # ── inspector ───────────────────────────────────────────────
 
     def _on_block_selected(self, item) -> None:
@@ -480,6 +538,7 @@ class SimTab(QWidget, GuardedPanel):
         """Start on the course architecture rather than a blank sheet."""
         self._canvas.set_model(course_loop())
         self._canvas.fit_all()
+        self._settings_from_model()
 
     # ── running ─────────────────────────────────────────────────
 
@@ -500,14 +559,22 @@ class SimTab(QWidget, GuardedPanel):
                 f"step size — set 'Step' to something below your fastest time "
                 f"constant.")
 
+        settings = self._canvas.root_model().settings
         options = {
             "t_end": self._t_end.value(),
             "solver": solver,
             "max_step": step if step > 0 else None,
+            "rtol": float(settings.get("RelTol", 1e-6)),
+            "atol": float(settings.get("AbsTol", 1e-9)),
             "n_points": 2000,
         }
 
-        self._worker = _Worker(self._canvas.root_model().copy(), options)
+        # The workspace is read here, on the thread that owns it: expressions
+        # evaluated, code blocks given their variables. The solver thread
+        # gets the compiled copy and never touches the workspace.
+        compiled = compile_model(self._canvas.root_model().copy(),
+                                 self.evaluate)
+        self._worker = _Worker(compiled, options)
         self._thread = QThread(self)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -529,6 +596,7 @@ class SimTab(QWidget, GuardedPanel):
         self._teardown_thread()
         self._result = result
         self._scope.show_result(result)
+        self.simulated.emit(result)
         note = f"Done — {len(result.t)} samples, {result.solver}"
         if result.warnings:
             note += "   ⚠ " + result.warnings[0].splitlines()[0]
@@ -571,15 +639,16 @@ class SimTab(QWidget, GuardedPanel):
         Input and output are taken from the selected blocks when two are
         selected, and guessed from the model otherwise.
         """
-        model = self._canvas.root_model()
+        model = resolve_model(self._canvas.root_model(), self.evaluate)
         in_port, out_port = self._linearisation_ports(model)
+        compiled = compile_model(model, self.evaluate)
 
         try:
-            point = steady_state(model)
+            point = steady_state(compiled)
         except LinearizationError:
             point = None                       # fall back to the initial state
 
-        result = linearize(model, in_port, out_port, operating_point=point)
+        result = linearize(compiled, in_port, out_port, operating_point=point)
         self.linearised.emit(result.transfer_function(), result.summary())
         self._status.setText(result.summary().replace("\n", "   "))
 
@@ -636,13 +705,55 @@ class SimTab(QWidget, GuardedPanel):
             self.load_model(path)
 
     @guard("Open model")
-    def load_model(self, path: str | Path) -> None:
-        """Open a model file onto the canvas."""
+    def load_model(self, path: str | Path, remember: bool = True) -> None:
+        """
+        Open a model file onto the canvas.
+
+        ``remember`` puts it on the recent-files list; an example opened
+        from the menu is not a file of the user's, so it stays off.
+        """
         self._canvas.set_model(SimModel.load(path))
         self._canvas.fit_all()
         self._scope.clear()
+        self._result = None
         self._status.setText(f"Loaded {path}")
-        self.file_used.emit(Path(path))
+        if remember:
+            self.file_used.emit(Path(path))
+
+    # ── export ──────────────────────────────────────────────────
+
+    @guard("Export diagram")
+    def export_diagram(self, path: str | Path | None = None) -> None:
+        """The diagram on screen as SVG, PDF or PNG."""
+        if path is None:
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Export diagram",
+                f"{self._canvas.root_model().name}.svg",
+                "SVG (*.svg);;PDF (*.pdf);;PNG (*.png)")
+            if not path:
+                return
+        self._canvas.export_image(path)
+        self._status.setText(f"Exported the diagram to {path}")
+
+    @guard("Print diagram")
+    def print_diagram(self) -> None:
+        self._canvas.print_diagram()
+
+    @guard("Export data")
+    def export_data(self, path: str | Path | None = None) -> None:
+        """The last run's signals as CSV or .mat."""
+        if self._result is None:
+            raise SimulationError("Run the model first: there is no data "
+                                  "to export yet.")
+        if path is None:
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Export signals",
+                f"{self._canvas.root_model().name}.csv",
+                "CSV (*.csv);;MATLAB data (*.mat)")
+            if not path:
+                return
+        self._scope.export(path)
+        self._status.setText(f"Exported the signals to {path}")
 
     @guard("Save model")
     def save_model(self) -> None:
@@ -669,6 +780,29 @@ class SimTab(QWidget, GuardedPanel):
 
     def refresh(self, arch=None) -> None:
         """Called when the tab is shown; nothing to recompute."""
+
+
+class CanvasBridge:
+    """
+    The Model tab, as ``open_system``, ``set_param`` and ``sim`` see it.
+
+    The console's Simulink commands look a model name up here first, so the
+    model on screen is the one they read and edit; ``show`` puts a model on
+    the canvas, and ``changed`` redraws after the console has edited it.
+    """
+
+    def __init__(self, tab: SimTab, show) -> None:
+        self._tab = tab
+        self._show = show
+
+    def model(self) -> SimModel:
+        return self._tab._canvas.root_model()
+
+    def show(self, model: SimModel) -> None:
+        self._show(model)
+
+    def changed(self, model: SimModel) -> None:
+        self._tab.model_edited(model)
 
 
 # ──────────────────────────────────────────────────────────────

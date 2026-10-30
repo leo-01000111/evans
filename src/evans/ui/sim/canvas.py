@@ -23,7 +23,15 @@ from ...sim.linearize import LinearizationError, plant_seen_by
 from ...sim.model import ModelError, PortRef, SimModel
 from .. import theme
 from . import commands as cmd
-from .items import GRID, BlockItem, PortItem, WireItem, hover_colour, snap
+from .items import (
+    GRID,
+    AnnotationItem,
+    BlockItem,
+    PortItem,
+    WireItem,
+    hover_colour,
+    snap,
+)
 
 MIME_TYPE = "application/x-evans-blocks"
 
@@ -32,6 +40,8 @@ class SimCanvas(QGraphicsView):
     """Editable block-diagram canvas."""
 
     model_changed = Signal()
+    #: A different model was put on the canvas (not an edit of this one).
+    model_replaced = Signal()
     selection_changed = Signal(object)      # BlockItem | None
     status = Signal(str)
     path_changed = Signal(list)             # breadcrumb, outermost first
@@ -41,6 +51,9 @@ class SimCanvas(QGraphicsView):
         self.model = model or SimModel("untitled")
         self.undo_stack = QUndoStack(self)
         self.undo_stack.setUndoLimit(200)
+        #: Reads block parameters written as workspace expressions; the app
+        #: sets it to the console's (see :mod:`evans.sim.workspace`).
+        self.evaluate = None
 
         self._scene = QGraphicsScene(self)
         self._scene.setSceneRect(-2000, -2000, 4000, 4000)
@@ -75,10 +88,18 @@ class SimCanvas(QGraphicsView):
         self.undo_stack.clear()
         self.rebuild()
         self.model_changed.emit()
+        self.model_replaced.emit()
 
     def restore_model(self, data: dict) -> None:
-        """Replace the model wholesale — used by undo/redo."""
+        """
+        Replace the model wholesale — used by undo/redo.
+
+        The run settings are not part of the history: undoing a block move
+        must not also put back the stop time it was made under.
+        """
+        settings = self.model.settings
         self.model = SimModel.from_dict(data)
+        self.model.settings = settings
         self.rebuild()
         self.model_changed.emit()
 
@@ -96,7 +117,8 @@ class SimCanvas(QGraphicsView):
 
         for block in self.model:
             place = self.model.placement(block.block_id)
-            item = BlockItem(block, place.x, place.y)
+            item = BlockItem(block, place.x, place.y, place.rotation,
+                             place.flip)
             item.moved.connect(self._on_block_moved)
             item.double_clicked.connect(self._edit_params)
             item.guides_changed.connect(self._show_guides)
@@ -110,9 +132,19 @@ class SimCanvas(QGraphicsView):
             dst = self._port_item(conn.dst, is_input=True)
             if src is None or dst is None:
                 continue
-            wire = WireItem(conn, src, dst)
+            wire = WireItem(conn, src, dst,
+                            bend=self.model.bends.get(str(conn)),
+                            label=self.model.signal_names.get(str(conn.src),
+                                                              ""))
+            wire.bend_moved.connect(self._on_bend_moved)
             self._scene.addItem(wire)
             self._wires.append(wire)
+
+        for index, note in enumerate(self.model.annotations):
+            item = AnnotationItem(index, note["text"], note["x"], note["y"])
+            item.moved.connect(self._on_note_moved)
+            item.double_clicked.connect(self.edit_annotation)
+            self._scene.addItem(item)
 
         self._scene.blockSignals(False)
         self.validate()
@@ -141,7 +173,7 @@ class SimCanvas(QGraphicsView):
 
         prefix = self._flat_prefix()
         try:
-            compiled = compile_model(self.root_model())
+            compiled = compile_model(self.root_model(), self.evaluate)
         except CompileError as exc:
             message = str(exc)
             self._mark(message, message, prefix)
@@ -205,8 +237,129 @@ class SimCanvas(QGraphicsView):
                   if isinstance(i, BlockItem)]
         wires = [i.connection for i in self._scene.selectedItems()
                  if isinstance(i, WireItem)]
-        if blocks or wires:
-            self.undo_stack.push(cmd.DeleteSelection(self, blocks, wires))
+        notes = [i.index for i in self._scene.selectedItems()
+                 if isinstance(i, AnnotationItem)]
+        if blocks or wires or notes:
+            self.undo_stack.push(cmd.DeleteSelection(self, blocks, wires,
+                                                     notes))
+
+    # ── turning, grouping, naming ───────────────────────────────
+
+    def _edit(self, text: str, change) -> None:
+        self.undo_stack.push(cmd.ModelEdit(self, text, change))
+
+    def rotate_selection(self) -> int:
+        """Turn the selected blocks a quarter turn clockwise."""
+        ids = [b.block_id for b in self.selected_blocks()]
+        if ids:
+            def turn(model):
+                for bid in ids:
+                    model.orient(bid, model.placement(bid).rotation + 90)
+            self._edit(f"rotate {len(ids)} block(s)", turn)
+        return len(ids)
+
+    def flip_selection(self) -> int:
+        """Mirror the selected blocks left to right."""
+        ids = [b.block_id for b in self.selected_blocks()]
+        if ids:
+            def mirror(model):
+                for bid in ids:
+                    model.orient(bid, flip=not model.placement(bid).flip)
+            self._edit(f"flip {len(ids)} block(s)", mirror)
+        return len(ids)
+
+    def create_subsystem(self, name: str | None = None) -> str | None:
+        """Put the selected blocks in a new subsystem, rewired to match."""
+        from ...sim.edit import group_into_subsystem
+
+        ids = [b.block_id for b in self.selected_blocks()]
+        if not ids:
+            self.status.emit("Select the blocks to put in a subsystem")
+            return None
+        made: list[str] = []
+        self._edit(f"create subsystem from {len(ids)} block(s)",
+                   lambda model: made.append(
+                       group_into_subsystem(model, ids, name)))
+        if made:
+            self.status.emit(f"Grouped {len(ids)} block(s) into {made[0]}")
+        return made[0] if made else None
+
+    def name_signal(self, conn, name: str | None = None) -> None:
+        """Label the signal a wire carries; an empty name removes the label."""
+        key = str(conn.src)
+        if name is None:
+            from PySide6.QtWidgets import QInputDialog
+            name, ok = QInputDialog.getText(
+                self, "Signal name", f"Name for {key}:",
+                text=self.model.signal_names.get(key, ""))
+            if not ok:
+                return
+        name = name.strip()
+
+        def label(model):
+            if name:
+                model.signal_names[key] = name
+            else:
+                model.signal_names.pop(key, None)
+        self._edit(f"name {key}", label)
+
+    def _on_bend_moved(self, conn, value: float) -> None:
+        def bend(model):
+            model.bends[str(conn)] = value
+        self._edit("move wire", bend)
+
+    def straighten(self, conn) -> None:
+        """Put a wire's bend back where the router puts it."""
+        self._edit("reset wire", lambda model: model.bends.pop(str(conn),
+                                                                  None))
+
+    def add_annotation(self, pos: QPointF | None = None,
+                       text: str | None = None) -> None:
+        """A text note at ``pos`` (the view's centre by default)."""
+        if text is None:
+            from PySide6.QtWidgets import QInputDialog
+            text, ok = QInputDialog.getMultiLineText(self, "Note", "Text:")
+            if not ok:
+                return
+        if not text.strip():
+            return
+        where = pos or self._free_spot()
+        note = {"text": text, "x": snap(where.x()), "y": snap(where.y())}
+        self._edit("add note", lambda model: model.annotations.append(note))
+
+    def edit_annotation(self, index: int, text: str | None = None) -> None:
+        """Change a note's text; an empty text deletes it."""
+        if not 0 <= index < len(self.model.annotations):
+            return
+        if text is None:
+            from PySide6.QtWidgets import QInputDialog
+            text, ok = QInputDialog.getMultiLineText(
+                self, "Note", "Text:", self.model.annotations[index]["text"])
+            if not ok:
+                return
+
+        def change(model):
+            if text.strip():
+                model.annotations[index]["text"] = text
+            else:
+                del model.annotations[index]
+        self._edit("edit note", change)
+
+    def _on_note_moved(self, index: int, x: float, y: float) -> None:
+        def move(model):
+            model.annotations[index].update(x=x, y=y)
+        self._edit("move note", move)
+
+    # ── export ──────────────────────────────────────────────────
+
+    def export_image(self, path) -> None:
+        """The diagram as SVG, PDF, PNG or JPEG, by the file's extension."""
+        from .export import export_scene
+        export_scene(self._scene, path)
+
+    def print_diagram(self) -> bool:
+        from .export import print_scene
+        return print_scene(self._scene, self)
 
     def select_all(self) -> None:
         for item in self._blocks.values():
@@ -463,7 +616,9 @@ class SimCanvas(QGraphicsView):
                      "its plant are both visible.")
         else:
             try:
-                found = plant_seen_by(self.model, block_id)
+                from ...sim.workspace import resolve_model
+                found = plant_seen_by(
+                    resolve_model(self.model, self.evaluate), block_id)
                 plant, notes = found.tf, found.notes
             except (LinearizationError, CompileError, ModelError,
                     ValueError) as exc:
@@ -614,6 +769,26 @@ class SimCanvas(QGraphicsView):
                                lambda: self._edit_params(item.block_id))
             if item.block.type_name == "PID":
                 menu.addAction("Tune…", lambda: self.tune_pid(item.block_id))
+            menu.addAction("Rotate 90°", self.rotate_selection)
+            menu.addAction("Flip", self.flip_selection)
+            menu.addAction("Create subsystem from selection",
+                           lambda: self.create_subsystem())
+            menu.addSeparator()
+        elif isinstance(item, WireItem):
+            conn = item.connection
+            menu.addAction("Name signal…", lambda: self.name_signal(conn))
+            if str(conn) in self.model.bends:
+                menu.addAction("Reset wire route",
+                               lambda: self.straighten(conn))
+            menu.addSeparator()
+        elif isinstance(item, AnnotationItem):
+            index = item.index
+            menu.addAction("Edit note…", lambda: self.edit_annotation(index))
+            menu.addSeparator()
+        else:
+            scene_pos = self.mapToScene(pos)
+            menu.addAction("Add note here…",
+                           lambda: self.add_annotation(scene_pos))
             menu.addSeparator()
         if self.inside_subsystem:
             menu.addAction("↑ Up one level", self.ascend)
@@ -629,7 +804,18 @@ class SimCanvas(QGraphicsView):
         menu.addAction("Paste", self.paste)
         menu.addSeparator()
         menu.addAction("Fit to view", self.fit_all)
+        menu.addAction("Export diagram…", self._ask_export)
+        menu.addAction("Print diagram…", self.print_diagram)
         return menu
+
+    def _ask_export(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export diagram", f"{self.root_model().name}.svg",
+            "SVG (*.svg);;PDF (*.pdf);;PNG (*.png)")
+        if path:
+            self.export_image(path)
+            self.status.emit(f"Exported the diagram to {path}")
 
     # ── drag & drop from the palette ────────────────────────────
 

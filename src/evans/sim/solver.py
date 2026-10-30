@@ -26,6 +26,11 @@ Within a span
   are terminal: integration stops on the crossing, the blocks' **modes** are
   updated, and it restarts. Between crossings the modes stay latched, so the
   right-hand side the solver sees is smooth (see :func:`_integrate`).
+* Some blocks act at those instants: a block with a ``fire`` method (a
+  conditional subsystem's gate, an Integrator with a reset port) may change
+  the states there, once its modes are updated — after every event, every
+  sample hit, and every fixed step (see :meth:`_Evaluator.fire_events`). A
+  block inside a closed gate keeps its states: no derivative, no update.
 """
 
 from __future__ import annotations
@@ -141,6 +146,12 @@ class SimResult:
     states:   np.ndarray                   # (n_time, n_states)
     scopes:   dict[str, list[str]] = field(default_factory=dict)
     workspace: dict[str, np.ndarray] = field(default_factory=dict)
+    #: The top-level Outports' signals, in port order: ``yout``'s columns.
+    outputs:  list[str] = field(default_factory=list)
+    #: Each To Workspace variable's save format, by variable name.
+    formats:  dict[str, str] = field(default_factory=dict)
+    #: Each XY Graph block's ``(x signal, y signal)``, by its title.
+    xy:       dict[str, tuple[str, str]] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     solver:   str = ""
     n_steps:  int = 0
@@ -173,6 +184,9 @@ class _Evaluator:
         self._values: dict[PortRef, np.ndarray] = {}
         #: Run warnings raised while integrating (chattering zero crossings).
         self.warnings: list[str] = []
+        #: The blocks that act at events, in execution order.
+        self._firing = [compiled.plans[bid].block for bid in compiled.order
+                        if hasattr(compiled.plans[bid].block, "fire")]
 
     def _inputs(self, plan) -> list[np.ndarray]:
         out = []
@@ -299,7 +313,7 @@ class _Evaluator:
     def derivatives(self, t, x, xd, values) -> np.ndarray:
         dx = np.zeros(self.c.n_states)
         for _bid, plan in self.c.plans.items():
-            if not plan.block.n_states:
+            if not plan.block.n_states or not _running(plan.block):
                 continue
             self._values = values
             dx[plan.x_slice] = plan.block.derivative(
@@ -311,7 +325,7 @@ class _Evaluator:
         new = xd.copy()
         for bid in due:
             plan = self.c.plans[bid]
-            if not plan.block.n_dstates:
+            if not plan.block.n_dstates or not _running(plan.block):
                 continue
             self._values = values
             new[plan.xd_slice] = plan.block.update(
@@ -425,6 +439,34 @@ class _Evaluator:
         for plan in self.c.plans.values():
             plan.block.release_modes()
 
+    # ── blocks that act at events ───────────────────────────────
+
+    def fire_events(self, t, x, xd) -> bool:
+        """
+        Let each firing block act on its newly latched mode, in place.
+
+        ``x`` and ``xd`` are changed where they lie, so every caller holding
+        them sees the new states. Returns whether anything acted; the modes
+        are then recomputed, since a reset state moves every signal after it.
+        """
+        if not self._firing:
+            return False
+        acted = False
+        for block in self._firing:
+            if block.fire(self, t, x, xd):
+                acted = True
+        if acted:
+            self.update_modes(t, x, xd)
+        return acted
+
+
+def _running(block) -> bool:
+    """Whether every gate around a block is open (see .blocks.conditional)."""
+    for gate in getattr(block, "_gate_objs", ()):
+        if not gate.running:
+            return False
+    return True
+
 
 # ──────────────────────────────────────────────────────────────
 #  Simulate
@@ -437,7 +479,8 @@ def simulate(model: SimModel | CompiledModel,
              rtol: float = 1e-6,
              atol: float = 1e-9,
              n_points: int = 2000,
-             progress=None) -> SimResult:
+             progress=None,
+             evaluate=None) -> SimResult:
     """
     Run a model from ``t = 0`` to ``t_end``.
 
@@ -453,11 +496,15 @@ def simulate(model: SimModel | CompiledModel,
     one span from 0 to ``t_end``, reports as it goes instead of jumping from
     0 to 1 at the end. Raising from it stops the run where it is: that is how
     the Model tab's Stop button cancels.
+
+    ``evaluate`` reads parameters written as workspace expressions (see
+    :mod:`.workspace`); without it they are evaluated in an empty workspace.
     """
     requested = solver
     solver, _ = resolve_solver(solver)
     solver_label = _solver_label(requested, solver)
-    compiled = model if isinstance(model, CompiledModel) else compile_model(model)
+    compiled = model if isinstance(model, CompiledModel) \
+        else compile_model(model, evaluate)
     if t_end <= 0:
         raise SimulationError(f"t_end must be positive, got {t_end}")
 
@@ -511,6 +558,7 @@ def simulate(model: SimModel | CompiledModel,
         xd = ev.update_discrete(0.0, x, xd, ev.evaluate(0.0, x, xd),
                                 all_discrete)
     ev.init_modes(0.0, x, xd)
+    ev.fire_events(0.0, x, xd)
     record(t_now, x, xd)
 
     # A StopSimulation block ends the run at the first sample where its input
@@ -528,6 +576,8 @@ def simulate(model: SimModel | CompiledModel,
             for t in t_grid[(t_grid > span_start) & (t_grid <= span_end)]:
                 pulse(float(t))
                 ev.update_modes(float(t), x, xd)
+                if ev.fire_events(float(t), x, xd):
+                    record(float(t), x, xd)     # the jump's riser
                 record(float(t), x, xd)
                 if stopped:
                     break
@@ -549,6 +599,7 @@ def simulate(model: SimModel | CompiledModel,
             values = ev.evaluate(t_now, x, xd)
             xd = ev.update_discrete(t_now, x, xd, values, due)
             ev.update_modes(t_now, x, xd)
+            ev.fire_events(t_now, x, xd)
             record(t_now, x, xd)
         pulse.report(t_now)
 
@@ -686,10 +737,13 @@ def _integrate(ev, compiled, x, xd, t0, t1, solver, max_step, rtol, atol,
         # one smooth right-hand side, and a switch takes effect on the next
         # major step.
         ev.update_modes(t0, x, xd)
+
+        def major_step(t, x_now):
+            ev.update_modes(t, x_now, xd)
+            ev.fire_events(t, x_now, xd)
+
         x_end = _fixed_step(rhs, x, t0, t1, solver, max_step,
-                            inner, record, xd,
-                            on_major_step=lambda t, x_now:
-                                ev.update_modes(t, x_now, xd))
+                            inner, record, xd, on_major_step=major_step)
         return x_end, max(1, len(inner))
 
     span = t1 - t0
@@ -761,6 +815,10 @@ def _integrate(ev, compiled, x, xd, t0, t1, solver, max_step, rtol, atol,
             if stop_flag:
                 return y_e, nfev
         sides = _cross(ev, layout, rhs, t_e, y_e, xd, fired, sides, h_ref)
+        if ev.fire_events(t_e, y_e, xd):
+            # States jumped: the sides are those of the new state.
+            sides = _sides(ev.zero_crossings(
+                t_e, y_e, xd, ev.evaluate(t_e, y_e, xd), layout))
         record(t_e, y_e, xd)                    # the right limit
         if stop_flag:
             return y_e, nfev
@@ -907,11 +965,12 @@ def _step_unlatched(ev, rhs, t_s, x_s, t1, xd, solver, max_step, rtol, atol,
                 record(tp, dense(tp), xd)
                 if stop_flag:
                     return dense(tp), nfev + stepper.nfev
-        if stepper.status == "running" and \
-                ev.update_modes(stepper.t, stepper.y, xd):
+        if stepper.status == "running" and (
+                ev.update_modes(stepper.t, stepper.y, xd)
+                | ev.fire_events(stepper.t, stepper.y, xd)):
             nfev += stepper.nfev
             h = stepper.step_size or cap
-            stepper = fresh(stepper.t, stepper.y, h)
+            stepper = fresh(stepper.t, np.array(stepper.y), h)
     return stepper.y, nfev + stepper.nfev
 
 
@@ -1023,6 +1082,9 @@ def _assemble(compiled, times, states, logged, run_warnings, solver, n_steps):
 
     scopes: dict[str, list[str]] = {}
     workspace: dict[str, np.ndarray] = {}
+    formats: dict[str, str] = {}
+    xy: dict[str, tuple[str, str]] = {}
+    outports: list[tuple[int, str, str]] = []
     for bid, plan in compiled.plans.items():
         block = plan.block
         if block.type_name == "Scope":
@@ -1035,9 +1097,24 @@ def _assemble(compiled, times, states, logged, run_warnings, solver, n_steps):
             conn = plan.input_conns[0] if plan.input_conns else None
             if conn is not None and str(conn.src) in signals:
                 workspace[block.params["name"]] = signals[str(conn.src)]
+                formats[block.params["name"]] = block.params.get(
+                    "format", "Array")
+        elif block.type_name == "XYGraph":
+            conns = plan.input_conns
+            if len(conns) == 2 and all(c is not None and str(c.src) in signals
+                                       for c in conns):
+                xy[block.params.get("title") or bid] = (str(conns[0].src),
+                                                        str(conns[1].src))
+        elif block.type_name == "Outport":
+            conn = plan.input_conns[0] if plan.input_conns else None
+            if conn is not None and str(conn.src) in signals:
+                outports.append((int(block.params.get("order", 1)), bid,
+                                 str(conn.src)))
 
     return SimResult(
         t=t, signals=signals, states=state_arr,
         scopes=scopes, workspace=workspace,
+        outputs=[src for _order, _bid, src in sorted(outports)],
+        formats=formats, xy=xy,
         warnings=run_warnings, solver=solver, n_steps=n_steps,
     )

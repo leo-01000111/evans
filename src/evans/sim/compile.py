@@ -27,7 +27,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .block import Block, BlockError
+from .block import Block, BlockError, create
+from .blocks.conditional import CONTROL_PORTS, link_gates
 from .model import Connection, ModelError, PortRef, SimModel
 
 
@@ -116,13 +117,26 @@ class CompiledModel:
 #  Compile
 # ──────────────────────────────────────────────────────────────
 
-def compile_model(model: SimModel) -> CompiledModel:
-    """Prepare a model for simulation, or explain why it cannot be."""
+def compile_model(model: SimModel, evaluate=None) -> CompiledModel:
+    """
+    Prepare a model for simulation, or explain why it cannot be.
+
+    Parameters written as workspace expressions are evaluated first, with
+    ``evaluate`` (see :mod:`.workspace`); without one, in an empty
+    workspace, where ``2*pi`` works and a variable is an error.
+    """
     if len(model) == 0:
         raise CompileError("the model is empty — add some blocks first")
 
+    from .blocks.routing import resolve_links
+    from .workspace import bind_code, has_expressions, resolve_model
+    if has_expressions(model):
+        model = resolve_model(model, evaluate)
+
     warnings: list[str] = []
-    model = flatten(model)
+    model = resolve_links(flatten(model))
+    link_gates(model)
+    bind_code(model, evaluate)
     widths = _propagate_widths(model, warnings)
     plans, n_states, n_dstates = _layout_states(model, widths)
     order, loops = _execution_order(model, plans)
@@ -163,6 +177,11 @@ def flatten(model: SimModel, _depth: int = 0) -> SimModel:
     detection, state layout — therefore works on a flat graph. That is what
     lets the loop detector see a cycle that passes *through* a subsystem, which
     a recursive evaluator would miss.
+
+    A conditional subsystem (one holding an Enable, Trigger or Action Port
+    block) is spliced in the same way, plus a hidden gate block on its
+    control input and a hold block on each output; every block inside is
+    tagged with the gate's id (see :mod:`.blocks.conditional`).
     """
     if _depth > MAX_NESTING:
         raise CompileError(
@@ -192,13 +211,32 @@ def flatten(model: SimModel, _depth: int = 0) -> SimModel:
     for sub in subsystems:
         inner = flatten(sub.inner_model(), _depth + 1)
         prefix = f"{sub.block_id}/"
+        try:
+            control = sub.control()
+        except BlockError as exc:
+            raise CompileError(str(exc)) from exc
+        gate_id = f"{prefix}__gate" if control is not None else None
 
         for block in inner:
-            if block.type_name in ("Inport", "Outport"):
+            if block.type_name in ("Inport", "Outport", *CONTROL_PORTS):
                 continue
-            clone = _clone(block, new_id=prefix + block.block_id)
+            clone = _clone(block, new_id=prefix + block.block_id,
+                           prefix=prefix)
+            if gate_id is not None:
+                clone._gates = (*getattr(clone, "_gates", ()), gate_id)
             place = inner.placement(block.block_id)
             flat.add_block(clone, place.x, place.y)
+
+        if control is not None:
+            port, kind, params = control
+            gate = create("_TriggerGate", gate_id,
+                          edge=params.get("edge", "rising")) \
+                if kind == "Trigger" else \
+                create("_EnableGate", gate_id,
+                       states=params.get("states", "held"))
+            place = model.placement(sub.block_id)
+            flat.add_block(gate, place.x, place.y)
+            inward[PortRef(sub.block_id, port)] = [PortRef(gate_id, "ctrl")]
 
         inports = sub.inport_ids()
         outports = sub.outport_ids()
@@ -222,14 +260,29 @@ def flatten(model: SimModel, _depth: int = 0) -> SimModel:
             ]
             inward[outer] = targets
 
-        # An Outport's driver becomes the source of the subsystem's output.
+        # An Outport's driver becomes the source of the subsystem's output;
+        # through a hold block, when the subsystem does not always run.
         for name, inner_id in outports.items():
             outer = PortRef(sub.block_id, name)
+            port_block = inner.block(inner_id)
             feeding = inner.connection_into(
-                PortRef(inner_id, inner.block(inner_id).inputs[0]))
-            if feeding is not None:
-                outward[outer] = PortRef(prefix + feeding.src.block,
-                                         feeding.src.port)
+                PortRef(inner_id, port_block.inputs[0]))
+            if feeding is None:
+                continue
+            producer = PortRef(prefix + feeding.src.block, feeding.src.port)
+            if gate_id is None:
+                outward[outer] = producer
+                continue
+            hold_id = f"{prefix}__hold_{inner_id}"
+            hold = create("_Hold", hold_id,
+                          when_disabled=port_block.params.get(
+                              "when_disabled", "held"),
+                          initial=port_block.params.get("initial", 0.0))
+            hold._hold_gate = gate_id
+            place = model.placement(sub.block_id)
+            flat.add_block(hold, place.x, place.y)
+            flat.connect(f"{producer.block}.{producer.port}", f"{hold_id}.in")
+            outward[outer] = PortRef(hold_id, "out")
 
     # Re-route the wires that crossed a subsystem boundary.
     for conn in model.connections:
@@ -256,21 +309,39 @@ def flatten(model: SimModel, _depth: int = 0) -> SimModel:
     return flat
 
 
-def _clone(block, new_id: str | None = None):
-    """A fresh instance of a block, optionally renamed."""
-    from .block import create
-    return create(block.type_name, new_id or block.block_id, **block.params)
+def _clone(block, new_id: str | None = None, prefix: str = ""):
+    """
+    A fresh instance of a block, optionally renamed.
+
+    The conditional-subsystem tags go with it, their ids given the same
+    prefix as the block's own.
+    """
+    clone = create(block.type_name, new_id or block.block_id,
+                   **block.raw_params())
+    gates = getattr(block, "_gates", ())
+    if gates:
+        clone._gates = tuple(prefix + g for g in gates)
+    hold_gate = getattr(block, "_hold_gate", None)
+    if hold_gate is not None:
+        clone._hold_gate = prefix + hold_gate
+    return clone
 
 
 def _check_stray_ports(model: SimModel) -> None:
-    """An In/Outport outside a subsystem has nothing to connect to."""
+    """
+    An Inport outside a subsystem has nothing to connect to.
+
+    A top-level Outport is allowed, as in Simulink: it is a sink whose signal
+    becomes a column of ``yout`` in the run's output.
+    """
     stray = [b.block_id for b in model
-             if b.type_name in ("Inport", "Outport")]
+             if b.type_name in ("Inport", *CONTROL_PORTS)]
     if stray:
         raise CompileError(
-            f"{', '.join(stray)}: Inport and Outport define the boundary of a "
-            f"subsystem, so they only mean something inside one. Put them in "
-            f"a Subsystem block, or delete them."
+            f"{', '.join(stray)}: Inport, Enable, Trigger and Action Port "
+            f"blocks define an input of a subsystem, so they only mean "
+            f"something inside one. Put them in a Subsystem block, or drive "
+            f"the signal from a source such as From Workspace."
         )
 
 

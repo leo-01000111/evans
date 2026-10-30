@@ -54,6 +54,11 @@ class Outport(Block):
     params_spec = (
         ParamSpec("port_name", "Port name", "out", kind="str"),
         ParamSpec("order", "Port order", 1, kind="int"),
+        ParamSpec("when_disabled", "Output when disabled", "held",
+                  kind="choice", choices=("held", "reset"),
+                  help="In a conditional subsystem: what this output shows "
+                       "while the subsystem is not running."),
+        ParamSpec("initial", "Initial output", 0.0),
     )
 
     def output_widths(self, input_widths):
@@ -90,6 +95,29 @@ class Subsystem(Block):
     def configure(self) -> None:
         self.inputs = [name for name, _ in self._boundary("Inport")]
         self.outputs = [name for name, _ in self._boundary("Outport")]
+        control = self.control()
+        if control is not None:
+            self.inputs.append(control[0])
+
+    def control(self) -> tuple[str, str, dict] | None:
+        """
+        ``(port, block type, its params)`` when an Enable, Trigger or Action
+        Port block inside makes this a conditional subsystem.
+        """
+        from .conditional import CONTROL_PORTS
+        data = self.params.get("model") or {}
+        found = [e for e in data.get("blocks", [])
+                 if e.get("type") in CONTROL_PORTS]
+        if not found:
+            return None
+        if len(found) > 1:
+            raise BlockError(
+                f"Subsystem {self.block_id!r} has "
+                f"{' and '.join(e['type'] for e in found)} blocks; a "
+                f"subsystem takes one control port")
+        entry = found[0]
+        return (CONTROL_PORTS[entry["type"]], entry["type"],
+                dict(entry.get("params", {})))
 
     # ── contents ────────────────────────────────────────────────
 

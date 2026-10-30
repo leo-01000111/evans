@@ -28,6 +28,15 @@ elementwise; those that are not (``Mux``, ``Demux``, ``TransferFcn``) declare
 their widths through :meth:`Block.output_widths`, which the compiler drives to
 a fixed point.
 
+Parameters from the workspace
+-----------------------------
+A numeric parameter may be written as a MATLAB expression — ``Kp``,
+``2*pi*f``, ``[1 2 3]`` — instead of a number, as in Simulink. The block
+keeps the text in :attr:`Block.expressions` and runs on a stand-in value
+until :mod:`evans.sim.workspace` evaluates the text in the console workspace
+at compile time and hands the result to :meth:`Block.resolve`. The saved
+model keeps the text, so the same file runs against different workspaces.
+
 Zero crossings and modes
 ------------------------
 A discontinuous block declares how many zero-crossing values it has
@@ -39,6 +48,7 @@ right-hand side is smooth on every interval it integrates.
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, ClassVar
@@ -48,6 +58,34 @@ import numpy as np
 
 class BlockError(Exception):
     """A block was configured or connected in a way it cannot support."""
+
+
+#: Parameter kinds whose value may be a workspace expression. ``int`` is not
+#: one: the integer parameters set port counts and indices, which the canvas
+#: needs before anything is evaluated.
+EXPRESSION_KINDS = frozenset({"float", "vector", "matrix", "data"})
+
+#: A vector or matrix written out in numbers, which the blocks parse
+#: themselves: ``1, 2`` or ``0 1; -2 -3``. Anything else (brackets, names,
+#: operators) is an expression.
+_NUMBER = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+_NUMBERS = re.compile(rf"^[\s,;]*(?:{_NUMBER}(?:[\s,;]+{_NUMBER})*)?[\s,;]*$")
+
+
+def is_expression(kind: str, value) -> bool:
+    """Whether ``value``, given for a parameter of ``kind``, needs evaluating."""
+    if kind not in EXPRESSION_KINDS or not isinstance(value, str):
+        return False
+    text = value.strip()
+    if kind == "data":
+        return bool(text)
+    if kind == "float":
+        try:
+            float(text)
+        except ValueError:
+            return True
+        return False
+    return not _NUMBERS.match(text)
 
 
 @dataclass
@@ -80,11 +118,23 @@ class Block(ABC):
     default_inputs:  ClassVar[tuple[str, ...]] = ("in",)
     default_outputs: ClassVar[tuple[str, ...]] = ("out",)
 
+    #: Whether :meth:`label` shows workspace expressions itself (through
+    #: :meth:`shown`); otherwise :meth:`display_label` lists them.
+    labels_expressions: ClassVar[bool] = False
+    #: Whether the block reads workspace variables itself when the model
+    #: compiles (MATLAB code blocks), through :meth:`bind`.
+    binds_workspace: ClassVar[bool] = False
+    #: Blocks the compiler adds (a conditional subsystem's gate); not in
+    #: the palette.
+    hidden: ClassVar[bool] = False
+
     def __init__(self, block_id: str, **params: Any) -> None:
         self.block_id = block_id
         self.params: dict[str, Any] = {
             spec.name: spec.default for spec in self.params_spec
         }
+        #: Parameters written as workspace expressions: name → the text.
+        self.expressions: dict[str, str] = {}
         unknown = set(params) - set(self.params)
         if unknown:
             raise BlockError(
@@ -92,10 +142,11 @@ class Block(ABC):
                 f"{', '.join(sorted(unknown))}; "
                 f"valid: {', '.join(sorted(self.params)) or '(none)'}"
             )
-        self.params.update(params)
+        for name, value in params.items():
+            self._store(name, value)
         self.inputs = list(self.default_inputs)
         self.outputs = list(self.default_outputs)
-        self.configure()
+        self._configure()
 
     # ── configuration ───────────────────────────────────────────
 
@@ -111,8 +162,66 @@ class Block(ABC):
     def set_param(self, name: str, value: Any) -> None:
         if name not in self.params:
             raise BlockError(f"{self.type_name} has no parameter {name!r}")
+        self._store(name, value)
+        self._configure()
+
+    # ── workspace expressions ───────────────────────────────────
+
+    def spec(self, name: str) -> ParamSpec:
+        for spec in self.params_spec:
+            if spec.name == name:
+                return spec
+        raise BlockError(f"{self.type_name} has no parameter {name!r}")
+
+    def _store(self, name: str, value: Any) -> None:
+        spec = self.spec(name)
+        if is_expression(spec.kind, value):
+            self.expressions[name] = value.strip()
+            self.params[name] = _stand_in(spec, value)
+            return
+        self.expressions.pop(name, None)
+        if spec.kind == "float" and isinstance(value, str):
+            value = float(value)
         self.params[name] = value
+
+    def _configure(self) -> None:
+        """
+        :meth:`configure`, forgiving a stand-in value.
+
+        Until its expressions are evaluated a block runs on stand-ins, and
+        those may not suit each other (a Saturation whose upper limit is
+        ``umax`` and lower limit is 2). The real values are checked when
+        :meth:`resolve` sets them.
+        """
+        try:
+            self.configure()
+        except (BlockError, ValueError, TypeError):
+            if not self.expressions:
+                raise
+
+    def resolve(self, values: dict[str, Any]) -> None:
+        """Replace expressions with their evaluated values, and check them."""
+        for name, value in values.items():
+            self.expressions.pop(name, None)
+            self.params[name] = value
         self.configure()
+
+    def bind(self, variables: dict[str, Any]) -> None:
+        """Take what the block needs from the workspace, before a run."""
+
+    def raw_params(self) -> dict[str, Any]:
+        """The parameters as written: expressions as their text."""
+        return {**self.params, **self.expressions}
+
+    def shown(self, name: str, fmt: str = "g") -> str:
+        """A parameter as the canvas shows it: the expression, or the number."""
+        if name in self.expressions:
+            return self.expressions[name]
+        value = self.params[name]
+        try:
+            return format(value, fmt)
+        except (TypeError, ValueError):
+            return str(value)
 
     # ── structure ───────────────────────────────────────────────
 
@@ -270,6 +379,21 @@ class Block(ABC):
         """Text drawn inside the block on the canvas."""
         return self.type_name
 
+    def display_label(self) -> str:
+        """
+        :meth:`label`, unless it would show stand-ins for expressions.
+
+        A block whose label does not read :meth:`shown` is labelled with its
+        type and the expressions instead, never with a stand-in number that
+        looks like the value it will run with.
+        """
+        if self.expressions and not self.labels_expressions:
+            return self.type_name + "\n" + "  ".join(self.expressions.values())
+        try:
+            return self.label()
+        except Exception:                                  # noqa: BLE001
+            return self.type_name
+
     def __repr__(self) -> str:
         return f"<{self.type_name} {self.block_id!r} {self.params}>"
 
@@ -312,6 +436,8 @@ def by_category() -> dict[str, list[type[Block]]]:
     """The library grouped for the palette."""
     grouped: dict[str, list[type[Block]]] = {}
     for cls in _REGISTRY.values():
+        if cls.hidden:
+            continue
         grouped.setdefault(cls.category, []).append(cls)
     for blocks in grouped.values():
         blocks.sort(key=lambda c: c.type_name)
@@ -360,6 +486,21 @@ class ModeLatch:
     def reset(self) -> None:
         self._mode = None
         self._latched = False
+
+
+def _stand_in(spec: ParamSpec, text: str):
+    """
+    What a block runs on until an expression is evaluated.
+
+    A constant expression (``2*pi``, ``[1 2 3]``) is worth evaluating now,
+    so the canvas sizes ports and draws labels from the real value; one
+    that names a variable falls back to the parameter's default.
+    """
+    from .workspace import WorkspaceError, coerce, constant_value
+    try:
+        return coerce(spec, constant_value(text))
+    except (WorkspaceError, BlockError):
+        return spec.default
 
 
 def as_array(value, width: int = 1) -> np.ndarray:

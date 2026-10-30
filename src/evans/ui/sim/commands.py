@@ -57,17 +57,36 @@ class AddBlock(_ModelCommand):
 
 class DeleteSelection(_ModelCommand):
     def __init__(self, canvas, block_ids: list[str],
-                 connections: list[Connection]) -> None:
-        n = len(block_ids) + len(connections)
+                 connections: list[Connection],
+                 annotations: list[int] = ()) -> None:
+        n = len(block_ids) + len(connections) + len(annotations)
         super().__init__(canvas, f"delete {n} item{'s' if n != 1 else ''}")
         self.block_ids = list(block_ids)
         self.connections = list(connections)
+        self.annotations = sorted(set(annotations), reverse=True)
 
     def apply(self) -> None:
         for conn in self.connections:
             self.canvas.model.disconnect(conn)
         for bid in self.block_ids:
             self.canvas.model.remove(bid)
+        for index in self.annotations:
+            if 0 <= index < len(self.canvas.model.annotations):
+                del self.canvas.model.annotations[index]
+
+
+class ModelEdit(_ModelCommand):
+    """
+    Any edit, given as a function of the model, as one undo step: turning a
+    block, naming a signal, moving a bend, a note, grouping a subsystem.
+    """
+
+    def __init__(self, canvas, text: str, change) -> None:
+        super().__init__(canvas, text)
+        self.change = change
+
+    def apply(self) -> None:
+        self.change(self.canvas.model)
 
 
 class Connect(_ModelCommand):

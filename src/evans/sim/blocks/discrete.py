@@ -314,3 +314,216 @@ class RateTransition(_DiscreteBase):
 
     def label(self):
         return f"rate\n{self.params['sample_time']:g}s"
+
+
+@register
+class Memory(_DiscreteBase):
+    """
+    The input one sample ago.
+
+    Unlike a Unit Delay, whose held output is what it last sampled, Memory
+    outputs the sample *before* that: at hit k it shows u(k−1). Simulink's
+    Memory inherits its rate; Evans needs the sample time stated.
+    """
+
+    type_name = "Memory"
+    category = _CAT
+    description = "The input from the previous sample: y(k) = u(k−1)."
+    params_spec = (
+        ParamSpec("sample_time", "Sample time (s)", 0.1),
+        ParamSpec("x0", "Initial output", 0.0),
+    )
+
+    def configure(self) -> None:
+        self._check_sample_time()
+
+    @property
+    def n_dstates(self) -> int:
+        return 2                            # [previous input, held output]
+
+    def initial_discrete_state(self):
+        x0 = float(self.params["x0"])
+        return np.array([x0, x0])
+
+    def output(self, t, x, xd, u):
+        return [xd[1:2].copy()]
+
+    def update(self, t, x, xd, u):
+        uu = float(np.atleast_1d(u[0])[0]) if u else 0.0
+        return np.array([uu, xd[0]])
+
+    def label(self):
+        return "Memory"
+
+
+@register
+class DiscreteIntegrator(_DiscreteBase):
+    """
+    K·T·Σu, by Simulink's three methods, with ``x(0)`` the initial condition:
+
+    * Forward Euler:  ``y(k) = x(k)``,          ``x(k+1) = y(k) + K·T·u(k)``
+    * Backward Euler: ``y(k) = x(k) + K·T·u(k)``, ``x(k+1) = y(k)``
+    * Trapezoidal:    ``y(k) = x(k) + K·T/2·u(k)``, ``x(k+1) = y(k) + K·T/2·u(k)``
+
+    With limits, the output and the state are both clamped, so the
+    integrator does not wind up past them.
+    """
+
+    type_name = "DiscreteIntegrator"
+    category = _CAT
+    description = "K·T/(z−1) and its kin: forward, backward or trapezoidal."
+    params_spec = (
+        ParamSpec("gain", "Gain K", 1.0),
+        ParamSpec("method", "Method", "Forward Euler", kind="choice",
+                  choices=("Forward Euler", "Backward Euler", "Trapezoidal")),
+        ParamSpec("sample_time", "Sample time (s)", 0.1),
+        ParamSpec("x0", "Initial condition", 0.0),
+        ParamSpec("limit", "Limit output", False, kind="bool"),
+        ParamSpec("upper", "Upper limit", 1.0),
+        ParamSpec("lower", "Lower limit", -1.0),
+    )
+
+    def configure(self) -> None:
+        self._check_sample_time()
+        if self.params["limit"] and self.params["upper"] <= self.params["lower"]:
+            raise BlockError(
+                f"DiscreteIntegrator {self.block_id!r}: the upper limit must "
+                f"exceed the lower")
+
+    @property
+    def n_dstates(self) -> int:
+        return 2                            # [x, held output]
+
+    def initial_discrete_state(self):
+        x0 = float(self.params["x0"])
+        return np.array([x0, x0])
+
+    def _clamp(self, v: float) -> float:
+        if not self.params["limit"]:
+            return v
+        return float(np.clip(v, self.params["lower"], self.params["upper"]))
+
+    def output(self, t, x, xd, u):
+        return [xd[1:2].copy()]
+
+    def update(self, t, x, xd, u):
+        uu = float(np.atleast_1d(u[0])[0]) if u else 0.0
+        kt = float(self.params["gain"]) * self.sample_time
+        a, b = {"Forward Euler": (0.0, kt), "Backward Euler": (kt, 0.0),
+                "Trapezoidal": (kt / 2, kt / 2)}[self.params["method"]]
+        y = self._clamp(xd[0] + a * uu)
+        return np.array([self._clamp(y + b * uu), y])
+
+    def label(self):
+        return f"KTs/(z−1)\nTs={self.params['sample_time']:g}"
+
+
+@register
+class DiscreteFIR(_DiscreteBase):
+    type_name = "DiscreteFIR"
+    category = _CAT
+    description = "y(k) = Σ b_i·u(k−i): a finite impulse response filter."
+    params_spec = (
+        ParamSpec("coefficients", "Coefficients", "0.5, 0.5", kind="vector",
+                  help="b0, b1, …: b0 multiplies the newest sample."),
+        ParamSpec("sample_time", "Sample time (s)", 0.1),
+    )
+
+    def configure(self) -> None:
+        self._check_sample_time()
+        self._b = _parse_vector(self.params["coefficients"])
+
+    @property
+    def n_dstates(self) -> int:
+        # The last len(b) − 1 inputs, newest first, then the held output.
+        return len(self._b)
+
+    def output_widths(self, input_widths):
+        return [1]
+
+    def output(self, t, x, xd, u):
+        return [xd[-1:].copy()]
+
+    def update(self, t, x, xd, u):
+        uu = float(np.atleast_1d(u[0])[0]) if u else 0.0
+        history = np.concatenate([[uu], xd[:-1]])
+        y = float(self._b @ history)
+        return np.concatenate([history[:-1], [y]])
+
+    def label(self):
+        return f"FIR\n{len(self._b)} taps"
+
+
+@register
+class DiscreteFilter(DiscreteTransferFcn):
+    """
+    num(z⁻¹)/den(z⁻¹): coefficients in ascending powers of z⁻¹, as signal
+    processing writes them (``[1 -0.5]`` is ``1 − 0.5 z⁻¹``). Padding both
+    to one length makes them the same numbers in descending powers of z.
+    """
+
+    type_name = "DiscreteFilter"
+    category = _CAT
+    description = "num(z⁻¹)/den(z⁻¹), coefficients in powers of z⁻¹."
+    params_spec = (
+        ParamSpec("num", "Numerator (z⁻¹)", "1", kind="vector"),
+        ParamSpec("den", "Denominator (z⁻¹)", "1, -0.5", kind="vector"),
+        ParamSpec("sample_time", "Sample time (s)", 0.1),
+    )
+
+    def configure(self) -> None:
+        num = _parse_vector(self.params["num"])
+        den = _parse_vector(self.params["den"])
+        if den[0] == 0:
+            raise BlockError(
+                f"DiscreteFilter {self.block_id!r}: the denominator's first "
+                f"coefficient must not be zero")
+        n = max(len(num), len(den))
+        padded = dict(self.params)
+        self.params = {**padded,
+                       "num": np.pad(num, (0, n - len(num))),
+                       "den": np.pad(den, (0, n - len(den)))}
+        try:
+            super().configure()
+        finally:
+            self.params = padded
+
+    def label(self):
+        return f"H(z⁻¹)\nTs={self.params['sample_time']:g}"
+
+
+@register
+class Counter(_DiscreteBase):
+    """Counts samples: 0, 1, …, upper, 0, 1, … (Counter Limited)."""
+
+    type_name = "Counter"
+    category = _CAT
+    description = "Counts up once a sample and wraps after the upper limit."
+    default_inputs = ()
+    params_spec = (
+        ParamSpec("upper", "Upper limit", 7, kind="int"),
+        ParamSpec("sample_time", "Sample time (s)", 0.1),
+    )
+
+    def configure(self) -> None:
+        self._check_sample_time()
+        if int(self.params["upper"]) < 0:
+            raise BlockError("Counter's upper limit cannot be negative")
+
+    @property
+    def n_dstates(self) -> int:
+        return 2                            # [next count, held output]
+
+    def initial_discrete_state(self):
+        return np.zeros(2)
+
+    def output(self, t, x, xd, u):
+        return [xd[1:2].copy()]
+
+    def update(self, t, x, xd, u):
+        count = xd[0]
+        following = 0.0 if count >= int(self.params["upper"]) else count + 1
+        return np.array([following, count])
+
+    def label(self):
+        return f"count\n0…{self.params['upper']}"

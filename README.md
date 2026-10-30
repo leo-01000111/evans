@@ -186,7 +186,7 @@ sessions, and File ▸ Open recent lists the last scripts and models.
 
 ### Simulator
 
-Fifty block types, hierarchical subsystems, a drag-and-drop canvas with undo, RK4, RK45
+Seventy-nine block types, hierarchical and conditional subsystems, a drag-and-drop canvas with undo, RK4, RK45
 and Euler solvers, scopes, a properties inspector that leaves the diagram visible, and
 `linearize()` to pull a state-space model out of a nonlinear diagram. Wire two blocks by
 dragging between ports, or by clicking one and then the other. Drag with the middle mouse
@@ -277,7 +277,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-2914 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+3078 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

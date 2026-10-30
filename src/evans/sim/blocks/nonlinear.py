@@ -419,3 +419,128 @@ class Backlash(ModeLatch, Block):
 
     def label(self):
         return "backlash"
+
+
+def _breakpoints(value, who: str) -> np.ndarray:
+    from .continuous import _parse_vector
+    points = _parse_vector(value)
+    if np.any(np.diff(points) <= 0):
+        raise BlockError(f"{who}: breakpoints must increase strictly")
+    return points
+
+
+@register
+class Lookup2D(Block):
+    """
+    A table of values over a grid, interpolated bilinearly and clamped at
+    the edges: the row breakpoints index ``u1``, the column ones ``u2``.
+    """
+
+    type_name = "Lookup2D"
+    category = "Lookup Tables"
+    description = "Bilinear interpolation in a table over (u1, u2)."
+    default_inputs = ("u1", "u2")
+    params_spec = (
+        ParamSpec("rows", "Row breakpoints (u1)", "0, 1", kind="vector"),
+        ParamSpec("cols", "Column breakpoints (u2)", "0, 1", kind="vector"),
+        ParamSpec("table", "Table", "0 1; 1 2", kind="matrix",
+                  help="One row per row breakpoint, one column per column "
+                       "breakpoint."),
+    )
+
+    def configure(self) -> None:
+        from .continuous import _as_matrix
+        who = f"Lookup2D {self.block_id!r}"
+        self._r = _breakpoints(self.params["rows"], who)
+        self._c = _breakpoints(self.params["cols"], who)
+        self._z = _as_matrix(self.params["table"])
+        if self._z.shape != (len(self._r), len(self._c)):
+            raise BlockError(
+                f"{who}: the table is {self._z.shape[0]}×{self._z.shape[1]} "
+                f"but there are {len(self._r)} row and {len(self._c)} column "
+                f"breakpoints")
+
+    @staticmethod
+    def _locate(points: np.ndarray, v: float) -> tuple[int, float]:
+        if len(points) == 1:
+            return 0, 0.0
+        v = float(np.clip(v, points[0], points[-1]))
+        k = int(np.clip(np.searchsorted(points, v, side="right") - 1,
+                        0, len(points) - 2))
+        return k, (v - points[k]) / (points[k + 1] - points[k])
+
+    def output(self, t, x, xd, u):
+        a = np.atleast_1d(u[0])
+        b = np.broadcast_to(np.atleast_1d(u[1]), a.shape)
+        z = self._z
+        out = np.empty(len(a))
+        for n, (va, vb) in enumerate(zip(a, b)):
+            i, fi = self._locate(self._r, va)
+            j, fj = self._locate(self._c, vb)
+            i1 = min(i + 1, len(self._r) - 1)
+            j1 = min(j + 1, len(self._c) - 1)
+            out[n] = ((1 - fi) * (1 - fj) * z[i, j] + fi * (1 - fj) * z[i1, j]
+                      + (1 - fi) * fj * z[i, j1] + fi * fj * z[i1, j1])
+        return [out]
+
+    def label(self):
+        return "2-D\nlookup"
+
+
+@register
+class Prelookup(Block):
+    """
+    Where the input falls among the breakpoints: the interval's index ``k``
+    (0-based) and the fraction ``f`` across it, clamped to the table. Feed
+    both to an Interpolation (Prelookup) block, so several tables can share
+    one search.
+    """
+
+    type_name = "Prelookup"
+    category = "Lookup Tables"
+    description = "Index k and fraction f of the input among breakpoints."
+    default_outputs = ("k", "f")
+    params_spec = (
+        ParamSpec("breakpoints", "Breakpoints", "0, 1, 2", kind="vector"),
+    )
+
+    def configure(self) -> None:
+        self._p = _breakpoints(self.params["breakpoints"],
+                               f"Prelookup {self.block_id!r}")
+        if len(self._p) < 2:
+            raise BlockError("Prelookup needs at least two breakpoints")
+
+    def output(self, t, x, xd, u):
+        v = np.clip(np.atleast_1d(u[0]), self._p[0], self._p[-1])
+        k = np.clip(np.searchsorted(self._p, v, side="right") - 1,
+                    0, len(self._p) - 2)
+        f = (v - self._p[k]) / (self._p[k + 1] - self._p[k])
+        return [k.astype(float), f]
+
+    def label(self):
+        return "prelookup"
+
+
+@register
+class PrelookupInterp(Block):
+    type_name = "PrelookupInterp"
+    category = "Lookup Tables"
+    description = "Interpolation using a Prelookup's index and fraction."
+    default_inputs = ("k", "f")
+    params_spec = (
+        ParamSpec("table", "Table data", "0, 10, 20", kind="vector"),
+    )
+
+    def configure(self) -> None:
+        from .continuous import _parse_vector
+        self._z = _parse_vector(self.params["table"])
+        if len(self._z) < 2:
+            raise BlockError("the table needs at least two values")
+
+    def output(self, t, x, xd, u):
+        k = np.clip(np.atleast_1d(u[0]).astype(int), 0, len(self._z) - 2)
+        f = np.atleast_1d(u[1])
+        return [self._z[k] + f * (self._z[k + 1] - self._z[k])]
+
+    def label(self):
+        return "interp\n(k, f)"

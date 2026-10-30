@@ -63,6 +63,9 @@ GUIDES: tuple[str, ...] = ("index", "s", "python")
 #: the MATLAB runtime has, and the MATLAB basics scripts lean on.
 GROUPS: dict[str, tuple[str, ...]] = {
     **api._GROUPS,
+    "Simulink models": ("new_system", "load_system", "open_system",
+                        "save_system", "get_param", "set_param", "add_block",
+                        "add_line", "delete_block", "find_system"),
     "Model data": ("tfdata", "zpkdata", "ssdata", "evalfr", "freqresp",
                    "isstable"),
     "Plot options": ("bodeoptions", "nyquistoptions", "timeoptions",

@@ -21,12 +21,13 @@ class Gain(Block):
     category = _MATH
     description = "Multiply by a constant."
     params_spec = (ParamSpec("gain", "Gain", 1.0),)
+    labels_expressions = True
 
     def output(self, t, x, xd, u):
         return [self.params["gain"] * np.atleast_1d(u[0])]
 
     def label(self):
-        return f"{self.params['gain']:g}"
+        return self.shown("gain")
 
 
 @register
@@ -342,9 +343,16 @@ class Scope(Block):
 class ToWorkspace(Block):
     type_name = "ToWorkspace"
     category = _SINK
-    description = "Record a signal under a name, for later use."
+    description = "Record a signal under a name in the console's out."
     default_outputs = ()
-    params_spec = (ParamSpec("name", "Variable name", "y", kind="str"),)
+    params_spec = (
+        ParamSpec("name", "Variable name", "simout", kind="str"),
+        ParamSpec("format", "Save format", "Timeseries", kind="choice",
+                  choices=("Timeseries", "Structure With Time", "Array"),
+                  help="Timeseries gives out.simout.Time and .Data; Array "
+                       "gives the values alone, one row per time in "
+                       "out.tout."),
+    )
 
     def output_widths(self, input_widths):
         return []
@@ -405,3 +413,22 @@ class StopSimulation(Block):
 
     def label(self):
         return "STOP"
+
+
+@register
+class XYGraph(Block):
+    type_name = "XYGraph"
+    category = _SINK
+    description = "Plot one signal against another: y over x."
+    default_inputs = ("x", "y")
+    default_outputs = ()
+    params_spec = (ParamSpec("title", "Title", "XY Graph", kind="str"),)
+
+    def output_widths(self, input_widths):
+        return []
+
+    def output(self, t, x, xd, u):
+        return []
+
+    def label(self):
+        return "XY"

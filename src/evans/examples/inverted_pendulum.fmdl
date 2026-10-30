@@ -1,0 +1,159 @@
+{
+  "format": "evans-model",
+  "version": 1,
+  "name": "inverted_pendulum",
+  "settings": {
+    "StopTime": 5.0,
+    "Solver": "ode45",
+    "MaxStep": 0.0,
+    "RelTol": 1e-06,
+    "AbsTol": 1e-09
+  },
+  "blocks": [
+    {
+      "id": "mx",
+      "type": "Mux",
+      "params": {
+        "n_inputs": 3
+      },
+      "x": -220,
+      "y": 0
+    },
+    {
+      "id": "f",
+      "type": "Fcn",
+      "params": {
+        "expr": "9.81*sin(u(1)) - 0.1*u(2) + u(3)"
+      },
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "w",
+      "type": "Integrator",
+      "params": {
+        "x0": 0.0,
+        "limit": false,
+        "upper": 1.0,
+        "lower": -1.0,
+        "reset": "none"
+      },
+      "x": 220,
+      "y": 0
+    },
+    {
+      "id": "th",
+      "type": "Integrator",
+      "params": {
+        "x0": 0.2,
+        "limit": false,
+        "upper": 1.0,
+        "lower": -1.0,
+        "reset": "none"
+      },
+      "x": 440,
+      "y": 0
+    },
+    {
+      "id": "Kp",
+      "type": "Gain",
+      "params": {
+        "gain": -40.0
+      },
+      "x": 220,
+      "y": 180,
+      "flip": true
+    },
+    {
+      "id": "Kd",
+      "type": "Gain",
+      "params": {
+        "gain": -10.0
+      },
+      "x": 440,
+      "y": 180,
+      "flip": true
+    },
+    {
+      "id": "tau",
+      "type": "Sum",
+      "params": {
+        "signs": "++"
+      },
+      "x": 0,
+      "y": 180,
+      "flip": true
+    },
+    {
+      "id": "phase",
+      "type": "XYGraph",
+      "params": {
+        "title": "Phase portrait"
+      },
+      "x": 660,
+      "y": 90
+    }
+  ],
+  "connections": [
+    {
+      "src": "th.out",
+      "dst": "mx.in1"
+    },
+    {
+      "src": "w.out",
+      "dst": "mx.in2"
+    },
+    {
+      "src": "tau.out",
+      "dst": "mx.in3"
+    },
+    {
+      "src": "mx.out",
+      "dst": "f.in"
+    },
+    {
+      "src": "f.out",
+      "dst": "w.in"
+    },
+    {
+      "src": "w.out",
+      "dst": "th.in"
+    },
+    {
+      "src": "th.out",
+      "dst": "Kp.in"
+    },
+    {
+      "src": "w.out",
+      "dst": "Kd.in"
+    },
+    {
+      "src": "Kp.out",
+      "dst": "tau.in1"
+    },
+    {
+      "src": "Kd.out",
+      "dst": "tau.in2"
+    },
+    {
+      "src": "th.out",
+      "dst": "phase.x"
+    },
+    {
+      "src": "w.out",
+      "dst": "phase.y"
+    }
+  ],
+  "annotations": [
+    {
+      "text": "\u03b8'' = g\u00b7sin \u03b8 \u2212 0.1 \u03b8' + \u03c4, upright at \u03b8 = 0. The scope's view menu shows the phase portrait.",
+      "x": -220,
+      "y": -110
+    }
+  ],
+  "signal_names": {
+    "th.out": "\u03b8 (rad)",
+    "w.out": "\u03c9 (rad/s)",
+    "tau.out": "\u03c4"
+  }
+}

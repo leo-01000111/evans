@@ -103,6 +103,9 @@ a = Analysis(
            # opens on "No page" for everything.
            (str(ROOT / "src" / "evans" / "help" / "pages" / "*.md"),
             "evans/help/pages"),
+           # File ▸ Examples' models, read by path like the help pages.
+           (str(ROOT / "src" / "evans" / "examples" / "*.fmdl"),
+            "evans/examples"),
            # The licences travel with the build: MIT for the code, and
            # Cedric's all-rights-reserved notice for the character it shows.
            (str(ROOT / "LICENSE"), "."),

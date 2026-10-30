@@ -24,7 +24,12 @@ from PySide6.QtGui import (
     QPen,
     QPolygonF,
 )
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QStyle
+from PySide6.QtWidgets import (
+    QGraphicsItem,
+    QGraphicsObject,
+    QGraphicsSimpleTextItem,
+    QStyle,
+)
 
 from .. import theme
 
@@ -168,6 +173,9 @@ class PortItem(QGraphicsObject):
         self.block_id = block_id
         self.port = port
         self.is_input = is_input
+        #: Unit vector pointing out of the block, in scene axes: which way a
+        #: wire leaves (an output) or arrives from (an input).
+        self.direction = QPointF(-1.0 if is_input else 1.0, 0.0)
         self._hover = False
         self._highlight = False
         self.setAcceptHoverEvents(True)
@@ -232,10 +240,14 @@ class BlockItem(QGraphicsObject):
     #: when the drag ends or nothing is aligned.
     guides_changed = Signal(list)
 
-    def __init__(self, block, x: float, y: float) -> None:
+    def __init__(self, block, x: float, y: float, rotation: int = 0,
+                 flip: bool = False) -> None:
         super().__init__()
         self.block_id = block.block_id
         self.block = block
+        #: Quarter turns clockwise, and a left-right mirror applied first.
+        self.rotation = int(rotation) % 360
+        self.flip = bool(flip)
         self._error: str = ""
         self.setPos(x, y)
         self.setFlags(QGraphicsItem.ItemIsMovable |
@@ -257,30 +269,44 @@ class BlockItem(QGraphicsObject):
     # ── geometry ────────────────────────────────────────────────
 
     def height(self) -> float:
+        """The height of the block as drawn unturned, ports down its sides."""
         n = max(len(self.block.inputs), len(self.block.outputs), 1)
         return max(BLOCK_H, 24.0 + 22.0 * n)
 
-    def boundingRect(self) -> QRectF:
+    def size(self) -> tuple[float, float]:
+        """Width and height on the canvas, after any quarter turn."""
         h = self.height()
-        return QRectF(-BLOCK_W / 2 - 8, -h / 2 - 8, BLOCK_W + 16, h + 16)
+        return (h, BLOCK_W) if self.rotation in (90, 270) else (BLOCK_W, h)
+
+    def boundingRect(self) -> QRectF:
+        w, h = self.size()
+        return QRectF(-w / 2 - 8, -h / 2 - 8, w + 16, h + 16)
 
     def body_rect(self) -> QRectF:
-        h = self.height()
-        return QRectF(-BLOCK_W / 2, -h / 2, BLOCK_W, h)
+        w, h = self.size()
+        return QRectF(-w / 2, -h / 2, w, h)
+
+    def _turn(self, x: float, y: float) -> QPointF:
+        """A point of the unturned block, mirrored and turned as this one is."""
+        if self.flip:
+            x = -x
+        for _ in range(self.rotation // 90):
+            x, y = -y, x                    # a quarter turn clockwise
+        return QPointF(x, y)
 
     def _build_ports(self) -> None:
         for item in list(self.ports.values()):
             item.setParentItem(None)
         self.ports.clear()
         h = self.height()
-        for i, name in enumerate(self.block.inputs):
-            p = PortItem(self.block_id, name, True, self)
-            p.setPos(-BLOCK_W / 2, self._port_y(i, len(self.block.inputs), h))
-            self.ports[(name, True)] = p
-        for i, name in enumerate(self.block.outputs):
-            p = PortItem(self.block_id, name, False, self)
-            p.setPos(BLOCK_W / 2, self._port_y(i, len(self.block.outputs), h))
-            self.ports[(name, False)] = p
+        for names, is_input, side in ((self.block.inputs, True, -1.0),
+                                      (self.block.outputs, False, 1.0)):
+            for i, name in enumerate(names):
+                p = PortItem(self.block_id, name, is_input, self)
+                p.setPos(self._turn(side * BLOCK_W / 2,
+                                    self._port_y(i, len(names), h)))
+                p.direction = self._turn(side, 0.0)
+                self.ports[(name, is_input)] = p
 
     @staticmethod
     def _port_y(index: int, count: int, height: float) -> float:
@@ -346,7 +372,7 @@ class BlockItem(QGraphicsObject):
         (``Kp=2 Ki=1``, a transfer function) is data and must keep its case,
         so only the first line of a multi-line label is set as a sign.
         """
-        label = self.block.label()
+        label = self.block.display_label()
         head, _, rest = label.partition(chr(10))
         if not rest and label != self.block.type_name:
             head, rest = "", label
@@ -406,14 +432,15 @@ class BlockItem(QGraphicsObject):
             self._aligned = (False, False)
             self.guides_changed.emit([])
             return wanted
-        others = [(o.pos().x(), o.pos().y(), BLOCK_W / 2, o.height() / 2)
+        others = [(o.pos().x(), o.pos().y(), o.size()[0] / 2,
+                   o.size()[1] / 2)
                   for o in self.scene().items()
                   # Selected blocks travel with this one, so they are not
                   # landmarks: aligning to something that is moving is noise.
                   if isinstance(o, BlockItem) and o is not self
                   and not o.isSelected()]
-        result = align_snap(wanted.x(), wanted.y(), BLOCK_W / 2,
-                            self.height() / 2, others)
+        w, h = self.size()
+        result = align_snap(wanted.x(), wanted.y(), w / 2, h / 2, others)
         self._aligned = (result.aligned_x, result.aligned_y)
         self.guides_changed.emit(result.guides)
         return QPointF(result.x, result.y)
@@ -444,19 +471,29 @@ class WireItem(QGraphicsObject):
     """
 
     clicked = Signal(object)               # the Connection
+    #: The bend was dragged: the connection and its new coordinate.
+    bend_moved = Signal(object, float)
 
     def __init__(self, connection, src_port: PortItem,
-                 dst_port: PortItem) -> None:
+                 dst_port: PortItem, bend: float | None = None,
+                 label: str = "") -> None:
         super().__init__()
         self.connection = connection
         self.src_port = src_port
         self.dst_port = dst_port
+        #: The dragged x of a forward wire's vertical run, or y of a
+        #: feedback wire's return run; None to route automatically.
+        self.bend = bend
+        self.label = label
         self._path = QPainterPath()
+        self._axis: str | None = None
         self._hover = False
+        self._dragging = False
         self.setAcceptHoverEvents(True)
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setZValue(0)
-        self.setToolTip(str(connection))
+        self.setToolTip(str(connection) + (f"  ({label})" if label else "")
+                        + "\nDrag the wire's middle run to move its bend.")
         self.reroute()
 
     def touches(self, block_id: str) -> bool:
@@ -466,11 +503,24 @@ class WireItem(QGraphicsObject):
         self.prepareGeometryChange()
         a = self.src_port.scene_pos()
         b = self.dst_port.scene_pos()
-        self._path = _manhattan(a, b)
+        self._path, self._axis = route(a, self.src_port.direction, b,
+                                       self.dst_port.direction, self.bend)
         self.update()
 
     def boundingRect(self) -> QRectF:
-        return self._path.boundingRect().adjusted(-8, -8, 8, 8)
+        rect = self._path.boundingRect().adjusted(-8, -8, 8, 8)
+        if self.label:
+            rect = rect.united(self._label_rect().adjusted(-2, -2, 2, 2))
+        return rect
+
+    def _label_rect(self) -> QRectF:
+        """Where the signal name sits: just above the wire's first run."""
+        start = self.src_port.scene_pos()
+        width = QFontMetricsF(theme.data_font(7.5)).horizontalAdvance(
+            self.label) + 4
+        d = self.src_port.direction
+        x = start.x() + 8 if d.x() >= 0 else start.x() - 8 - width
+        return QRectF(x, start.y() - 16, width, 14)
 
     def shape(self) -> QPainterPath:
         stroker = QPainterPath()
@@ -496,6 +546,11 @@ class WireItem(QGraphicsObject):
         painter.setBrush(Qt.NoBrush)
         painter.drawPath(self._path)
         _arrow(painter, self._path, colour)
+        if self.label:
+            painter.setFont(theme.data_font(7.5))
+            painter.setPen(QPen(block_text()))
+            painter.drawText(self._label_rect(), Qt.AlignLeft | Qt.AlignBottom,
+                             self.label)
 
     def hoverEnterEvent(self, event) -> None:
         self._hover = True
@@ -508,31 +563,153 @@ class WireItem(QGraphicsObject):
     def mousePressEvent(self, event) -> None:
         self.clicked.emit(self.connection)
         super().mousePressEvent(event)
+        if event.button() == Qt.LeftButton and self._axis is not None \
+                and self._on_bend(event.scenePos()):
+            self._dragging = True
+            event.accept()
+
+    def _on_bend(self, point: QPointF) -> bool:
+        """Whether a click is on the run that the bend moves."""
+        n = self._path.elementCount()
+        for i in range(1, n):
+            p, q = self._path.elementAt(i - 1), self._path.elementAt(i)
+            vertical = abs(p.x - q.x) < 0.5
+            if (self._axis == "x") != vertical:
+                continue
+            lo_x, hi_x = sorted((p.x, q.x))
+            lo_y, hi_y = sorted((p.y, q.y))
+            if lo_x - 6 <= point.x() <= hi_x + 6 and \
+                    lo_y - 6 <= point.y() <= hi_y + 6:
+                return True
+        return False
+
+    def mouseMoveEvent(self, event) -> None:
+        if not self._dragging:
+            super().mouseMoveEvent(event)
+            return
+        pos = event.scenePos()
+        self.bend = snap(pos.x() if self._axis == "x" else pos.y())
+        self.reroute()
+        event.accept()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._dragging:
+            self._dragging = False
+            self.bend_moved.emit(self.connection, float(self.bend))
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 def _manhattan(a: QPointF, b: QPointF) -> QPainterPath:
-    """Orthogonal route from an output port to an input port."""
+    """Orthogonal route from a right-facing output to a left-facing input."""
+    return route(a, QPointF(1, 0), b, QPointF(-1, 0))[0]
+
+
+def route(a: QPointF, a_dir: QPointF, b: QPointF, b_dir: QPointF,
+          bend: float | None = None) -> tuple[QPainterPath, str | None]:
+    """
+    An orthogonal route from an output port to an input port, and the axis
+    its movable run moves along (``"x"``, ``"y"``, or None for an L-shape).
+
+    ``a_dir`` points out of the source block, ``b_dir`` out of the
+    destination; for unturned blocks they are right and left. A wire whose
+    destination lies ahead takes the three-run route, its vertical run at
+    ``bend`` (the midpoint by default). One that has to turn back — every
+    feedback path — leaves, drops below both blocks (to ``bend``) and comes
+    round: a straight diagonal would cut through whatever sits between the
+    two, which for a control loop is the plant. A port facing up or down
+    gets an L-shape.
+    """
     path = QPainterPath(a)
     stub = 18.0
-    # Any wire that goes rightwards takes the direct route, however short:
-    # blocks 30 px apart used to get the feedback detour below, which drew
-    # a loop between two neighbours on the demo model.
-    if b.x() - a.x() > 4.0:
-        mid = (a.x() + b.x()) / 2
+    p1 = QPointF(a.x() + a_dir.x() * stub, a.y() + a_dir.y() * stub)
+    p2 = QPointF(b.x() + b_dir.x() * stub, b.y() + b_dir.y() * stub)
+    horizontal = abs(a_dir.y()) < 0.5 and abs(b_dir.y()) < 0.5
+    opposed = horizontal and a_dir.x() * b_dir.x() < 0
+    ahead = (b.x() - a.x()) * a_dir.x()
+    if opposed and ahead > 4.0:
+        # Any wire that goes forward takes the direct route, however short:
+        # blocks 30 px apart used to get the feedback detour, which drew a
+        # loop between two neighbours on the demo model.
+        mid = bend if bend is not None else (a.x() + b.x()) / 2
         path.lineTo(mid, a.y())
         path.lineTo(mid, b.y())
         path.lineTo(b)
-    else:
-        # Feedback: leave right, drop below both blocks, come back and enter
-        # from the left. A straight diagonal here would cut through whatever
-        # sits between the two blocks, which for a control loop is the plant.
-        drop = max(a.y(), b.y()) + 55.0
-        path.lineTo(a.x() + stub, a.y())
-        path.lineTo(a.x() + stub, drop)
-        path.lineTo(b.x() - stub, drop)
-        path.lineTo(b.x() - stub, b.y())
+        return path, "x"
+    if horizontal:
+        drop = bend if bend is not None else max(a.y(), b.y()) + 55.0
+        path.lineTo(p1)
+        path.lineTo(p1.x(), drop)
+        path.lineTo(p2.x(), drop)
+        path.lineTo(p2)
         path.lineTo(b)
-    return path
+        return path, "y"
+    path.lineTo(p1)
+    if abs(a_dir.y()) < 0.5:
+        path.lineTo(p2.x(), p1.y())
+    else:
+        path.lineTo(p1.x(), p2.y())
+    path.lineTo(p2)
+    path.lineTo(b)
+    return path, None
+
+
+# ──────────────────────────────────────────────────────────────
+#  Annotation
+# ──────────────────────────────────────────────────────────────
+
+class AnnotationItem(QGraphicsObject):
+    """
+    A text note on the diagram: moved by dragging, edited by double-click.
+
+    Like the other items it holds only an index into the model's
+    ``annotations``; every change goes back through an undoable command.
+    """
+
+    moved = Signal(int, float, float)
+    double_clicked = Signal(int)
+
+    def __init__(self, index: int, text: str, x: float, y: float) -> None:
+        super().__init__()
+        self.index = index
+        self._text = QGraphicsSimpleTextItem(text, self)
+        self._text.setFont(theme.data_font(9))
+        self._text.setBrush(QBrush(block_text()))
+        self.setPos(x, y)
+        self._press = QPointF(x, y)
+        self.setFlags(QGraphicsItem.ItemIsMovable |
+                      QGraphicsItem.ItemIsSelectable)
+        self.setZValue(2)
+        self.setToolTip("A note. Double-click to edit it, drag to move it.")
+
+    @property
+    def text(self) -> str:
+        return self._text.text()
+
+    def boundingRect(self) -> QRectF:
+        return self._text.boundingRect().adjusted(-4, -2, 4, 2)
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:
+        if option.state & QStyle.State_Selected:
+            painter.setPen(QPen(sel_colour(), 2.0, Qt.DashLine))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(self.boundingRect())
+
+    def mousePressEvent(self, event) -> None:
+        self._press = self.pos()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        new = QPointF(snap(self.pos().x()), snap(self.pos().y()))
+        self.setPos(new)
+        if (new - self._press).manhattanLength() > 0.01:
+            self.moved.emit(self.index, new.x(), new.y())
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.double_clicked.emit(self.index)
+        event.accept()
 
 
 def _arrow(painter: QPainter, path: QPainterPath, colour: QColor,
