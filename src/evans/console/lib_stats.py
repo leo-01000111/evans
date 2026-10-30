@@ -66,6 +66,23 @@ def _square(x, name: str) -> np.ndarray:
     return A
 
 
+def _quietly(fn, A: np.ndarray) -> np.ndarray:
+    """
+    ``scipy.linalg.logm`` or ``sqrtm`` without its accuracy chatter.
+
+    Up to SciPy 1.15 they took ``disp=False`` and returned ``(result,
+    error estimate)``; later releases dropped the argument and return the
+    result alone, warning instead of printing. Both are handled.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            result = fn(A, disp=False)
+        except TypeError:
+            return fn(A)
+    return result[0] if isinstance(result, tuple) else result
+
+
 def _axis_of(x, dim) -> int:
     """MATLAB's working dimension as a numpy axis of ``_as2d(x)``."""
     if dim is not None and not (isinstance(dim, np.ndarray) and dim.size == 0):
@@ -915,19 +932,11 @@ class StatsLibrary:
 
     def f_logm(self, a):
         from scipy import linalg
-        A = _square(a, "logm")
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            L, _ = linalg.logm(A, disp=False)
-        return _out(L)
+        return _out(_quietly(linalg.logm, _square(a, "logm")))
 
     def f_sqrtm(self, a):
         from scipy import linalg
-        A = _square(a, "sqrtm")
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            S, _ = linalg.sqrtm(A, disp=False)
-        return _out(S)
+        return _out(_quietly(linalg.sqrtm, _square(a, "sqrtm")))
 
     def f_cond(self, a, p=2):
         A = _matrix(a)

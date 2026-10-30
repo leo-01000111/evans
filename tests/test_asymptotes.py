@@ -20,8 +20,12 @@ W0, W1 = 0.01, 100.0
 
 
 def _segments(segs):
-    return [(s.omega_start, s.value_start, s.omega_end, s.value_end, s.slope)
-            for s in segs]
+    """
+    The segments as an array, one row each. An array, not a list of tuples:
+    pytest 8.4 stopped comparing nested sequences with ``approx``.
+    """
+    return np.array([(s.omega_start, s.value_start, s.omega_end,
+                      s.value_end, s.slope) for s in segs])
 
 
 def _assert_contiguous(segs, lo=W0, hi=W1):
@@ -117,10 +121,10 @@ def _value_at(segs, w):
 def test_complex_pair_magnitude_is_flat_then_minus_40():
     a = bode_asymptotes(ctl.tf([1], [1, 0.4, 1]), W0, W1)
     assert a.gain_dB == pytest.approx(0.0)
-    assert _segments(a.magnitude) == pytest.approx([
+    assert _segments(a.magnitude) == pytest.approx(np.array([
         (0.01, 0.0, 1.0, 0.0, 0.0),
         (1.0, 0.0, 100.0, -80.0, -40.0),
-    ])
+    ]))
     assert len(a.breaks) == 1
     assert a.breaks[0].omega == pytest.approx(1.0)
     assert a.breaks[0].slope_change == -40.0
@@ -144,7 +148,8 @@ def test_complex_pair_phase_is_a_180_degree_step_at_wn():
 def test_rhp_zero_has_flat_magnitude_but_extra_phase_lag():
     a = bode_asymptotes(ctl.tf([-1, 1], [1, 1]), W0, W1)
     # |1 − jω| = |1 + jω|: the two corners cancel and the magnitude is flat.
-    assert _segments(a.magnitude) == pytest.approx([(0.01, 0.0, 100.0, 0.0, 0.0)])
+    assert _segments(a.magnitude) == pytest.approx(
+        np.array([(0.01, 0.0, 100.0, 0.0, 0.0)]))
     assert a.breaks == []
     # Phase: the LHP pole gives −90° over [0.1, 10], and the RHP zero — with
     # the opposite phase sign — a further −90°: −90°/dec, 0° → −180°.
