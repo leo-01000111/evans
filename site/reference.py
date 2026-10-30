@@ -181,7 +181,7 @@ def _ports(names) -> str:
 def blocks_page() -> tuple[str, dict]:
     from evans.sim import block_types, by_category, create
     grouped = by_category()
-    count = len(block_types())
+    count = sum(not c.hidden for c in block_types().values())
     index = "".join(
         f"<dt>{esc(cat)}</dt><dd>"
         + "".join(f'<a href="#{esc(c.type_name)}">{esc(c.type_name)}</a>' for c in blocks)

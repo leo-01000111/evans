@@ -1,0 +1,104 @@
+    <section class="proj-hero">
+      <p class="label">Issues · v@@version@@</p>
+      <h1>What's wrong, and how to tell me</h1>
+      <p class="lede">The problems I already know about, so you do not spend an afternoon finding one again, and a form for the ones I do not. A report goes straight to my inbox.</p>
+      <div class="cta">
+        <a class="hp-btn hp-btn--primary" href="#report"><span>Report an issue</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(90 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
+        <a class="hp-btn hp-btn--ghost" href="patch-notes.html"><span>Patch notes</span></a>
+      </div>
+    </section>
+
+    <section class="proj-section">
+      <div class="card">
+        <h2>On this page</h2>
+        <dl class="ref-index">
+          <dt>Known</dt><dd><a href="#bugs">bugs</a><a href="#gaps">not supported yet</a></dd>
+          <dt>Feedback</dt><dd><a href="#report">report an issue</a></dd>
+        </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="bugs">
+      <div class="card prose notes">
+        <h2>Known bugs</h2>
+        <p>Each is on the <a href="@@repo@@/blob/main/docs/ROADMAP.md">roadmap</a>, with what fixing it involves.</p>
+        <ul>
+          <li><strong>A PID block with <em>Limit output</em> ticked can stall a run.</strong> Once its output reaches the limit, the solver's step shrinks towards zero and the run stops making progress. Until it is fixed, leave <em>Limit output</em> off and put a Saturation block after the PID, or build the PI from a Gain and an Integrator with its own limits, as the <em>PID with a saturating actuator</em> example does.</li>
+          <li><strong>A Unit Delay fed by a continuous signal behaves as a zero-order hold.</strong> Over each sample period it shows the sample just taken, where Simulink shows the one before. Fed by another discrete block it delays correctly. A Memory block gives the previous sample from either kind of signal.</li>
+          <li><strong>A fixed-step run (<code>ode1</code> to <code>ode5</code>) does not log its last instant.</strong> The final sample is one output step before the stop time.</li>
+          <li><strong><code>numel("hello")</code> is 5, not 1.</strong> Text in double quotes is a character array in Evans, because string arrays are not there yet.</li>
+          <li><strong>Growing a cell, struct or array one element at a time is slow.</strong> <code>c{end+1} = k</code> in a loop of 10,000 takes a few seconds. Preallocate (<code>c = cell(1, n)</code>) where you can.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="proj-section" id="gaps">
+      <div class="card prose notes">
+        <h2>Not supported yet</h2>
+        <p>These stop with an error that names them rather than giving a wrong answer. The <a href="matlab.html">MATLAB compatibility</a> page has the full list.</p>
+        <ul>
+          <li><strong>Language:</strong> <code>eval</code>, <code>classdef</code>, nested functions, N-D arrays (<code>zeros(2,2,2)</code>), integer types, string arrays and <code>containers.Map</code>.</li>
+          <li><strong>Data:</strong> Excel files (<code>.xlsx</code>), and <code>.mat</code> files saved as version 7.3.</li>
+          <li><strong>Plotting:</strong> 3-D plots, images, and annotations typed on a later line than the plot.</li>
+          <li><strong>Simulink:</strong> opening <code>.slx</code> or <code>.mdl</code> files, buses, masks and block libraries, physical (Simscape-style) modelling, and a subsystem that is both enabled and triggered.</li>
+          <li><strong>Symbolic maths:</strong> symbolic functions such as <code>syms y(t)</code>, and so <code>dsolve</code>.</li>
+          <li><strong>Platforms:</strong> no Linux build yet, and the Windows installer is not code-signed, so SmartScreen warns the first time. See the <a href="install.html">install notes</a>.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="proj-section" id="report">
+      <div class="card prose">
+        <h2>Report an issue</h2>
+        <p>A bug, a MATLAB script that does not run, a missing command, or an idea. The more of the steps you can give, the faster it gets fixed. Leave an email if you would like a reply. You can also <a href="@@repo@@/issues/new">open an issue on GitHub</a>.</p>
+        <form class="issue-form" action="https://formspree.io/f/xppqgygl" method="POST" data-issue-form>
+          <input type="hidden" name="_subject" value="Evans issue report" />
+          <div class="issue-form__row">
+            <label class="issue-form__field">
+              <span class="issue-form__label">Kind</span>
+              <select name="kind" required>
+                <option value="Bug">Something is broken</option>
+                <option value="MATLAB compatibility">A MATLAB script or command does not work</option>
+                <option value="Feature request">An idea or a missing feature</option>
+                <option value="Docs">These docs are wrong or unclear</option>
+                <option value="Other">Something else</option>
+              </select>
+            </label>
+            <label class="issue-form__field">
+              <span class="issue-form__label">Evans version</span>
+              <input type="text" name="version" value="@@version@@" autocomplete="off" />
+            </label>
+            <label class="issue-form__field">
+              <span class="issue-form__label">Running on</span>
+              <select name="platform">
+                <option>Windows, installer</option>
+                <option>Windows, portable zip</option>
+                <option>Windows, from source</option>
+                <option>macOS, from source</option>
+                <option>Linux, from source</option>
+                <option>Other</option>
+              </select>
+            </label>
+          </div>
+          <label class="issue-form__field">
+            <span class="issue-form__label">Summary</span>
+            <input type="text" name="summary" required maxlength="140" placeholder="bode(G) draws nothing when G has a pole at zero" />
+          </label>
+          <label class="issue-form__field">
+            <span class="issue-form__label">What happened</span>
+            <textarea name="details" rows="7" required placeholder="What you did, what you expected, and what happened instead. Paste the script or the error if there is one."></textarea>
+          </label>
+          <label class="issue-form__field">
+            <span class="issue-form__label">Email <span class="muted">(optional, for a reply)</span></span>
+            <input type="email" name="email" autocomplete="email" />
+          </label>
+          <input type="text" name="_gotcha" class="issue-form__trap" tabindex="-1" autocomplete="off" aria-hidden="true" />
+          <div class="issue-form__foot">
+            <button class="hp-btn hp-btn--primary" type="submit"><span>Send report</span></button>
+            <p class="issue-form__status" role="status" aria-live="polite"></p>
+          </div>
+        </form>
+        <p class="small muted">Reports are sent by email through Formspree.</p>
+      </div>
+    </section>
+    <script src="assets/issue-form.js" defer></script>

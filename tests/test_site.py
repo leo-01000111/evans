@@ -36,8 +36,9 @@ def test_site_builds_with_every_command_and_block(tmp_path):
             assert f'id="{name}"' in commands, name
 
     blocks = (tmp_path / "blocks.html").read_text(encoding="utf-8")
-    for name in block_types():
-        assert f'id="{name}"' in blocks, name
+    for name, cls in block_types().items():
+        if not cls.hidden:              # the compiler's own gate and hold
+            assert f'id="{name}"' in blocks, name
 
 
 def test_hand_written_pages_link_only_to_pages_that_exist(tmp_path):
@@ -54,13 +55,15 @@ def test_hand_written_pages_link_only_to_pages_that_exist(tmp_path):
             assert (tmp_path / asset).is_file(), f"{file} uses missing {asset}"
 
 
-def test_patch_notes_cover_the_current_version_and_carry_the_issue_form(tmp_path):
+def test_patch_notes_cover_the_current_version_and_the_issues_page_has_the_form(tmp_path):
     from evans import __version__
 
     build = _build_module()
     build.build(tmp_path)
     notes = (tmp_path / "patch-notes.html").read_text(encoding="utf-8")
     assert f'id="v{__version__}"' in notes, "no patch notes for this version"
-    assert 'action="https://formspree.io/f/xppqgygl"' in notes
-    for file in ("index.html", "install.html"):
-        assert 'href="patch-notes.html#report"' in (tmp_path / file).read_text(encoding="utf-8")
+    issues = (tmp_path / "issues.html").read_text(encoding="utf-8")
+    assert 'action="https://formspree.io/f/xppqgygl"' in issues
+    assert 'id="bugs"' in issues and 'id="report"' in issues
+    for file in ("index.html", "install.html", "patch-notes.html"):
+        assert 'href="issues.html#report"' in (tmp_path / file).read_text(encoding="utf-8")

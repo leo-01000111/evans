@@ -1,9 +1,9 @@
     <section class="proj-hero">
       <p class="label">Patch notes · v@@version@@</p>
-      <h1>What changed, and what's wrong</h1>
-      <p class="lede">Every change to Evans since the first commit, newest first. If something is broken, missing or confusing, tell me with the form at the bottom of the page; it goes straight to my inbox.</p>
+      <h1>What changed</h1>
+      <p class="lede">Every change to Evans since the first commit, newest first. If something is broken, missing or confusing, the <a href="issues.html">Issues page</a> lists what I already know about and has a form that goes straight to my inbox.</p>
       <div class="cta">
-        <a class="hp-btn hp-btn--primary" href="#report"><span>Report an issue</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(90 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
+        <a class="hp-btn hp-btn--primary" href="issues.html#report"><span>Report an issue</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(90 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
         <a class="hp-btn hp-btn--coffee" href="@@kofi@@" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M4 10h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"></path><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16"></path><path d="M8 3v3"></path><path d="M12 3v3"></path></g></svg><span>Buy me a coffee</span></a>
         <a class="hp-btn hp-btn--ghost" href="@@releases@@"><span>Latest release</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(315 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
       </div>
@@ -13,10 +13,42 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
-          <dt>Feedback</dt><dd><a href="#report">report an issue</a></dd>
+          <dt>Feedback</dt><dd><a href="issues.html#bugs">known issues</a><a href="issues.html#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.12.0">
+      <div class="card prose notes">
+        <h2>0.12.0 · 30 October 2026</h2>
+        <p>The Model tab and the console now work together the way Simulink and MATLAB do, the block library has most of what everyday models use, and the console gained the functions logged data needs.</p>
+        <h3>New on the Model tab</h3>
+        <ul>
+          <li><strong>Parameters from the workspace.</strong> Any numeric block parameter takes a MATLAB expression: a Gain of <code>Kp</code>, a frequency of <code>2*pi*f</code>, a denominator of <code>[1 2 1]</code>. It is evaluated in the console's workspace each time the model runs, so changing <code>Kp</code> at the prompt and pressing Run uses the new value. A missing variable stops the run with the block, the parameter and the text that failed.</li>
+          <li><strong>Simulink commands at the console.</strong> <code>sim('model')</code> runs a model by name, from the canvas or from <code>model.fmdl</code>, and returns <code>out.tout</code>, <code>out.yout</code> (from top-level Outports) and one field per To Workspace block. <code>new_system</code>, <code>load_system</code>, <code>open_system</code>, <code>save_system</code>, <code>get_param</code>, <code>set_param</code>, <code>add_block</code>, <code>add_line</code>, <code>delete_block</code> and <code>find_system</code> build and change models from a script, with Simulink's names for blocks and parameters. A loop that sets <code>Kp</code> and calls <code>sim</code> is a parameter sweep.</li>
+          <li><strong>Runs reach the workspace.</strong> Pressing Run leaves the output in the console as <code>out</code>. To Workspace saves as a timeseries, a structure with time, or an array; From Workspace reads <code>[t, u]</code> or either structure. Stop time, solver and step are saved with the model.</li>
+          <li><strong>MATLAB code in a block.</strong> The Fcn block applies an expression such as <code>u(1)*sin(u(2))</code>; the MATLAB Function block runs a whole function, its arguments and outputs becoming its ports.</li>
+          <li><strong>Conditional subsystems.</strong> An Enable, Trigger or Action Port block inside a subsystem makes it run only while enabled, once per trigger edge, or when an If or Switch Case block picks it. States are held or reset, outputs held or reset while it does not run. The Integrator has a reset port.</li>
+          <li><strong>Twenty-nine new blocks in all.</strong> Besides those above: Relational and Logical Operator, Compare To Constant and To Zero, Bitwise Operator, Memory, Discrete-Time Integrator, Discrete FIR and Filter, Counter, Repeating Sequence, Signal Builder, 2-D Lookup Table, Prelookup, XY Graph, Goto/From, and Data Store Memory, Read and Write.</li>
+          <li><strong>Editing.</strong> From the right-click menu: rotate and flip a block, add a text note, name a signal on its wire, drag a wire's bend, and Create Subsystem from Selection. Each is one step of undo.</li>
+          <li><strong>Export and compare.</strong> The diagram exports as SVG, PDF or PNG, or prints; the scope's signals export as CSV or <code>.mat</code>. The scope keeps the last five runs and can draw them under the new one, and an XY Graph gets its own view.</li>
+          <li><strong>Examples.</strong> File ▸ Examples opens a DC motor speed loop, cruise control, an inverted pendulum, and a PID with a saturating actuator (windup and anti-windup side by side).</li>
+        </ul>
+        <h3>New at the console</h3>
+        <ul>
+          <li><strong>Data files.</strong> <code>readmatrix</code>, <code>readtable</code>, <code>writematrix</code>, <code>writetable</code> and the older <code>csvread</code> and <code>dlmread</code>, with a header row skipped; <code>fopen</code>, <code>fprintf</code> to a file, <code>fgetl</code>, <code>fscanf</code>, <code>textscan</code>; <code>jsondecode</code> and <code>jsonencode</code>; a small <code>table</code>.</li>
+          <li><strong>Statistics and linear algebra.</strong> <code>var</code>, <code>cov</code>, <code>corrcoef</code>, <code>prctile</code>, <code>movmean</code>, <code>smoothdata</code>, <code>detrend</code>, <code>normcdf</code>, <code>ttest</code>, <code>regress</code>; <code>svd</code>, <code>qr</code>, <code>lu</code>, <code>chol</code>, <code>pinv</code>, <code>expm</code> and the rest; <code>randi</code>, <code>randperm</code>, <code>rng</code>.</li>
+          <li><strong>Text, cells and structs.</strong> <code>strsplit</code>, <code>strjoin</code>, <code>regexp</code>, <code>regexprep</code>, <code>contains</code> and their kin; <code>cellfun</code>, <code>arrayfun</code>, <code>cell2mat</code>, <code>struct2cell</code>, <code>isequal</code>, <code>ismember</code> on text.</li>
+          <li><strong>Signals, fitting and optimisation.</strong> <code>filtfilt</code>, <code>fir1</code>, <code>designfilt</code>, <code>pwelch</code>, <code>spectrogram</code>, <code>resample</code>, <code>xcorr</code> and the windows; <code>lsqcurvefit</code>, <code>fsolve</code>, <code>fmincon</code>, <code>linprog</code>, <code>integral</code>, <code>spline</code> and <code>fit</code>.</li>
+          <li><strong>The system.</strong> <code>who</code>, <code>whos</code>, <code>dir</code>, <code>exist</code>, <code>system</code>, dates (<code>datestr</code>, <code>datenum</code>), and number functions from <code>nchoosek</code> to <code>dec2bin</code>.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li><strong>Answers that were silently wrong.</strong> <code>{1,'a';2,'b'}</code> is 2×2, not 1×4; <code>struct('a',{1,2})</code> is a 1×2 struct array; <code>error('my:id', …)</code> keeps its identifier; <code>persistent</code> and <code>global</code> work; and copying a cell or struct no longer shares it, so changing the copy leaves the original alone.</li>
+        </ul>
+        <p>Known problems are listed on the new <a href="issues.html">Issues page</a>.</p>
       </div>
     </section>
 
@@ -288,56 +320,7 @@
 
     <section class="proj-section" id="report">
       <div class="card prose">
-        <h2>Report an issue</h2>
-        <p>A bug, a MATLAB script that does not run, a missing command, or an idea. The more of the steps you can give, the faster it gets fixed. Leave an email if you would like a reply. You can also <a href="@@repo@@/issues/new">open an issue on GitHub</a>.</p>
-        <form class="issue-form" action="https://formspree.io/f/xppqgygl" method="POST" data-issue-form>
-          <input type="hidden" name="_subject" value="Evans issue report" />
-          <div class="issue-form__row">
-            <label class="issue-form__field">
-              <span class="issue-form__label">Kind</span>
-              <select name="kind" required>
-                <option value="Bug">Something is broken</option>
-                <option value="MATLAB compatibility">A MATLAB script or command does not work</option>
-                <option value="Feature request">An idea or a missing feature</option>
-                <option value="Docs">These docs are wrong or unclear</option>
-                <option value="Other">Something else</option>
-              </select>
-            </label>
-            <label class="issue-form__field">
-              <span class="issue-form__label">Evans version</span>
-              <input type="text" name="version" value="@@version@@" autocomplete="off" />
-            </label>
-            <label class="issue-form__field">
-              <span class="issue-form__label">Running on</span>
-              <select name="platform">
-                <option>Windows, installer</option>
-                <option>Windows, portable zip</option>
-                <option>Windows, from source</option>
-                <option>macOS, from source</option>
-                <option>Linux, from source</option>
-                <option>Other</option>
-              </select>
-            </label>
-          </div>
-          <label class="issue-form__field">
-            <span class="issue-form__label">Summary</span>
-            <input type="text" name="summary" required maxlength="140" placeholder="bode(G) draws nothing when G has a pole at zero" />
-          </label>
-          <label class="issue-form__field">
-            <span class="issue-form__label">What happened</span>
-            <textarea name="details" rows="7" required placeholder="What you did, what you expected, and what happened instead. Paste the script or the error if there is one."></textarea>
-          </label>
-          <label class="issue-form__field">
-            <span class="issue-form__label">Email <span class="muted">(optional, for a reply)</span></span>
-            <input type="email" name="email" autocomplete="email" />
-          </label>
-          <input type="text" name="_gotcha" class="issue-form__trap" tabindex="-1" autocomplete="off" aria-hidden="true" />
-          <div class="issue-form__foot">
-            <button class="hp-btn hp-btn--primary" type="submit"><span>Send report</span></button>
-            <p class="issue-form__status" role="status" aria-live="polite"></p>
-          </div>
-        </form>
-        <p class="small muted">Reports are sent by email through Formspree.</p>
+        <h2>Something wrong?</h2>
+        <p>The <a href="issues.html">Issues page</a> lists the bugs and gaps I already know about, and has the form to report one I do not.</p>
       </div>
     </section>
-    <script src="assets/issue-form.js" defer></script>

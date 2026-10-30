@@ -1,5 +1,5 @@
 /*
- * The issue form on the patch-notes page.
+ * The issue form on the Issues page.
  *
  * Without JavaScript the form posts to Formspree and the visitor lands on
  * Formspree's thank-you page. Here it is sent in the background instead, so
