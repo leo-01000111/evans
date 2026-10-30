@@ -950,7 +950,12 @@ class StatsLibrary:
             p = float(p)
         if p == 2:
             s = np.linalg.svd(A, compute_uv=False)
-            return float(np.inf) if s.min() == 0 else float(s.max() / s.min())
+            # Singular by rank's own test, not only at an exact zero: for
+            # [1 1;1 1] LAPACK gives 0 on one platform and 1e-17 on another,
+            # and a ratio built on rounding noise is no condition number.
+            tol = max(A.shape) * np.spacing(s.max()) if s.size else 0.0
+            return float(np.inf) if s.min() <= tol \
+                else float(s.max() / s.min())
         if A.shape[0] != A.shape[1]:
             raise MatlabError("A is rectangular. Use the 2 norm.")
         if p not in (1, np.inf, "fro"):
