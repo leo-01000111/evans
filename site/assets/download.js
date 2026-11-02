@@ -205,8 +205,18 @@
   /*
    * Point the big button at the file matching `asset`, through the counter
    * at dl/`slug` when it is up, and say its size.
+   *
+   * The counter finds the file itself, so the button points at it at once:
+   * on a slow network a click before GitHub's API has answered still gets
+   * the installer, not the release page. Only if the counter turns out to
+   * be down does the button change, to the file or the release page.
    */
   function file(buttons, asset, kind, slug) {
+    buttons.forEach(function (b) {
+      if (!direct(b) || sent(b)) return;
+      b.setAttribute("data-download-fallback", b.getAttribute("href"));
+      b.href = COUNTER + slug;
+    });
     Promise.all([latest(), counter()]).then(function (got) {
       var rel = got[0], counted = !!got[1];
       var assets = (rel && rel.assets) || [];
@@ -214,8 +224,10 @@
       buttons.forEach(function (b) {
         // Sent to the source route meanwhile (an Intel Mac): leave it there.
         if (!direct(b) || sent(b)) return;
-        if (!f) {                               // keep the release page
-          line(b, "size", "All downloads on GitHub");
+        if (!f) {
+          // The counter still finds the file; without it, the release page.
+          if (!counted) b.href = b.getAttribute("data-download-fallback");
+          line(b, "size", counted ? kind : "All downloads on GitHub");
           return;
         }
         b.href = counted ? COUNTER + slug : f.browser_download_url;
