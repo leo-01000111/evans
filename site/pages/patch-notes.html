@@ -13,10 +13,37 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="issues.html#bugs">known issues</a><a href="issues.html#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.14.0">
+      <div class="card prose notes">
+        <h2>0.14.0 · 3 November 2026</h2>
+        <p>Figures go well beyond lines and bars: 3-D surfaces you turn with the mouse, images and colour maps, scatter, error bars, pies, contours, tiled layouts and a second y axis. Hover reads a figure out, a click pins a data tip, and figures save as PDF and EPS for papers. Two changes alter how existing scripts look; they are listed first.</p>
+        <h3>Changed</h3>
+        <ul>
+          <li><strong>Line colours are honoured.</strong> <code>plot(x, y, 'r--o')</code> draws a red line, and <code>'Color'</code>, <code>'LineWidth'</code>, <code>'MarkerSize'</code> and <code>'DisplayName'</code> take effect. Before, the colour letter was ignored for the theme's colours, which are still used when a script gives none. Line specs can also be written in any order, <code>'o-r'</code> as well as <code>'r-o'</code>.</li>
+          <li><strong>The prompt keeps the last figure, as MATLAB does.</strong> A <code>title</code>, <code>legend</code>, <code>xlabel</code> or <code>hold on</code> typed on a later line reaches the figure drawn last, which is redrawn in its tab. Before, it had to be on the plot's own line. Once you close the figure, the next plot starts afresh.</li>
+        </ul>
+        <h3>New</h3>
+        <ul>
+          <li><strong>More kinds of plot.</strong> <code>scatter</code>, <code>errorbar</code>, <code>area</code>, <code>fill</code>, <code>patch</code>, <code>pie</code>, <code>quiver</code>, <code>contour</code> and <code>contourf</code>; stacked bars with <code>bar(..., 'stacked')</code>, and <code>barh</code> now really draws its bars sideways.</li>
+          <li><strong>3-D axes.</strong> <code>plot3</code>, <code>scatter3</code>, <code>surf</code>, <code>mesh</code> and <code>quiver3</code>, with <code>view</code>, <code>zlabel</code>, <code>zlim</code> and <code>shading</code>. Drag to turn the axes, right-drag to zoom.</li>
+          <li><strong>Images and colour.</strong> <code>imagesc</code>, <code>image</code> and <code>imshow</code>, with <code>colormap</code> (<code>jet</code>, <code>turbo</code>, <code>hot</code>, <code>gray</code> and the rest), <code>colorbar</code> and <code>caxis</code>. <code>parula</code> is MathWorks' own map, so Evans shows viridis, the open map closest to it.</li>
+          <li><strong>Layouts and annotation.</strong> <code>tiledlayout</code> and <code>nexttile</code>, a second y axis with <code>yyaxis</code>, <code>text</code>, <code>xline</code>, <code>yline</code>, <code>annotation</code> and <code>colororder</code>. An axes from <code>nexttile</code>, <code>subplot</code> or <code>gca</code> can be passed first to <code>plot</code>, <code>title</code> and the rest.</li>
+          <li><strong>Reading a figure.</strong> Hover over a curve, a marker, a contour line or an image for its values; click to pin a data tip there, and click the tip to remove it.</li>
+          <li><strong>PDF and EPS.</strong> <code>exportgraphics</code>, <code>saveas</code>, <code>print</code> and the figure's Save write PDF and EPS drawn for print, dark on white, as well as PNG, JPEG, TIFF and SVG. <code>'Resolution'</code> and <code>print -r300</code> set a picture's resolution.</li>
+          <li><strong>36 new help pages</strong>, one for each of these commands and for <code>bar</code>.</li>
+        </ul>
+        <h3>Not yet</h3>
+        <ul>
+          <li>Plot handles: <code>h = plot(...)</code> followed by <code>set(h, ...)</code> or <code>h.Color = ...</code>. Give the properties as name-value pairs in the plot call instead.</li>
+          <li>Colour (m-by-n-by-3) images and <code>imread</code>, which need N-D arrays.</li>
+        </ul>
       </div>
     </section>
 
