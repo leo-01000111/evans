@@ -13,10 +13,35 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="issues.html#bugs">known issues</a><a href="issues.html#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.13.0">
+      <div class="card prose notes">
+        <h2>0.13.0 · 3 November 2026</h2>
+        <p>Every known bug from 0.12 is fixed, Excel workbooks open at the console, and every console command has a help page. Two of the fixes change what existing models compute; they are listed first.</p>
+        <h3>Changed results on the Model tab</h3>
+        <ul>
+          <li><strong>A Unit Delay is one sample late, as in Simulink.</strong> Fed by a continuous signal, it showed the sample it had just taken, so it acted as a zero-order hold. It now shows the sample before, from any kind of signal.</li>
+          <li><strong>Discrete blocks in a chain add no extra delay.</strong> When several discrete blocks act at the same instant, each now sees the new output of the ones feeding it, as Simulink orders them. A Zero-Order Hold feeding a Discrete Transfer Fcn, or a Discrete-Time Integrator, used to hand over the sample before. A discrete loop with no delay in it, which Simulink refuses, now runs with a warning.</li>
+        </ul>
+        <h3>New</h3>
+        <ul>
+          <li><strong>Excel workbooks.</strong> <code>readmatrix</code>, <code>readtable</code>, <code>writematrix</code> and <code>writetable</code> read and write <code>.xlsx</code> files, with the <code>'Sheet'</code> and <code>'Range'</code> options. <code>xlsread</code>, <code>xlswrite</code> and <code>sheetnames</code> are new. The old <code>.xls</code> format is not supported; save it as <code>.xlsx</code>.</li>
+          <li><strong>A help page for every console command.</strong> The 93 functions that had none, from <code>fread</code> and <code>designfilt</code> to <code>gamma</code> and <code>datenum</code>, now have one with a runnable example. The special functions have a group of their own in the index.</li>
+          <li><strong><code>designfilt</code> filters work everywhere.</strong> <code>filter(d, x)</code>, <code>freqz(d)</code>, <code>impz(d)</code> and <code>grpdelay(d)</code> take a designed filter, as <code>filtfilt</code> already did.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li><strong>A PID block with <em>Limit output</em> stalled the run</strong> once its output reached the limit and the integrator had to ride it. It now finishes in about a second, and the output never passes the limit.</li>
+          <li><strong>A fixed-step run (<code>ode1</code> to <code>ode5</code>) stopped one output step short</strong> of the stop time. It now logs the last instant.</li>
+          <li><strong>An anonymous function read its variables when it was called, not when it was made.</strong> After <code>k = 2; f = @(x) k*x; k = 10;</code>, <code>f(1)</code> gave 10; it gives 2, as in MATLAB.</li>
+          <li><strong>Growing a cell or struct in a loop was slow.</strong> <code>c{end+1} = k</code> copied the whole cell each time, so 10,000 of them took 3.5 seconds. A cell or struct no other variable holds is now written in place, so the same loop takes under a tenth of a second.</li>
+        </ul>
       </div>
     </section>
 
