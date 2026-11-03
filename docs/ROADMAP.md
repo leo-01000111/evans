@@ -274,21 +274,67 @@ Found while doing this phase, not fixed in it:
 - [x] A fixed-step run does not log its final instant (`_fixed_step` records
       only the edges before `t1`). **S** *Done 2026-11-03.*
 
-## Phase 3 — Plotting
+## Phase 3 — Plotting ✅ **DONE 2026-11-03**
 
-Plotting stops at 2-D lines and bars, and figures are a large share of what people use
-MATLAB for.
+Plotting stopped at 2-D lines and bars, and figures are a large share of what people use
+MATLAB for. The plot functions moved to `console/lib_plot.py`, a mixin like the other
+`lib_*` groups. 2-D axes are still drawn by pyqtgraph (`ui/console/figure_view.py`);
+3-D axes and pies are drawn by a new matplotlib renderer, `console/figure_mpl.py`,
+embedded in the figure, which also writes PDF/EPS and the live report's figures, so
+every spec saves however it was made. Tests: `tests/golden/test_lib_plot.py`
+(headless) and `test_plot_ui.py`; the self-test checks the 3-D, contour and PDF/EPS
+paths the frozen build would otherwise only reach on first use.
 
-- [ ] `scatter`, `errorbar`, `area`, `fill`, `patch`, `pie`, `text`, `xline`, `yline`,
+- [x] `scatter`, `errorbar`, `area`, `fill`, `patch`, `pie`, `text`, `xline`, `yline`,
       `yyaxis`, `tiledlayout`/`nexttile`, `annotation`, `colororder`. **M**
-- [ ] 3-D: `plot3`, `surf`, `mesh`, `contour`, `contourf`, `quiver`, `meshgrid` (check
+      *Also `bar(..., 'stacked')`, a real `barh`, `subtitle`, `cla`, `lines`, and axes
+      handles: `ax = nexttile`, `gca` or `subplot` passed first to `plot`, `title` and
+      the rest. Line specs in any order (`'o-r'`), their colours and `'Color'`,
+      `'LineWidth'`, `'Marker…'` and `'DisplayName'` are now honoured; before, the
+      colour letter was ignored for the theme's cycle, which stays the default.
+      `legend` honours the four corners of `'Location'`.*
+- [x] 3-D: `plot3`, `surf`, `mesh`, `contour`, `contourf`, `quiver`, `meshgrid` (check
       it exists), `view`, `zlabel`, rotate with the mouse. **L**
-- [ ] Images: `imagesc`, `image`, `imshow`, `colormap`, `colorbar`, `caxis`. **M**
-- [ ] A data cursor and a hover readout in `ui/console/figure_view.py`. **M**
-- [ ] Export figures to PDF and EPS alongside PNG/SVG, and `exportgraphics`. **S**
-- [ ] Let annotations typed at a later prompt reach the current figure (`title`,
+      *Also `scatter3`, `quiver3`, `fill3`, `surfc`/`meshc`, `zlim`, `shading`,
+      `peaks`, `axis` modes (`equal`, `tight`, `ij`, `off`, six limits) and
+      `lims = axis`/`xlim`. No OpenGL in the bundle, so 3-D is matplotlib's mplot3d:
+      drag to turn, right-drag to zoom; `[az, el] = view` does not read the
+      mouse's angle back. Contours are traced by contourpy (matplotlib's) and drawn
+      by pyqtgraph, so they overlay plots and read out on hover. `C = contour(...)`
+      returns MATLAB's contour matrix. `meshgrid(x, y, z)` waits for N-D arrays.*
+- [x] Images: `imagesc`, `image`, `imshow`, `colormap`, `colorbar`, `caxis`. **M**
+      *Also `clim` and the colour-map functions (`jet(n)`, `gray(n)`, …). `parula`
+      is MathWorks' own, so it is viridis. True-colour images and `imread` wait for
+      N-D arrays (Phase 4); `imshow` of doubles is black at 0 and white at 1, as in
+      MATLAB, so 0–255 data needs `imshow(I, [])` until there is `uint8`.*
+- [x] A data cursor and a hover readout in `ui/console/figure_view.py`. **M**
+      *Every 2-D curve, marker, bar, contour and reference line reads out on hover
+      (the analysis tabs' `HoverReadout`); an image reads out its pixel. A click
+      pins a data tip, a click on the tip removes it, and the plot menu has
+      Remove data tips. 3-D axes show matplotlib's coordinate line instead; data
+      tips on them are not done.*
+- [x] Export figures to PDF and EPS alongside PNG/SVG, and `exportgraphics`. **S**
+      *PDF and EPS are drawn by matplotlib on a white page, for papers; PNG, JPEG,
+      TIFF and SVG are the figure as on screen, a picture at `'Resolution'` or
+      `print -r300`. EPS drops transparency, as PostScript must.*
+- [x] Let annotations typed at a later prompt reach the current figure (`title`,
       `legend` on a separate line), as MATLAB allows. Today they must be on the
-      plot's line. **M**
+      plot's line. **M** *The prompt keeps its figures (and `hold`) from line to
+      line; reading the current axes marks its figure touched, and at the end of
+      the line touched figures are redrawn in place in their tab. A figure closed
+      in the window is forgotten, so nothing brings it back. A script run still
+      starts with none.*
+
+Left over from this phase:
+
+- [ ] Handle graphics: `h = plot(...)` and `set(h, …)`/`h.Color = …`, `cb.Label.String`.
+      Every plot function returns nothing; properties go in as name-value pairs. **L**
+- [ ] `figure(n)` going back to figure `n`, and `gcf` following the selected tab. **S–M**
+- [ ] Data tips on 3-D axes, and the live colour map of a mesh after a theme switch
+      without a redraw. **S each**
+- [ ] `histogram` and `stem` pages, and the rest of the plotting commands that still have
+      none (`stairs`, `semilogy`, `loglog`, `saveas`, `print`, `sgtitle`, `close`,
+      `clf`, `gcf`). **S**
 
 ## Phase 4 — Running other people's MATLAB code
 

@@ -12,7 +12,9 @@ Set the title of the current axes.
 
 `text` is a character vector or string. A cell array of strings, which in MATLAB gives a title over several lines, is joined into one line with spaces. Extra arguments after the text, such as name-value pairs for the font, are ignored. To put a number in the title, build the text first with [sprintf](sprintf) or [num2str](num2str).
 
-Call `title` after the plot command. A plot command without [hold](hold) starts new axes, so a title set before it is lost, as in MATLAB. At the console the title has to be on the same command line as the plot, or in the same script; typed at a later prompt it does not reach the figure.
+Call `title` after the plot command. A plot command without [hold](hold) starts new axes, so a title set before it is lost, as in MATLAB. Typed at a later prompt, it reaches the figure drawn last, while that figure is open.
+
+`title(t, text)`, with `t` from [tiledlayout](tiledlayout), titles the whole layout; with axes from [nexttile](nexttile), that tile.
 
 ## Example
 
@@ -24,4 +26,4 @@ step(feedback(K*G, 1)); title(sprintf('Closed loop, K = %g', K))
 
 ## See also
 
-[xlabel](xlabel) · [ylabel](ylabel) · [legend](legend) · [subplot](subplot) · [sprintf](sprintf)
+[xlabel](xlabel) · [ylabel](ylabel) · [legend](legend) · [subplot](subplot) · [tiledlayout](tiledlayout) · [sprintf](sprintf)

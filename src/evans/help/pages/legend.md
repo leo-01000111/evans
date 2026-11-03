@@ -14,9 +14,9 @@ Name the curves on the current axes, in the order they were drawn.
 
 A system plot such as [step](step) or [bode](bode) already labels each curve with the system's name, so a legend appears without calling `legend`. Calling it replaces those names. On a Bode plot the labels apply to the magnitude and phase curves together.
 
-Name-value pairs such as `'Location', 'best'` or `'FontSize', 9` are accepted and ignored: Evans places the legend in the upper right corner. `legend off`, `legend hide` and `legend show` are accepted and do nothing.
+`'Location'` puts the legend in a corner: `'northeast'` (the default), `'northwest'`, `'southeast'` or `'southwest'`; the other locations fall back to the nearest corner. Other name-value pairs, such as `'FontSize', 9`, are accepted and ignored. `legend off` hides the legend and `legend show` brings it back.
 
-Call `legend` after all the curves are drawn, on the same command line or in the same script.
+Call `legend` after the curves are drawn: on the same line, later in the script, or at a later prompt.
 
 ## Example
 

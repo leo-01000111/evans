@@ -14,7 +14,7 @@ The limits apply to line plots, time responses such as [step](step), and [pzmap]
 
 `xlim auto` and other text arguments are accepted and do nothing. Evans does not return the current limits: `xlim` with no argument, or `v = xlim`, is an error.
 
-Call it after the plot command, on the same command line or in the same script.
+Call it after the plot command: on the same line, later in the script, or at a later prompt.
 
 ## Example
 

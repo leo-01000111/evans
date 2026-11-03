@@ -165,6 +165,16 @@ Function files in the script's folder are called the way MATLAB calls them (`cd`
 `ode45`, `fzero`, `fminsearch`, `interp1`, `trapz`, `meshgrid`, `save`/`load` of `.mat`
 files, and real `subplot`, `stem`, `stairs`, `bar` and `histogram`.
 
+Figures go beyond lines: `scatter`, `errorbar`, `area`, `fill`/`patch`, `pie`, `quiver`,
+`contour`/`contourf`, `imagesc`/`image`/`imshow` with `colormap`, `colorbar` and `caxis`,
+`yyaxis`, `tiledlayout`/`nexttile`, `text`, `xline`/`yline` and `annotation`. Line specs
+and `'Color'` set colours, and `colororder` sets the order. `plot3`, `surf`, `mesh` and
+`quiver3` draw on 3-D axes you turn with the mouse, and `view` sets the angle from a
+script. Hover over a curve or an image to read it, and click to pin a data tip.
+`exportgraphics`, `saveas` and `print` write PNG, SVG, JPEG and TIFF, and PDF and EPS
+drawn for print. As in MATLAB, `title`, `legend` or `hold on` typed at a later prompt
+reaches the figure drawn last.
+
 The Live tab holds code cells and text cells, and output and figures stay under the cell
 that made them. Text takes `$…$` and `$$…$$` LaTeX, drawn in place, and `{{Kp}}` shows a
 workspace value. It opens MATLAB's `.mlx` files and plain-text live `.m` files and saves
@@ -277,7 +287,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-3480 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+3768 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

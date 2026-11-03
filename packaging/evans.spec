@@ -41,7 +41,12 @@ HIDDEN = (
     collect_submodules("evans")
     + ["scipy.special._cdflib", "scipy._lib.messagestream",
        # Imported only when a .xlsx is read or written.
-       "openpyxl"]
+       "openpyxl",
+       # Imported only when a figure needs them: 3-D axes (asked for by the
+       # name "3d"), their canvas in the figure area, and contour lines.
+       "mpl_toolkits.mplot3d", "matplotlib.backends.backend_qtagg",
+       "matplotlib.backends.backend_pdf", "matplotlib.backends.backend_ps",
+       "matplotlib.backends.backend_svg", "contourpy"]
 )
 
 # Qt modules this app never touches. Dropping them takes a large bite out of

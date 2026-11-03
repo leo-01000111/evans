@@ -75,6 +75,9 @@ class Interpreter:
         self.history: list[str] = []
         #: Set by the UI: what ``close all`` in a MATLAB script calls.
         self.close_figures = None
+        #: Set by the figure area: whether a figure drawn earlier is still
+        #: open there. Without it, figures are taken to stay open.
+        self.figure_open = None
         #: Set by the UI: the folder of the script being run. A MATLAB script
         #: finds its function files (``name.m``) and data files there.
         self.script_folder: str | None = None
@@ -330,7 +333,9 @@ class Interpreter:
             return [result]
 
         runtime = self._matlab_runtime()
-        runtime.begin(folder or self.script_folder)
+        runtime.begin(folder or self.script_folder, keep_figures=prompt)
+        if prompt:
+            self._forget_closed_figures(runtime.figures)
         previous = set_figure_sink(lambda spec: runtime.figures.collect(spec))
         line_maps: dict[str, list[int]] = {}
         results: list[Result] = []
@@ -406,9 +411,20 @@ class Interpreter:
             figures = runtime.figures
             if figures.close_requested and self.close_figures is not None:
                 self.close_figures()
-            for spec in figures.drawable():
+            for spec in figures.to_draw():
                 previous(spec)
         return results
+
+    def _forget_closed_figures(self, figures) -> None:
+        """
+        Drop the figures the user has closed since the last command, so a
+        ``title`` or ``hold on`` typed now does not bring one back.
+        """
+        if self.figure_open is None:
+            return
+        for spec in list(figures.drawable()):
+            if id(spec) in figures._shown and not self.figure_open(spec):
+                figures.forget(spec)
 
     def _matlab_runtime(self):
         from .matlab_runtime import Runtime

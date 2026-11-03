@@ -585,7 +585,7 @@ def test_saveas_uses_the_figure_uis_exporter_when_there_is_one(
     from evans.ui.console import figure_view
     calls = []
     monkeypatch.setattr(figure_view, "export_figure",
-                        lambda view, path: calls.append((view, path)),
+                        lambda view, path, dpi=None: calls.append((view, path)),
                         raising=False)
     run(it, "plot(1:3)\nsaveas(gcf, 'out.svg')", tmp_path)
     assert len(calls) == 1 and calls[0][1] == str(tmp_path / "out.svg")

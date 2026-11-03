@@ -17,7 +17,7 @@ Plots are only combined when they are of the same kind: two [plot](plot) calls, 
 
 The hold state belongs to the current axes. [figure](figure) turns it off, and inside a [subplot](subplot) grid each cell keeps its own.
 
-At the console, hold lasts only as long as the command you entered: `hold on` typed alone at the prompt has no effect on the next line. Write the plots and the `hold on` between them on one line, separated by `;`, or put them in a script.
+At the console, hold lasts from one prompt to the next, as in MATLAB: after `hold on`, a plot typed on a later line adds to the figure drawn last, which is redrawn in place. `hold off`, [figure](figure), or closing that figure ends it.
 
 Curves added with hold are labelled one by one, so the default legend can repeat a name. Call [legend](legend) afterwards to set the labels.
 

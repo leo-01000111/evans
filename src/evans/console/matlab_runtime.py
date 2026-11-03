@@ -629,38 +629,96 @@ class Figures:
     (``cells``, 1-based like MATLAB's ``p``) and the ordinary
     :class:`FigureSpec` drawn there (``spec``). While a pane is selected, a
     plot command lands in it rather than opening a figure of its own.
+    ``tiledlayout`` makes the same kind of figure, with ``extra["tiles"]``
+    saying how ``nexttile`` fills it.
+
+    The prompt keeps one :class:`Figures` from line to line, so a ``title``
+    typed after a ``plot`` reaches it. Reading :attr:`current` marks the
+    figure it belongs to as *touched*; at the end of a run the figures
+    already drawn and touched are sent again, and the figure area redraws
+    them in place (see :meth:`to_draw`).
     """
 
     def __init__(self) -> None:
         self.specs: list[FigureSpec] = []
-        self.current: FigureSpec | None = None
+        self._current: FigureSpec | None = None
         self.hold = False
         self.close_requested = False
         self.grid: FigureSpec | None = None
         self.pane: dict | None = None
+        #: ``colororder`` and ``colormap`` as set for the figure, handed to
+        #: each new axes in it until ``figure`` starts another.
+        self.colororder: list[str] | None = None
+        self.colormap: np.ndarray | None = None
+        #: Figures already handed to the sink, and those touched since.
+        self._shown: set[int] = set()
+        self._touched: set[int] = set()
 
-    def collect(self, spec: FigureSpec) -> FigureSpec:
-        cur = self.current
-        if self.hold and cur is not None and (
-                cur.kind == spec.kind or not cur.traces):
+    @property
+    def current(self) -> FigureSpec | None:
+        """The current axes. Reading it marks its figure as touched."""
+        self.touch()
+        return self._current
+
+    def touch(self, owner: FigureSpec | None = None) -> None:
+        """Mark a figure (else the current one) as amended, to draw again."""
+        if owner is None:
+            owner = self.grid if self.grid is not None else self._current
+        if owner is not None:
+            self._touched.add(id(owner))
+
+    @current.setter
+    def current(self, spec: FigureSpec | None) -> None:
+        self._current = spec
+
+    def collect(self, spec: FigureSpec, add: bool = False) -> FigureSpec:
+        """
+        Put a plot on the current axes: replacing what is there, or added to
+        it under ``hold on`` — or with ``add``, as ``patch``, ``text`` and
+        the other primitives always are.
+        """
+        cur = self._current
+        if self.colororder and "colororder" not in spec.extra:
+            spec.extra["colororder"] = list(self.colororder)
+        if self.colormap is not None and "colormap" not in spec.extra:
+            spec.extra["colormap"] = self.colormap
+        if cur is not None and cur.extra.get("yyaxis") and spec.kind == "xy":
+            side = cur.extra.get("side", "left")
+            for trace in spec.traces:
+                trace.props["side"] = side
+            if not (self.hold or add):
+                cur.traces = [t for t in cur.traces
+                              if t.props.get("side", "left") != side]
+            cur.traces.extend(spec.traces)
+            self._merge_extra(cur, spec)
+            self.touch()
+            return cur
+        if cur is not None and (add or self.hold and (
+                cur.kind == spec.kind or not cur.traces)):
             if not cur.traces:
                 cur.kind, cur.title = spec.kind, cur.title or spec.title
                 cur.xlabel = cur.xlabel or spec.xlabel
                 cur.ylabel = cur.ylabel or spec.ylabel
             cur.traces.extend(spec.traces)
-            for key, value in spec.extra.items():
-                if isinstance(value, list):
-                    cur.extra.setdefault(key, []).extend(value)
-                else:
-                    cur.extra.setdefault(key, value)
+            self._merge_extra(cur, spec)
+            self.touch()
             return cur
         if self.pane is not None:
             # A new plot in a subplot replaces what that axes showed.
             self.pane["spec"] = spec
         else:
             self.specs.append(spec)
-        self.current = spec
+        self._current = spec
+        self.touch()
         return spec
+
+    @staticmethod
+    def _merge_extra(cur: FigureSpec, spec: FigureSpec) -> None:
+        for key, value in spec.extra.items():
+            if isinstance(value, list) and key != "colororder":
+                cur.extra.setdefault(key, []).extend(value)
+            else:
+                cur.extra.setdefault(key, value)
 
     def ensure(self) -> FigureSpec:
         if self.current is None:
@@ -668,41 +726,200 @@ class Figures:
         return self.current
 
     def new(self) -> None:
-        self.current = None
+        self._current = None
         self.hold = False
         self.grid = None
         self.pane = None
+        self.colororder = None
+        self.colormap = None
 
     def subplot(self, rows: int, cols: int, cells: tuple[int, ...]) -> None:
         """Select (or add) the axes at ``cells`` of a rows × cols grid."""
-        if self.pane is not None:
-            self.pane["hold"] = self.hold
-        if self.grid is None:
-            self.grid = FigureSpec("subplot")
-            self.grid.extra["panes"] = []
-            self.specs.append(self.grid)
-        panes = self.grid.extra["panes"]
-        for pane in panes:
+        if self.grid is not None and "tiles" in self.grid.extra:
+            self.new()                     # subplot after tiledlayout
+        self._ensure_grid()
+        for pane in self.grid.extra["panes"]:
             if (pane["rows"], pane["cols"], pane["cells"]) == (rows, cols,
                                                                cells):
                 break
         else:
             pane = {"rows": rows, "cols": cols, "cells": cells,
                     "spec": None, "hold": False}
-            panes.append(pane)
+            self.grid.extra["panes"].append(pane)
+        self._select(pane)
+
+    def _ensure_grid(self) -> None:
+        if self.pane is not None:
+            self.pane["hold"] = self.hold
+        if self.grid is None:
+            self.grid = FigureSpec("subplot")
+            self.grid.extra["panes"] = []
+            self.specs.append(self.grid)
+            self._touched.add(id(self.grid))
+
+    def _select(self, pane: dict) -> None:
+        if self.pane is not None and self.pane is not pane:
+            self.pane["hold"] = self.hold
         self.pane = pane
-        self.current = pane["spec"]
+        self._current = pane["spec"]
         self.hold = pane["hold"]
+        self.touch()
+
+    # ── tiledlayout ─────────────────────────────────────────────
+
+    def tiled(self, rows: int, cols: int, mode: str = "fixed") -> FigureSpec:
+        """
+        A new tiled layout: ``mode`` is ``"fixed"`` (rows × cols), or
+        ``"flow"``, ``"horizontal"`` or ``"vertical"``, which grow as
+        ``nexttile`` adds tiles.
+        """
+        order, cmap = self.colororder, self.colormap
+        self.new()
+        self.colororder, self.colormap = order, cmap
+        self._ensure_grid()
+        self.grid.extra["tiles"] = {"rows": rows, "cols": cols, "mode": mode}
+        return self.grid
+
+    def nexttile(self, tile: int | None = None,
+                 span: tuple[int, int] = (1, 1)) -> dict:
+        """Select tile ``tile`` (else the next free one), adding its axes."""
+        if self.grid is None or "tiles" not in self.grid.extra:
+            self.tiled(0, 0, "flow")
+        layout = self.grid.extra["tiles"]
+        panes = self.grid.extra["panes"]
+        fixed = layout["mode"] == "fixed"
+        rows, cols = layout["rows"], layout["cols"]
+        taken = {c for p in panes for c in p["tiles"]}
+
+        def covers(k: int) -> tuple[int, ...]:
+            if not fixed:
+                return (k,)
+            r0, c0 = divmod(k - 1, cols)
+            if c0 + span[1] > cols or r0 + span[0] > rows:
+                raise MatlabError(f"Tile {k} with span [{span[0]} {span[1]}] "
+                                  f"does not fit the {rows}-by-{cols} "
+                                  f"layout.")
+            return tuple((r0 + i) * cols + c0 + j + 1
+                         for i in range(span[0]) for j in range(span[1]))
+
+        def fits(k: int) -> bool:
+            try:
+                return not set(covers(k)) & taken
+            except MatlabError:
+                return False
+
+        if tile is None:
+            tile = 1
+            while (fixed and tile <= rows * cols and not fits(tile)) or (
+                    not fixed and tile in taken):
+                tile += 1
+            if fixed and tile > rows * cols:
+                raise MatlabError("The tiled layout is full; ask "
+                                  "tiledlayout for more tiles.")
+        elif fixed and not 1 <= tile <= rows * cols:
+            raise MatlabError(f"Tile {tile} is outside the {rows}-by-{cols} "
+                              f"layout.")
+        for pane in panes:
+            if pane["tiles"][0] == tile:
+                self._select(pane)
+                return pane
+        cells = covers(tile)
+        pane = {"rows": rows, "cols": cols, "cells": cells, "tiles": cells,
+                "spec": None, "hold": False}
+        panes.append(pane)
+        if not fixed:
+            self._reflow()
+        self._select(pane)
+        return pane
+
+    def _reflow(self) -> None:
+        """Lay a growing layout's tiles out again on a grid that fits them."""
+        layout = self.grid.extra["tiles"]
+        panes = self.grid.extra["panes"]
+        n = max(p["tiles"][0] for p in panes)
+        if layout["mode"] == "horizontal":
+            rows, cols = 1, n
+        elif layout["mode"] == "vertical":
+            rows, cols = n, 1
+        else:
+            cols = math.ceil(math.sqrt(n))
+            rows = math.ceil(n / cols)
+        for pane in panes:
+            pane["rows"], pane["cols"] = rows, cols
+
+    def select(self, handle: Graphic) -> None:
+        """Make the axes a :class:`Graphic` names current again."""
+        if handle.pane is not None:
+            self.grid = handle.figure
+            self._select(handle.pane)
+        elif handle.kind == "axes":
+            if self.pane is not None:
+                self.pane["hold"] = self.hold
+            self.grid, self.pane = None, None
+            self._current = handle.figure
+
+    def handle(self) -> Graphic | None:
+        """A :class:`Graphic` for the current axes, made if need be."""
+        spec = self.ensure()
+        return Graphic("axes", self.grid if self.pane is not None else spec,
+                       self.pane)
 
     def figure(self) -> FigureSpec | None:
         """The current figure: a subplot grid, or the current plot."""
-        return self.grid if self.grid is not None else self.current
+        return self.grid if self.grid is not None else self._current
 
     def drawable(self) -> list[FigureSpec]:
         """The figures worth drawing: those with something on them."""
-        return [s for s in self.specs if s.traces or any(
-            p["spec"] is not None and p["spec"].traces
-            for p in s.extra.get("panes", ()))]
+        def drawn(spec: FigureSpec | None) -> bool:
+            return spec is not None and bool(
+                spec.traces or spec.extra.get("texts")
+                or spec.extra.get("annotations"))
+        return [s for s in self.specs if drawn(s) or any(
+            drawn(p["spec"]) for p in s.extra.get("panes", ()))]
+
+    def to_draw(self) -> list[FigureSpec]:
+        """
+        What the sink should be sent at the end of a run: the figures it has
+        not had yet, and those it has that this run touched — which it
+        redraws in place. Resets the marks for the next run.
+        """
+        out = [s for s in self.drawable()
+               if id(s) not in self._shown or id(s) in self._touched]
+        self._shown.update(id(s) for s in out)
+        self._touched.clear()
+        return out
+
+    def forget(self, spec: FigureSpec) -> None:
+        """A figure closed in the window: plots after this start afresh."""
+        if spec in self.specs:
+            self.specs.remove(spec)
+        self._shown.discard(id(spec))
+        if spec is self.grid or spec is self._current:
+            self.new()
+
+
+class Graphic:
+    """
+    A handle to a tiled layout or an axes, from ``tiledlayout``,
+    ``nexttile`` or ``gca``: passed first to ``title``, ``plot`` and the
+    rest, it says which one they act on.
+    """
+
+    def __init__(self, kind: str, figure: FigureSpec,
+                 pane: dict | None = None) -> None:
+        self.kind = kind                   # "layout" or "axes"
+        self.figure = figure
+        self.pane = pane
+
+    @property
+    def spec(self) -> FigureSpec | None:
+        """The axes' own figure spec (None for an axes not yet drawn in)."""
+        if self.kind == "layout":
+            return self.figure
+        return self.pane["spec"] if self.pane is not None else self.figure
+
+    def __repr__(self) -> str:
+        return "  TiledChartLayout" if self.kind == "layout" else "  Axes"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1737,8 +1954,14 @@ class Runtime:
 
     # ── running a script ────────────────────────────────────────
 
-    def begin(self, folder: str | None = None) -> None:
-        self.figures = Figures()
+    def begin(self, folder: str | None = None, *,
+              keep_figures: bool = False) -> None:
+        """
+        Start a run. A script's starts with no figures; a line typed at the
+        prompt keeps the last one's, so that it can amend them.
+        """
+        if not keep_figures:
+            self.figures = Figures()
         self.script_folder = folder
         self._cwd = None
         self._listing.clear()
@@ -1920,12 +2143,21 @@ def _named(fn):
     return fn
 
 
-_LINESPEC = re.compile(r"^(-|--|:|-\.)?[rgbcmykw]?[.o+*xsd^v<>ph]?(-|--|:|-\.)?"
-                       r"[rgbcmykw]?$")
-
-
 def _is_linespec(x) -> bool:
-    return isinstance(x, str) and bool(x) and bool(_LINESPEC.match(x))
+    """
+    A line specification: at most one line style, one colour letter and one
+    marker, in any order — ``'r--o'``, ``'o-r'``, ``':'``, ``'x'``.
+    """
+    if not isinstance(x, str) or not x or len(x) > 4:
+        return False
+    rest = x
+    for style in ("--", "-.", "-", ":"):
+        if style in rest:
+            rest = rest.replace(style, "", 1)
+            break
+    colours = sum(c in "rgbcmykw" for c in rest)
+    markers = sum(c in ".o+*xsd^v<>ph" for c in rest)
+    return colours <= 1 and markers <= 1 and colours + markers == len(rest)
 
 
 # The everyday-data functions live in modules of their own, one mixin each;
@@ -1933,6 +2165,7 @@ def _is_linespec(x) -> bool:
 from .lib_cells import CellLibrary  # noqa: E402
 from .lib_files import FileLibrary  # noqa: E402
 from .lib_optim import OptimLibrary  # noqa: E402
+from .lib_plot import PlotLibrary  # noqa: E402
 from .lib_signal import SignalLibrary  # noqa: E402
 from .lib_sim import SimulinkLibrary  # noqa: E402
 from .lib_stats import StatsLibrary  # noqa: E402
@@ -1941,7 +2174,8 @@ from .lib_text import TextLibrary  # noqa: E402
 
 
 class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
-               SignalLibrary, OptimLibrary, SystemLibrary, SimulinkLibrary):
+               SignalLibrary, OptimLibrary, SystemLibrary, SimulinkLibrary,
+               PlotLibrary):
     """MATLAB's own functions, with MATLAB's shapes and argument rules."""
 
     def __init__(self, rt: Runtime) -> None:
@@ -1969,61 +2203,6 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         self.rt.clear(tuple(n for n in names if isinstance(n, str)))
 
     f_clearvars = f_clear
-
-    def f_close(self, *args):
-        self.rt.figures = Figures()
-        self.rt.figures.close_requested = True
-
-    def f_clf(self, *_):
-        figs = self.rt.figures
-        if figs.figure() in figs.specs:
-            figs.specs.remove(figs.figure())
-        figs.new()
-
-    @_nargout
-    def f_figure(self, *_, nargout=0):
-        figs = self.rt.figures
-        figs.new()
-        # A handle is the figure's number: the one its next plot will get.
-        return len(figs.specs) + 1 if nargout else None
-
-    @_nargout
-    def f_gcf(self, nargout=1):
-        figs = self.rt.figures
-        current = figs.figure()
-        return (figs.specs.index(current) + 1 if current in figs.specs
-                else len(figs.specs) + 1)
-
-    f_gca = f_gcf
-
-    def f_subplot(self, m, n=None, p=None, *_):
-        if n is None:                      # subplot(211)
-            digits = str(int(m))
-            if len(digits) != 3:
-                raise MatlabError("subplot needs subplot(m, n, p).")
-            m, n, p = (int(d) for d in digits)
-        rows, cols = int(m), int(n)
-        cells = tuple(sorted(int(c) for c in np.atleast_1d(p).reshape(-1)))
-        if not cells or cells[0] < 1 or cells[-1] > rows * cols:
-            raise MatlabError(f"Index exceeds number of subplots "
-                              f"({rows * cols}).")
-        self.rt.figures.subplot(rows, cols, cells)
-
-    def f_sgtitle(self, text, *_):
-        figs = self.rt.figures
-        (figs.grid or figs.ensure()).title = _as_text(text)
-
-    def f_hold(self, state=None):
-        figs = self.rt.figures
-        figs.hold = (not figs.hold) if state is None else \
-            str(state).lower() in ("on", "all")
-        if figs.pane is not None:
-            figs.pane["hold"] = figs.hold
-
-    def f_grid(self, *args):
-        figs = self.rt.figures
-        if figs.current is not None:
-            figs.current.extra["grid"] = (args[0] if args else "on")
 
     def f_box(self, *_):
         return None
@@ -3761,257 +3940,6 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
 
     f_rlocusplot = f_rlocus
 
-    # ── generic plots ───────────────────────────────────────────
-
-    def _xy(self, args, kind_extra: dict | None = None,
-            style: str | None = None):
-        spec = FigureSpec("xy", "", "", "")
-        spec.extra.update(kind_extra or {})
-        values = list(args)
-        k = 0
-        series = []
-        while k < len(values):
-            v = values[k]
-            if isinstance(v, str):
-                if _is_linespec(v):
-                    if series:
-                        series[-1][2] = v
-                    k += 1
-                else:
-                    k += 2                    # a name–value pair
-                continue
-            nxt = values[k + 1] if k + 1 < len(values) else None
-            if nxt is not None and not isinstance(nxt, str):
-                series.append([v, nxt, ""])
-                k += 2
-            else:
-                y = np.asarray(v)
-                if np.iscomplexobj(y):
-                    series.append([y.real, y.imag, ""])
-                else:
-                    n = y.shape[0] if y.ndim == 2 and y.shape[0] > 1 \
-                        else y.size
-                    series.append([np.arange(1, n + 1), y, ""])
-                k += 1
-        warned = False
-        for x, y, linespec in series:
-            x, y = np.asarray(x), np.asarray(y)
-            if np.iscomplexobj(x) or np.iscomplexobj(y):
-                if not warned:
-                    print("Warning: Imaginary parts of complex X and/or Y "
-                          "arguments ignored.")
-                    warned = True
-                x, y = x.real, y.real
-            x = np.asarray(x, float)
-            y = np.asarray(y, float)
-            columns = [y] if y.ndim == 1 or 1 in y.shape else (
-                [y[:, c] for c in range(y.shape[1])]
-                if y.shape[0] == x.size else [y[r] for r in range(y.shape[0])])
-            for col in columns:
-                xs, ys = x.reshape(-1), np.asarray(col).reshape(-1)
-                kind = style or _style(linespec)
-                if kind == "stairs":           # hold each value to the next x
-                    xs, ys = np.repeat(xs, 2)[1:], np.repeat(ys, 2)[:-1]
-                    kind = "line"
-                spec.add(xs, ys, "", style=kind)
-        self.rt.figures.collect(spec)
-
-    def f_plot(self, *args):
-        self._xy(args)
-
-    def f_stem(self, *args):
-        self._xy(args, style="stem")
-
-    def f_stairs(self, *args):
-        self._xy(args, style="stairs")
-
-    def f_bar(self, *args):
-        """
-        Bars, ``bar(y)`` or ``bar(x, y[, width])``; a matrix's columns are
-        drawn as groups of bars side by side.
-        """
-        numbers = [a for a in args if not isinstance(a, str)]
-        if len(numbers) == 1:
-            y = _as2d(numbers[0])
-            x = None
-        else:
-            x, y = numbers[0], _as2d(numbers[1])
-        y = y.T if y.shape[0] == 1 else y
-        x = np.arange(1.0, y.shape[0] + 1) if x is None else \
-            np.asarray(x, float).reshape(-1)
-        width = float(_scalar_of(numbers[2])) if len(numbers) > 2 else 0.8
-        step = float(np.min(np.diff(np.sort(x)))) if x.size > 1 else 1.0
-        groups = y.shape[1]
-        spec = FigureSpec("xy")
-        spec.extra["bar_width"] = width * step / groups
-        for k in range(groups):
-            offset = (k - (groups - 1) / 2) * width * step / groups
-            spec.add(x + offset, np.real(y[:, k]), style="bar")
-        self.rt.figures.collect(spec)
-
-    f_barh = f_bar
-
-    @_nargout
-    def f_histogram(self, x, bins=None, *_, nargout=1):
-        """Counts in bins drawn as bars; returns Values and BinEdges."""
-        data = np.asarray(x, float).reshape(-1)
-        data = data[np.isfinite(data)]
-        edges = _bin_edges(data, bins)
-        counts, _edges = np.histogram(data, bins=edges)
-        centres = (edges[:-1] + edges[1:]) / 2
-        spec = FigureSpec("xy")
-        spec.extra["bar_width"] = float(np.min(np.diff(edges))) if \
-            edges.size > 1 else 1.0
-        spec.add(centres, counts, style="bar")
-        self.rt.figures.collect(spec)
-        return Struct(Values=counts.astype(float), BinEdges=edges,
-                      NumBins=int(counts.size),
-                      BinWidth=float(spec.extra["bar_width"]),
-                      Data=data) if nargout else None
-
-    @_nargout
-    def f_histcounts(self, x, bins=None, *_, nargout=1):
-        data = np.asarray(x, float).reshape(-1)
-        data = data[np.isfinite(data)]
-        edges = _bin_edges(data, bins)
-        counts = np.histogram(data, bins=edges)[0].astype(float)
-        return (counts, edges)[:nargout] if nargout >= 2 else counts
-
-    @_nargout
-    def f_hist(self, y, bins=10, *_, nargout=1):
-        """The old ``hist``: equal bins over the data's range, by centre."""
-        data = np.asarray(y, float).reshape(-1)
-        if _numel(bins) > 1:
-            centres = np.asarray(bins, float).reshape(-1)
-            mids = (centres[:-1] + centres[1:]) / 2
-            edges = np.concatenate([[-np.inf], mids, [np.inf]])
-        else:
-            lo, hi = (float(np.min(data)), float(np.max(data))) \
-                if data.size else (0.0, 1.0)
-            if lo == hi:
-                lo, hi = lo - 0.5, hi + 0.5
-            edges = np.linspace(lo, hi, int(_scalar_of(bins)) + 1)
-            centres = (edges[:-1] + edges[1:]) / 2
-            edges[0], edges[-1] = -np.inf, np.inf
-        counts = np.histogram(data, bins=edges)[0].astype(float)
-        if nargout == 0:
-            self._xy((centres, counts), style="bar")
-            self.rt.figures.current.extra["bar_width"] = float(
-                np.min(np.diff(centres))) if centres.size > 1 else 1.0
-            return None
-        return (counts, centres)[:nargout] if nargout >= 2 else counts
-
-    # ── saving figures ──────────────────────────────────────────
-
-    def _figure_for(self, handle) -> FigureSpec:
-        figs = self.rt.figures
-        spec = None
-        if _is_number(handle) and 1 <= int(handle) <= len(figs.specs):
-            spec = figs.specs[int(handle) - 1]
-        spec = spec or figs.figure()
-        if spec is None or spec not in figs.drawable():
-            raise MatlabError("There is no figure to save.")
-        return spec
-
-    def f_saveas(self, fig, filename, fmt=None):
-        path = self.rt.resolve(filename)
-        if not os.path.splitext(path)[1]:
-            ext = str(fmt or "png").lower().lstrip(".")
-            path += "." + ("png" if ext == "fig" else ext)
-        _export_figure(self._figure_for(fig), path)
-
-    f_exportgraphics = f_saveas
-
-    def f_print(self, *args):
-        fmt, filename, handle = "png", None, None
-        for a in args:
-            if isinstance(a, str) and a.startswith("-d"):
-                fmt = a[2:].lower()
-            elif isinstance(a, str) and a.startswith("-"):
-                continue                       # -r300, -painters, …
-            elif isinstance(a, str):
-                filename = a
-            else:
-                handle = a
-        if filename is None:
-            raise MatlabError("Printing to a printer is not supported; give "
-                              "print a file name.")
-        path = self.rt.resolve(filename)
-        if not os.path.splitext(path)[1]:
-            path += {"jpeg": ".jpg", "tiff": ".tif", "tiffn": ".tif",
-                     "epsc": ".eps", "meta": ".emf"}.get(fmt, "." + fmt)
-        _export_figure(self._figure_for(handle), path)
-
-    def f_semilogx(self, *args):
-        self._xy(args, {"logx": True})
-
-    def f_semilogy(self, *args):
-        self._xy(args, {"logy": True})
-
-    def f_loglog(self, *args):
-        self._xy(args, {"logx": True, "logy": True})
-
-    # ── annotation ──────────────────────────────────────────────
-
-    def f_title(self, text, *_):
-        self.rt.figures.ensure().title = _as_text(text) if not isinstance(
-            text, Cell) else " ".join(text)
-
-    def f_xlabel(self, text, *_):
-        self.rt.figures.ensure().xlabel = _as_text(text)
-
-    def f_ylabel(self, text, *_):
-        self.rt.figures.ensure().ylabel = _as_text(text)
-
-    def f_legend(self, *args):
-        labels: list[str] = []
-        skip = False
-        for a in args:
-            if skip:
-                skip = False
-                continue
-            if isinstance(a, Cell):
-                labels.extend(str(x) for x in a)
-            elif isinstance(a, str):
-                if a.lower() in ("location", "orientation", "box", "fontsize",
-                                 "numcolumns", "interpreter", "autoupdate",
-                                 "textcolor"):
-                    skip = True
-                elif a.lower() in ("show", "off", "hide", "boxoff", "boxon",
-                                   "toggle"):
-                    continue
-                else:
-                    labels.append(a)
-        spec = self.rt.figures.current
-        if spec is None or not labels:
-            return None
-        named = [t for t in spec.traces if t.label] or spec.traces
-        for trace, label in zip(named, labels):
-            trace.label = label
-        for k, entry in enumerate(spec.extra.get("phase", [])):
-            if k < len(labels):
-                spec.extra["phase"][k] = (entry[0], entry[1], labels[k])
-        return None
-
-    def f_axis(self, *args):
-        if args and not isinstance(args[0], str):
-            lims = np.asarray(args[0], float).reshape(-1)
-            spec = self.rt.figures.ensure()
-            spec.extra["xlim"] = (lims[0], lims[1])
-            if lims.size >= 4:
-                spec.extra["ylim"] = (lims[2], lims[3])
-
-    def f_xlim(self, lims, *_):
-        if not isinstance(lims, str):
-            lims = np.asarray(lims, float).reshape(-1)
-            self.rt.figures.ensure().extra["xlim"] = (lims[0], lims[1])
-
-    def f_ylim(self, lims, *_):
-        if not isinstance(lims, str):
-            lims = np.asarray(lims, float).reshape(-1)
-            self.rt.figures.ensure().extra["ylim"] = (lims[0], lims[1])
-
-
 # ──────────────────────────────────────────────────────────────
 #  Helpers for the library
 # ──────────────────────────────────────────────────────────────
@@ -4354,14 +4282,25 @@ def _from_mat(value):
 
 # ── saving figures ───────────────────────────────────────────────
 
-def _export_figure(spec: FigureSpec, path: str) -> None:
+def _export_figure(spec: FigureSpec, path: str, *,
+                   dpi: float | None = None) -> None:
     """
-    Draw a figure off-screen and write it to ``path``.
+    Draw a figure off-screen and write it to ``path``, in the format its
+    extension names.
 
-    The figure UI's own ``export_figure(view, path)`` does the writing when
-    it has one (it knows the vector formats); otherwise the drawn widget is
-    grabbed as an image, the way the figure dock's Save does.
+    PDF and EPS — the formats for papers — are drawn with matplotlib on a
+    white page (:mod:`.figure_mpl`), with no Qt needed. The rest go through
+    the figure UI's ``export_figure(view, path)``, which draws it as the
+    figure area does. ``dpi`` sets a picture's resolution.
     """
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    ext = os.path.splitext(path)[1].lower().lstrip(".")
+    if ext in ("pdf", "eps"):
+        from . import figure_mpl
+        figure_mpl.save(spec, path, dpi=dpi)
+        return
     os.environ.setdefault("PYQTGRAPH_QT_LIB", "PySide6")
     try:
         from PySide6.QtWidgets import QApplication
@@ -4371,19 +4310,12 @@ def _export_figure(spec: FigureSpec, path: str) -> None:
         raise MatlabError(f"Saving a figure needs the Qt interface "
                           f"({exc}).") from None
     _app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
-    folder = os.path.dirname(path)
-    if folder:
-        os.makedirs(folder, exist_ok=True)
     view = figure_view.FigureView(spec)
     view.resize(800, 600)
     try:
-        export = getattr(figure_view, "export_figure", None)
-        if export is not None:
-            export(view, path)
-        elif not view.grab().save(path):
-            raise MatlabError(f"Could not write the figure to {path} (is "
-                              f"'{os.path.splitext(path)[1]}' an image "
-                              f"format?).")
+        figure_view.export_figure(view, path, dpi=dpi)
+    except ValueError as exc:
+        raise MatlabError(str(exc)) from None
     finally:
         view.deleteLater()
 
@@ -4472,17 +4404,6 @@ def _zpk_gain(sys) -> float:
     num = np.trim_zeros(np.asarray(G.num[0][0], float), "f")
     den = np.trim_zeros(np.asarray(G.den[0][0], float), "f")
     return float(num[0] / den[0]) if num.size and den.size else 0.0
-
-
-def _style(linespec: str) -> str:
-    if not linespec:
-        return "line"
-    if any(s in linespec for s in ("--", ":", "-.")):
-        return "dashed"
-    if not re.search(r"-", linespec) and re.search(r"[.o+*xsd^v<>ph]",
-                                                  linespec):
-        return "scatter"
-    return "line"
 
 
 def _apply_options(spec: FigureSpec, options: PlotOptions,

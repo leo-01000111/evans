@@ -23,8 +23,6 @@ from __future__ import annotations
 import io
 from functools import lru_cache
 
-import numpy as np
-
 from ..figures import FigureSpec
 
 
@@ -72,95 +70,20 @@ def png_size(data: bytes) -> tuple[int, int]:
 #  Figures
 # ──────────────────────────────────────────────────────────────
 
-_CYCLE = ("#1f4fd1", "#c1122e", "#0d6e37", "#b8860b", "#6a3fb5", "#4b4f55")
-
-
 def figure_png(spec: FigureSpec, path=None, *, width: float = 6.4,
                height: float = 3.6, dpi: int = 150) -> bytes:
     """
     Draw a figure spec with matplotlib's Agg canvas; returns the PNG bytes
     and writes them to ``path`` too if one is given.
 
-    Covers the kinds the console produces — time and xy plots (log axes,
-    scatter, dashed), Bode as magnitude over phase, Nyquist with the unit
-    circle and −1, pole-zero maps and root loci — enough for a report;
-    the live figure in the app stays the reference rendering.
+    Every kind the console produces is drawn, by :mod:`..figure_mpl` — the
+    same renderer that writes a figure as PDF or EPS; the live figure in the
+    app stays the reference rendering.
     """
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
-    from matplotlib.figure import Figure
+    from ..figure_mpl import png
 
-    bode = spec.kind == "bode"
-    figure = Figure(figsize=(width, height * (1.5 if bode else 1.0)))
-    FigureCanvasAgg(figure)
-    if bode:
-        mag, phase = figure.subplots(2, 1, sharex=True)
-        for i, t in enumerate(spec.traces):
-            mag.semilogx(t.x, t.y, color=_colour(i), label=t.label or None)
-        for i, (omega, degrees, _label) in enumerate(spec.extra.get("phase", [])):
-            phase.semilogx(omega, degrees, color=_colour(i))
-        mag.set_ylabel("|G| (dB)")
-        phase.set_ylabel("Phase (°)")
-        phase.set_xlabel(spec.xlabel or "ω (rad/s)")
-        mag.set_title(spec.title or "Bode")
-        axes = [mag, phase]
-        if any(t.label for t in spec.traces):
-            mag.legend(fontsize=8)
-    else:
-        ax = figure.subplots()
-        axes = [ax]
-        _plain(ax, spec)
-    for ax in axes:
-        ax.grid(True, alpha=0.3)
-    figure.tight_layout()
-    buffer = io.BytesIO()
-    figure.savefig(buffer, format="png", dpi=dpi)
-    data = buffer.getvalue()
+    data = png(spec, width=width, height=height, dpi=dpi)
     if path is not None:
         with open(path, "wb") as handle:
             handle.write(data)
     return data
-
-
-def _colour(i: int) -> str:
-    return _CYCLE[i % len(_CYCLE)]
-
-
-def _plain(ax, spec: FigureSpec) -> None:
-    logx = bool(spec.extra.get("logx"))
-    logy = bool(spec.extra.get("logy"))
-    for i, t in enumerate(spec.traces):
-        x, y = np.asarray(t.x, float), np.asarray(t.y, float)
-        label = t.label or None
-        if spec.kind == "pzmap":
-            marker = "x" if "pole" in t.label else "o"
-            ax.plot(x, y, linestyle="none", marker=marker, markersize=9,
-                    markerfacecolor="none", color=_colour(i), label=label)
-        elif t.style == "scatter":
-            ax.plot(x, y, linestyle="none", marker="o", markersize=4,
-                    color=_colour(i), label=label)
-        else:
-            ax.plot(x, y, color=_colour(i), label=label,
-                    linestyle="--" if t.style == "dashed" else "-",
-                    linewidth=1.4)
-    if spec.kind == "nyquist":
-        theta = np.linspace(0, 2 * np.pi, 200)
-        ax.plot(np.cos(theta), np.sin(theta), "--", color="#999999",
-                linewidth=0.8)
-        ax.plot([-1], [0], "x", color="#c1122e", markersize=10)
-        ax.set_aspect("equal", adjustable="datalim")
-    if spec.kind in ("nyquist", "pzmap", "rlocus"):
-        ax.axhline(0, color="#999999", linewidth=0.6)
-        ax.axvline(0, color="#999999", linewidth=0.6)
-    if logx:
-        ax.set_xscale("log")
-    if logy:
-        ax.set_yscale("log")
-    if spec.extra.get("xlim") is not None:
-        ax.set_xlim(*map(float, spec.extra["xlim"]))
-    if spec.extra.get("ylim") is not None:
-        ax.set_ylim(*map(float, spec.extra["ylim"]))
-    ax.set_title(spec.title)
-    ax.set_xlabel(spec.xlabel)
-    ax.set_ylabel(spec.ylabel)
-    if any(t.label for t in spec.traces) and spec.kind != "rlocus":
-        ax.legend(fontsize=8)

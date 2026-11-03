@@ -10,7 +10,7 @@ Label the x axis of the current axes.
 
 `xlabel(text)` sets the label under the horizontal axis of the current axes, replacing the one there. A [step](step) plot starts with `Time (s)`, which you can override this way. With a [subplot](subplot) grid it labels the selected cell. Extra arguments after the text are ignored.
 
-Call it after the plot command, on the same command line or in the same script. A plot command without [hold](hold) starts new axes and drops a label set before it.
+Call it after the plot command: on the same line, later in the script, or at a later prompt. A plot command without [hold](hold) starts new axes and drops a label set before it.
 
 The y axis has its own function, [ylabel](ylabel).
 

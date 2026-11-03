@@ -15,7 +15,7 @@ Evans draws grid lines on every plot already, so `grid on` changes nothing you c
 
 `grid off` and `grid minor` are accepted as well, and are recorded on the figure, but the figure window does not act on them yet: the grid stays as it is. Unlike MATLAB, `grid` with no argument does not toggle; it behaves like `grid on`.
 
-`grid` applies to the current axes, so it has to come after the plot command, on the same command line or in the same script.
+`grid` applies to the current axes, so it comes after the plot command: on the same line, later in the script, or at a later prompt.
 
 ## Example
 

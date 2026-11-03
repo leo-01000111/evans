@@ -231,7 +231,21 @@ class FigureArea(QWidget):
     # ── adding and removing ─────────────────────────────────────
 
     def show_figure(self, spec: FigureSpec) -> FigureView:
-        """Render a figure spec as a new tab, and bring it to the front."""
+        """
+        Render a figure spec as a new tab, and bring it to the front — or,
+        for a figure already open (amended by a ``title`` typed at the
+        prompt, say), draw it again where it is.
+        """
+        existing = self.view_of(spec)
+        if existing is not None:
+            existing.rebuild(spec)
+            for pane in (self._tabs, self._side):
+                index = pane.indexOf(existing)
+                if index >= 0:
+                    pane.setTabText(index, self._label(existing))
+                    pane.setCurrentIndex(index)
+            self.figure_added.emit()
+            return existing
         view = FigureView(spec)
         # The lowest number no open figure has, as MATLAB numbers them: once
         # a run's figures are cleared away, the next run starts at 1 again.
@@ -246,6 +260,10 @@ class FigureArea(QWidget):
         self._sync_placeholder()
         self.figure_added.emit()
         return view
+
+    def view_of(self, spec: FigureSpec) -> FigureView | None:
+        """The open figure drawn from ``spec``, if there is one."""
+        return next((v for v in self._views if v.spec is spec), None)
 
     @staticmethod
     def _label(view: FigureView) -> str:
@@ -638,6 +656,9 @@ class ConsolePanel(QWidget):
         set_figure_sink(self.figures.show_figure)
         # `close all` in a MATLAB script closes the figures drawn so far.
         self.interpreter.close_figures = self.figures.close_all
+        # A line typed at the prompt amends the last figure while it is open.
+        self.interpreter.figure_open = \
+            lambda spec: self.figures.view_of(spec) is not None
 
         # Stopping and debugging: user code runs on this (the GUI) thread,
         # and the tracer gives the event loop a turn while it does — see

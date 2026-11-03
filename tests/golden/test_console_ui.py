@@ -108,6 +108,46 @@ def test_figures_are_capped(app, win):
     assert win._figures.figure_count == MAX_FIGURES
 
 
+def test_a_later_prompt_amends_the_figure_in_place(app, win):
+    win._console.execute("plot(1:3)")
+    _settle(app)
+    view = win._figures.current_figure()
+    for line in ("title('typed later')", "hold on", "plot(3:-1:1)",
+                 "legend('up', 'down')"):
+        win._console.execute(line)
+        _settle(app)
+    assert win._figures.figure_count == 1
+    assert win._figures.current_figure() is view
+    assert view.spec.title == "typed later"
+    assert [t.label for t in view.spec.traces] == ["up", "down"]
+    plot = view.plot_widgets()[0].getPlotItem()
+    assert "typed later" in plot.titleLabel.text
+    win._console.execute("hold off")
+
+
+def test_a_closed_figure_stays_closed(app, win):
+    win._console.execute("plot(1:3)")
+    _settle(app)
+    win._figures.close_all()
+    win._console.execute("title('nothing to title')")
+    win._console.execute("hold on; plot(1:2)")
+    _settle(app)
+    assert win._figures.figure_count == 1
+    assert len(win._figures.current_figure().spec.traces) == 1
+    win._console.execute("hold off")
+
+
+@pytest.mark.parametrize("command", [
+    "surf(peaks(10))", "scatter(1:3, 1:3)", "imagesc(peaks(5)); colorbar",
+    "pie([1 2])", "t = tiledlayout('flow'); nexttile; plot(1:3)",
+])
+def test_phase_3_plots_open_figures(app, win, command):
+    win._console.execute(command)
+    _settle(app)
+    assert win._figures.figure_count == 1
+    assert not [b for b in win.findChildren(ErrorBanner) if b.has_error]
+
+
 def test_workspace_lists_what_was_created(app, win):
     win._console.execute("myvar = 42")
     _settle(app)
@@ -614,8 +654,8 @@ def test_the_plot_menu_offers_export(app, win, tmp_path, monkeypatch):
     export = next(a.menu() for a in menu.actions()
                   if a.text() == "Export figure")
     labels = [a.text() for a in export.actions()]
-    assert labels == ["As PNG image…", "As SVG vector image…",
-                      "Data as CSV…"]
+    assert labels == ["As PNG image…", "As SVG vector image…", "As PDF…",
+                      "As EPS…", "Data as CSV…"]
 
     # A name typed without an extension takes the chosen filter's.
     monkeypatch.setattr(

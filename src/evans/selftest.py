@@ -223,6 +223,31 @@ def _check_simulation(report: Report, say) -> None:
     except Exception as exc:                                    # noqa: BLE001
         report.record(False, f"openpyxl missing: {exc}")
         say(f"      FAILED: openpyxl missing ({exc})")
+    # 3-D axes and PDF/EPS files come from matplotlib's mplot3d and its
+    # vector back ends, reached by name ("3d", ".eps") rather than import.
+    try:
+        import tempfile
+        from pathlib import Path
+
+        import numpy as np
+
+        from .console.figure_mpl import save
+        from .console.figures import FigureSpec
+
+        x, y = np.meshgrid(np.linspace(-1, 1, 5), np.linspace(-1, 1, 5))
+        spec = FigureSpec("xy").add(x, y, style="surface", z=x * y)
+        with tempfile.TemporaryDirectory(prefix="evans-check-") as tmp:
+            heads = []
+            for ext in ("pdf", "eps"):
+                save(spec, Path(tmp) / f"surf.{ext}")
+                heads.append((Path(tmp) / f"surf.{ext}").read_bytes()[:4])
+        ok = heads == [b"%PDF", b"%!PS"]
+        report.record(ok, f"3-D figure saved as {heads}")
+        say(f"      3-D surface saved as PDF and EPS: "
+            f"{'clean' if ok else 'FAILED'}")
+    except Exception as exc:                                    # noqa: BLE001
+        report.record(False, f"3-D figure raised {type(exc).__name__}: {exc}")
+        say(f"      FAILED: 3-D figure ({exc})")
 
 
 def _check_ui(report: Report, say) -> None:
@@ -261,12 +286,35 @@ def _check_ui(report: Report, say) -> None:
                 f"{'clean' if not broken else broken[0][:44]}")
 
         window.hide()
+        _check_figures(report, say)
         _check_pdf_view(report, say)
         _check_completion(report, say)
         _check_help(report, say)
     except Exception as exc:                                    # noqa: BLE001
         report.record(False, f"UI raised {type(exc).__name__}: {exc}")
         say(f"      FAILED: {exc}")
+
+
+def _check_figures(report: Report, say) -> None:
+    """
+    A 3-D figure draws on its matplotlib canvas, and a contour plot (which
+    needs contourpy) on pyqtgraph: both are imported only when drawn.
+    """
+    import numpy as np
+
+    from .console.figures import FigureSpec
+    from .ui.console.figure_view import FigureView
+
+    x, y = np.meshgrid(np.linspace(-1, 1, 5), np.linspace(-1, 1, 5))
+    surface = FigureSpec("xy").add(x, y, style="surface", z=x * y)
+    contour = FigureSpec("xy").add(x, y, style="contourf", z=x * y,
+                                   levels=np.array([0.0]), zrange=(-1, 1))
+    views = [FigureView(surface), FigureView(contour)]
+    ok = bool(views[0].canvases) and bool(views[1].plot_widgets())
+    report.record(ok, "3-D or contour figure did not draw")
+    say(f"      {'3-D and contour figures':28s} {'clean' if ok else 'FAILED'}")
+    for view in views:
+        view.deleteLater()
 
 
 def _check_pdf_view(report: Report, say) -> None:

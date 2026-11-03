@@ -10,7 +10,7 @@ Label the y axis of the current axes.
 
 `ylabel(text)` sets the label beside the vertical axis of the current axes, replacing the one there (`Amplitude` on a [step](step) plot, for instance). With a [subplot](subplot) grid it labels the selected cell. Extra arguments after the text are ignored.
 
-Call it after the plot command, on the same command line or in the same script. A plot command without [hold](hold) starts new axes and drops a label set before it.
+Call it after the plot command: on the same line, later in the script, or at a later prompt. After [yyaxis](yyaxis) `right`, it labels the right-hand axis. A plot command without [hold](hold) starts new axes and drops a label set before it.
 
 The x axis has its own function, [xlabel](xlabel).
 
