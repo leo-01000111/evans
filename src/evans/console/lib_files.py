@@ -164,10 +164,159 @@ def _read_text(path: str, shown) -> str:
 
 
 def _refuse_spreadsheet(path: str, fn: str) -> None:
-    if _ext(path) in _SPREADSHEET:
-        raise MatlabError(f"{fn}: spreadsheet files ({_ext(path)}) need "
-                          f"openpyxl, which Evans doesn't ship. Save the "
-                          f"sheet as .csv and read that.")
+    """Refuse the spreadsheet formats openpyxl cannot open (.xls, .ods)."""
+    if _ext(path) in _SPREADSHEET and _ext(path) not in _XLSX:
+        raise MatlabError(f"{fn}: Evans reads Excel workbooks (.xlsx, "
+                          f".xlsm) but not {_ext(path)} files. Save the "
+                          f"sheet as .xlsx or .csv and read that.")
+
+
+# ── Excel workbooks, through openpyxl ──────────────────────────
+# A sheet is read into the same grid of text fields a delimited file is
+# split into, so readmatrix and readtable treat both alike: a header row is
+# recognised, numbers are parsed and blanks are NaN the same way.
+
+_XLSX = (".xlsx", ".xlsm", ".xltx", ".xltm")
+
+
+def _is_xlsx(path: str, opts: dict | None = None) -> bool:
+    return _ext(path) in _XLSX or str((opts or {}).get(
+        "FileType", "")).lower() == "spreadsheet"
+
+
+def _openpyxl():
+    try:
+        import openpyxl
+    except ImportError:                                 # pragma: no cover
+        raise MatlabError("Reading and writing .xlsx needs the openpyxl "
+                          "package: pip install openpyxl.") from None
+    return openpyxl
+
+
+def _xl_field(v) -> str:
+    """A cell's value as the text a delimited file would hold."""
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "1" if v else "0"
+    if isinstance(v, float):
+        return repr(v)
+    return str(v)
+
+
+def _pick_sheet(wb, sheet, fn: str):
+    if sheet is None or (not isinstance(sheet, str) and _numel_of(sheet) == 0):
+        return wb.worksheets[0]
+    if isinstance(sheet, str):
+        if sheet in wb.sheetnames:
+            return wb[sheet]
+        raise MatlabError(f"{fn}: the workbook has no sheet '{sheet}'; it "
+                          f"has {', '.join(wb.sheetnames)}.")
+    k = int(np.asarray(sheet, float).reshape(-1)[0])
+    if not 1 <= k <= len(wb.worksheets):
+        raise MatlabError(f"{fn}: sheet {k} does not exist; the workbook "
+                          f"has {len(wb.worksheets)}.")
+    return wb.worksheets[k - 1]
+
+
+def _numel_of(x) -> int:
+    return int(np.size(x))
+
+
+def _sheet_rows(path: str, shown, sheet, fn: str) -> list[list[str]]:
+    """Every row of one sheet from A1, as text fields, blanks trimmed."""
+    openpyxl = _openpyxl()
+    if not os.path.isfile(path):
+        _read_text(path, shown)                         # raises the error
+    try:
+        wb = openpyxl.load_workbook(path, data_only=True)
+    except Exception as exc:                             # noqa: BLE001
+        raise MatlabError(f"{fn}: '{_as_text(shown)}' is not a workbook "
+                          f"Evans can read ({exc}).") from None
+    try:
+        ws = _pick_sheet(wb, sheet, fn)
+        rows = [[_xl_field(v) for v in row]
+                for row in ws.iter_rows(min_row=1, min_col=1,
+                                        values_only=True)]
+    finally:
+        wb.close()
+    for row in rows:
+        while row and not row[-1].strip():
+            row.pop()
+    while rows and not rows[-1]:
+        rows.pop()
+    return rows
+
+
+def _trim_left(rows: list[list[str]]) -> list[list[str]]:
+    """Drop the empty columns before the data starts, as MATLAB does."""
+    filled = [r for r in rows if r]
+    lead = min((next(k for k, f in enumerate(r) if f.strip())
+                for r in filled if any(f.strip() for f in r)), default=0)
+    return [r[lead:] for r in rows]
+
+
+def _write_sheet(path: str, grid: list[list], sheet, rng, mode: str,
+                 fn: str) -> None:
+    """
+    Write a grid of values (numbers, text, ``None`` for blank) to a sheet.
+
+    ``mode`` is MATLAB's WriteMode for spreadsheets: ``inplace`` (the
+    default) writes over the cells it covers and keeps the rest of the
+    workbook; ``overwritesheet`` clears the sheet first; ``append`` writes
+    below its last row; ``replacefile`` starts a new workbook.
+    """
+    openpyxl = _openpyxl()
+    mode = mode.lower()
+    if mode not in ("inplace", "overwritesheet", "append", "replacefile"):
+        raise MatlabError(f"{fn}: 'WriteMode' '{mode}' is not one of "
+                          f"inplace, overwritesheet, append, replacefile.")
+    fresh = mode == "replacefile" or not os.path.isfile(path)
+    if fresh:
+        wb = openpyxl.Workbook()
+        if sheet is not None and not isinstance(sheet, str):
+            k = int(np.asarray(sheet, float).reshape(-1)[0])
+            for n in range(2, k + 1):
+                wb.create_sheet(f"Sheet{n}")
+        else:
+            wb.active.title = sheet if isinstance(sheet, str) else "Sheet1"
+    else:
+        wb = openpyxl.load_workbook(path)
+    try:
+        if isinstance(sheet, str) and sheet not in wb.sheetnames:
+            ws = wb.create_sheet(sheet)
+        else:
+            ws = _pick_sheet(wb, sheet, fn)
+        if mode == "overwritesheet":
+            ws.delete_rows(1, ws.max_row)
+        r0, c0 = 1, 1
+        if rng is not None:
+            r0, c0, _r2, _c2 = _spreadsheet_range(str(rng))
+        if mode == "append" and ws.max_row > 1 or (
+                mode == "append" and ws.cell(1, 1).value is not None):
+            r0 = ws.max_row + 1
+        for i, row in enumerate(grid):
+            for j, v in enumerate(row):
+                ws.cell(r0 + i, c0 + j).value = v
+        wb.save(path)
+    except PermissionError:
+        raise MatlabError(f"{fn}: cannot write '{path}'. Is it open in "
+                          f"Excel?") from None
+    finally:
+        wb.close()
+
+
+def _xl_value(v):
+    """A number for a cell: NaN is left blank, as writematrix leaves it."""
+    if isinstance(v, (bool, np.bool_)):
+        return bool(v)
+    if isinstance(v, (complex, np.complexfloating)):
+        raise MatlabError("Complex numbers cannot be written to a "
+                          "spreadsheet.")
+    v = float(v)
+    if math.isnan(v):
+        return None
+    return int(v) if v.is_integer() and abs(v) < 2 ** 53 else v
 
 
 def _detect(lines: list[str]) -> str | None:
@@ -571,6 +720,20 @@ def _apply_range(rows: list[list[str]], rng):
     return [r[c1 - 1:c2] for r in out]
 
 
+def _empty_arg(x) -> bool:
+    return x is None or (not isinstance(x, str) and np.size(x) == 0) \
+        or x == ""
+
+
+def _trim_outer(grid: np.ndarray, filled: np.ndarray) -> np.ndarray:
+    """Cut away the outer rows and columns where nothing is filled."""
+    if not filled.size or not filled.any():
+        return grid[:0, :0] if grid.ndim == 2 else grid
+    rows = np.nonzero(filled.any(axis=1))[0]
+    cols = np.nonzero(filled.any(axis=0))[0]
+    return grid[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+
+
 def _parse_lines(text: str):
     lines = text.splitlines()
     while lines and not lines[-1].strip():
@@ -883,15 +1046,30 @@ class FileLibrary:
         opts = _options(args, {"delimiter": "Delimiter",
                                "numheaderlines": "NumHeaderLines",
                                "range": "Range", "filetype": "FileType",
-                               "outputtype": "OutputType"}, "readmatrix")
+                               "outputtype": "OutputType",
+                               "sheet": "Sheet"}, "readmatrix")
         path = self.rt.resolve(filename)
         _refuse_spreadsheet(path, "readmatrix")
-        if str(opts.get("FileType", "text")).lower() not in ("text",
-                                                             "delimitedtext"):
-            raise MatlabError("readmatrix: Evans reads text files only.")
+        if str(opts.get("FileType", "text")).lower() not in (
+                "text", "delimitedtext", "spreadsheet"):
+            raise MatlabError("readmatrix: 'FileType' must be 'text' or "
+                              "'spreadsheet'.")
         if str(opts.get("OutputType", "double")).lower() != "double":
             raise MatlabError("readmatrix: Evans reads numbers as double "
                               "only ('OutputType', 'double').")
+        if _is_xlsx(path, opts):
+            sheet = _sheet_rows(path, filename, opts.get("Sheet"),
+                                "readmatrix")
+            if "Range" in opts:
+                rows = _apply_range(sheet, opts["Range"])
+            else:
+                skip = _int_arg(opts.get("NumHeaderLines", 0),
+                                "NumHeaderLines")
+                rows = _trim_left([r for r in sheet[skip:] if r])
+                if "NumHeaderLines" not in opts:
+                    while rows and all(_number(f) is None for f in rows[0]):
+                        rows.pop(0)
+            return _result(_numeric_grid(rows, math.nan))
         lines = _parse_lines(_read_text(path, filename))
         delim = (_delimiter(opts["Delimiter"], "readmatrix")
                  if "Delimiter" in opts else _detect(lines))
@@ -985,15 +1163,24 @@ class FileLibrary:
             filename, args = args[0], args[1:]
         opts = _options(args, {"delimiter": "Delimiter",
                                "writemode": "WriteMode",
-                               "filetype": "FileType"}, "writematrix")
+                               "filetype": "FileType", "sheet": "Sheet",
+                               "range": "Range"}, "writematrix")
         if filename is None:
             name = names[0] if names and names[0] else None
             filename = f"{name}.txt" if name else "matrix.txt"
         path = self.rt.resolve(filename)
         _refuse_spreadsheet(path, "writematrix")
         ftype = str(opts.get("FileType", "text")).lower()
-        if ftype == "spreadsheet":
-            _refuse_spreadsheet(".xlsx", "writematrix")
+        if _is_xlsx(path, opts):
+            if isinstance(A, (str, Cell, Struct, StructArray, Table)):
+                raise MatlabError("writematrix writes numeric or logical "
+                                  "arrays; use writetable for a table.")
+            grid = [[_xl_value(v) for v in row]
+                    for row in _as2d(_as_array(A))]
+            _write_sheet(path, grid, opts.get("Sheet"), opts.get("Range"),
+                         str(opts.get("WriteMode", "inplace")),
+                         "writematrix")
+            return None
         if ftype != "text":
             raise MatlabError(f"writematrix: unknown 'FileType' '{ftype}'.")
         if "FileType" not in opts and _ext(path) not in _TEXT_EXT:
@@ -1098,12 +1285,14 @@ class FileLibrary:
             "delimiter": "Delimiter", "readvariablenames": "ReadVariableNames",
             "numheaderlines": "NumHeaderLines", "filetype": "FileType",
             "variablenamingrule": "VariableNamingRule",
-            "texttype": "TextType"}, "readtable")
+            "texttype": "TextType", "sheet": "Sheet",
+            "range": "Range"}, "readtable")
         path = self.rt.resolve(filename)
         _refuse_spreadsheet(path, "readtable")
-        if str(opts.get("FileType", "text")).lower() not in ("text",
-                                                             "delimitedtext"):
-            raise MatlabError("readtable: Evans reads text files only.")
+        if str(opts.get("FileType", "text")).lower() not in (
+                "text", "delimitedtext", "spreadsheet"):
+            raise MatlabError("readtable: 'FileType' must be 'text' or "
+                              "'spreadsheet'.")
         if str(opts.get("TextType", "char")).lower() != "char":
             raise MatlabError("readtable: Evans reads text as char "
                               "('TextType', 'char') only.")
@@ -1111,12 +1300,19 @@ class FileLibrary:
         if rule not in ("modify", "preserve"):
             raise MatlabError("'VariableNamingRule' must be 'modify' or "
                               "'preserve'.")
-        lines = _parse_lines(_read_text(path, filename))
         skip = _int_arg(opts.get("NumHeaderLines", 0), "NumHeaderLines")
-        lines = [ln for ln in lines[skip:] if ln.strip()]
-        delim = (_delimiter(opts["Delimiter"], "readtable")
-                 if "Delimiter" in opts else _detect(lines))
-        rows = [_split(ln, delim) for ln in lines]
+        if _is_xlsx(path, opts):
+            rows = _sheet_rows(path, filename, opts.get("Sheet"),
+                               "readtable")
+            rows = (_apply_range(rows, opts["Range"]) if "Range" in opts
+                    else _trim_left(rows))
+            rows = [r for r in rows[skip:] if any(f.strip() for f in r)]
+        else:
+            lines = _parse_lines(_read_text(path, filename))
+            lines = [ln for ln in lines[skip:] if ln.strip()]
+            delim = (_delimiter(opts["Delimiter"], "readtable")
+                     if "Delimiter" in opts else _detect(lines))
+            rows = [_split(ln, delim) for ln in lines]
         if "ReadVariableNames" in opts:
             header = _truth(opts["ReadVariableNames"])
         else:
@@ -1167,14 +1363,30 @@ class FileLibrary:
         opts = _options(args, {"delimiter": "Delimiter",
                                "writevariablenames": "WriteVariableNames",
                                "writemode": "WriteMode",
-                               "filetype": "FileType"}, "writetable")
+                               "filetype": "FileType", "sheet": "Sheet",
+                               "range": "Range"}, "writetable")
         if filename is None:
             name = names[0] if names and names[0] else None
             filename = f"{name}.txt" if name else "table.txt"
         path = self.rt.resolve(filename)
         _refuse_spreadsheet(path, "writetable")
+        if _is_xlsx(path, opts):
+            mode = str(opts.get("WriteMode", "inplace"))
+            grid = []
+            if _truth(opts.get("WriteVariableNames", True)) \
+                    and mode.lower() != "append":
+                grid.append(list(T.columns))
+            for i in range(T.height):
+                grid.append([_xl_value(col[i]) if isinstance(col, np.ndarray)
+                             else col[i] if isinstance(col[i], str)
+                             else _xl_value(col[i]) if _is_number(col[i])
+                             else None for col in T._data])
+            _write_sheet(path, grid, opts.get("Sheet"), opts.get("Range"),
+                         mode, "writetable")
+            return None
         if str(opts.get("FileType", "text")).lower() != "text":
-            raise MatlabError("writetable: Evans writes text files only.")
+            raise MatlabError("writetable: 'FileType' must be 'text' or "
+                              "'spreadsheet'.")
         delim = _delimiter(opts.get("Delimiter", ","), "writetable")
         mode = str(opts.get("WriteMode", "overwrite")).lower()
         if mode not in ("overwrite", "append"):
@@ -1200,6 +1412,90 @@ class FileLibrary:
         with open(path, "a" if mode == "append" else "w", newline="",
                   encoding="utf-8") as fh:
             fh.write("".join(ln + "\n" for ln in lines))
+
+    @_nargout
+    def f_xlsread(self, filename, *args, nargout=1):
+        """
+        ``[num, txt, raw] = xlsread(file, sheet, range)``. ``num`` holds the
+        numbers (text is NaN), ``txt`` the text ('' where a number is) and
+        ``raw`` both; ``num`` and ``txt`` lose their empty outer rows and
+        columns, as MATLAB's do.
+        """
+        args = list(args)
+        sheet = rng = None
+        if len(args) == 1 and isinstance(args[0], str) and re.fullmatch(
+                r"\s*[A-Za-z]+\d+\s*((:|\.\.)\s*[A-Za-z]+\d+\s*)?",
+                args[0]):
+            rng = args[0]
+        else:
+            sheet = args[0] if args else None
+            rng = args[1] if len(args) > 1 and not _empty_arg(args[1]) \
+                else None
+        path = self.rt.resolve(filename)
+        if _ext(path) == "":
+            path += ".xlsx"
+        _refuse_spreadsheet(path, "xlsread")
+        rows = _sheet_rows(path, filename, sheet, "xlsread")
+        if rng is not None:
+            rows = _apply_range(rows, rng)
+        width = max((len(r) for r in rows), default=0)
+        rows = [r + [""] * (width - len(r)) for r in rows]
+        nums = [[_number(f) for f in r] for r in rows]
+        num = np.array([[math.nan if v is None or isinstance(v, complex)
+                         else v for v in r] for r in nums], float) \
+            if rows and width else np.zeros((0, 0))
+        num = _trim_outer(num, ~np.isnan(num))
+        text = [[f if v is None else "" for f, v in zip(r, n)]
+                for r, n in zip(rows, nums)]
+        filled = np.array([[bool(f) for f in r] for r in text], bool) \
+            if rows and width else np.zeros((0, 0), bool)
+        txt_grid = _trim_outer(np.array(text, dtype=object).reshape(
+            len(rows), width), filled)
+        txt = Cell.from_grid([list(r) for r in txt_grid])
+        raw = Cell.from_grid([[(v if v is not None else f if f else math.nan)
+                               for f, v in zip(r, n)]
+                              for r, n in zip(rows, nums)])
+        return (num, txt, raw)[:max(nargout, 1)] if nargout > 1 else num
+
+    def f_xlswrite(self, filename, A, *args):
+        """``xlswrite(file, A, sheet, range)``: numbers or a cell array."""
+        args = list(args)
+        sheet = rng = None
+        if len(args) == 1 and isinstance(args[0], str) and \
+                _CELL_REF.match(args[0].strip()) and not \
+                args[0].strip().isalpha():
+            rng = args[0]
+        elif args:
+            sheet = args[0]
+            rng = args[1] if len(args) > 1 else None
+        path = self.rt.resolve(filename)
+        if _ext(path) == "":
+            path += ".xlsx"
+        _refuse_spreadsheet(path, "xlswrite")
+        if isinstance(A, Cell):
+            grid = [[v if isinstance(v, str) else None if (
+                     isinstance(v, np.ndarray) and v.size == 0)
+                     else _xl_value(_scalar(np.asarray(v).reshape(-1)[0]))
+                     for v in row] for row in A.grid()]
+        elif isinstance(A, str):
+            grid = [[A]]
+        else:
+            grid = [[_xl_value(v) for v in row]
+                    for row in _as2d(_as_array(A))]
+        _write_sheet(path, grid, sheet, rng, "inplace", "xlswrite")
+
+    def f_sheetnames(self, filename):
+        """The names of a workbook's sheets, as a column."""
+        path = self.rt.resolve(filename)
+        _refuse_spreadsheet(path, "sheetnames")
+        if not os.path.isfile(path):
+            _read_text(path, filename)
+        wb = _openpyxl().load_workbook(path, read_only=True)
+        try:
+            names = list(wb.sheetnames)
+        finally:
+            wb.close()
+        return Cell(names, rows=len(names))
 
     @_named
     def f_table(self, *args, names=None):

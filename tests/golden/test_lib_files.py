@@ -108,9 +108,10 @@ def test_readmatrix_options(it, tmp_path):
     np.testing.assert_array_equal(val(it, "B"), [[5, 6], [8, 9]])
 
 
-def test_readmatrix_refuses_spreadsheets_and_missing_files(it, tmp_path):
-    """Evans ships no openpyxl, so .xlsx is refused by name."""
-    assert "openpyxl" in error_of(it, "readmatrix('d.xlsx')")
+def test_readmatrix_refuses_old_spreadsheets_and_missing_files(it, tmp_path):
+    """.xls and .ods are formats openpyxl cannot open: refused by name."""
+    assert ".xls files" in error_of(it, "readmatrix('d.xls')")
+    assert "Unable to find or open" in error_of(it, "readmatrix('no.xlsx')")
     assert "Unable to find or open" in error_of(it, "readmatrix('no.csv')")
     write(tmp_path / "d.csv", "1\n")
     assert "not supported" in error_of(it, "readmatrix('d.csv', 'Foo', 1)")
@@ -176,9 +177,94 @@ def test_writematrix_default_name_delimiter_and_append(it, tmp_path):
     assert read(tmp_path / "A.txt") == "1,2\n3\t4\n"
 
 
-def test_writematrix_refuses_xlsx(it):
-    assert "openpyxl" in error_of(it, "writematrix([1 2], 'a.xlsx')")
+def test_writematrix_refuses_a_cell(it):
     assert "writetable" in error_of(it, "writematrix({1}, 'a.csv')")
+    assert "writetable" in error_of(it, "writematrix({1}, 'a.xlsx')")
+
+
+# ──────────────────────────────────────────────────────────────
+#  Excel workbooks
+# ──────────────────────────────────────────────────────────────
+
+def workbook(path):
+    """Two sheets: a logged run with a header and a gap, and a block that
+    starts at B3."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Data"
+    for row in (["Time", "Speed", "Note"], [0, 1.5, "start"],
+                [1, 2.25, None], [2, None, "end"]):
+        ws.append(row)
+    other = wb.create_sheet("Other")
+    other["B3"], other["C3"], other["B4"] = 7, 8, 9
+    wb.save(path)
+
+
+def test_readmatrix_reads_a_sheet_like_a_csv(it, tmp_path):
+    """The header row is skipped, text and blanks are NaN, and a block that
+    starts at B3 is read from where it starts, as MATLAB's does."""
+    workbook(tmp_path / "log.xlsx")
+    run(it, "A = readmatrix('log.xlsx');"
+            "B = readmatrix('log.xlsx', 'Sheet', 'Other');"
+            "C = readmatrix('log.xlsx', 'Sheet', 2, 'Range', 'B3:C3');")
+    np.testing.assert_array_equal(
+        val(it, "A"), [[0, 1.5, np.nan], [1, 2.25, np.nan],
+                       [2, np.nan, np.nan]])
+    np.testing.assert_array_equal(val(it, "B"), [[7, 8], [9, np.nan]])
+    np.testing.assert_array_equal(val(it, "C"), [7, 8])
+    assert "no sheet 'Nope'" in error_of(
+        it, "readmatrix('log.xlsx', 'Sheet', 'Nope')")
+
+
+def test_readtable_and_writetable_round_trip_a_workbook(it, tmp_path):
+    workbook(tmp_path / "log.xlsx")
+    run(it, "T = readtable('log.xlsx'); writetable(T, 't.xlsx');"
+            "U = readtable('t.xlsx');")
+    for name in ("T", "U"):
+        t = val(it, name)
+        assert list(t.columns) == ["Time", "Speed", "Note"]
+        np.testing.assert_array_equal(t._data[1], [1.5, 2.25, np.nan])
+        assert list(t._data[2]) == ["start", "", "end"]
+
+
+def test_writematrix_writes_a_sheet_in_place(it, tmp_path):
+    """WriteMode 'inplace' (the default) keeps the other sheets; a NaN is
+    left blank; 'Range' places the block."""
+    run(it, "writematrix([1 2; 3 4], 'w.xlsx');"
+            "writematrix([5 NaN 6], 'w.xlsx', 'Sheet', 'S2', 'Range', 'B2');"
+            "A = readmatrix('w.xlsx'); B = readmatrix('w.xlsx', 'Sheet', 2,"
+            " 'Range', 'B2:D2'); n = sheetnames('w.xlsx');")
+    np.testing.assert_array_equal(val(it, "A"), [[1, 2], [3, 4]])
+    np.testing.assert_array_equal(val(it, "B"), [5, np.nan, 6])
+    assert list(val(it, "n")) == ["Sheet1", "S2"]
+    run(it, "writematrix([9], 'w.xlsx', 'WriteMode', 'append');"
+            "A = readmatrix('w.xlsx');")
+    np.testing.assert_array_equal(val(it, "A"), [[1, 2], [3, 4],
+                                                 [9, np.nan]])
+
+
+def test_xlsread_splits_numbers_text_and_raw(it, tmp_path):
+    """num loses its empty outer columns (the text column), txt keeps the
+    text with '' where numbers were, raw holds both."""
+    workbook(tmp_path / "log.xlsx")
+    run(it, "[num, txt, raw] = xlsread('log.xlsx');")
+    np.testing.assert_array_equal(val(it, "num"),
+                                  [[0, 1.5], [1, 2.25], [2, np.nan]])
+    txt, raw = val(it, "txt"), val(it, "raw")
+    assert txt.dims == (4, 3) and txt.grid()[0] == ["Time", "Speed", "Note"]
+    assert txt.grid()[1] == ["", "", "start"]
+    assert raw.grid()[1] == [0, 1.5, "start"]
+    assert np.isnan(raw.grid()[3][1])
+
+
+def test_xlswrite_writes_numbers_and_text(it, tmp_path):
+    run(it, "xlswrite('x.xlsx', {'a', 1; 'b', 2}); [n, t] = xlsread('x');"
+            "xlswrite('x.xlsx', [7 8], 'Second', 'C1');"
+            "m = xlsread('x.xlsx', 'Second');")
+    np.testing.assert_array_equal(val(it, "n"), [[1], [2]])
+    assert list(val(it, "t")) == ["a", "b"]
+    np.testing.assert_array_equal(val(it, "m"), [7, 8])
 
 
 def test_writematrix_round_trips_through_readmatrix(it):

@@ -187,6 +187,8 @@ class _Evaluator:
         #: The blocks that act at events, in execution order.
         self._firing = [compiled.plans[bid].block for bid in compiled.order
                         if hasattr(compiled.plans[bid].block, "fire")]
+        #: Each discrete block's discrete feeders (see :meth:`_feeders`).
+        self._feeder_cache: dict[str, set[str]] = {}
 
     def _inputs(self, plan) -> list[np.ndarray]:
         out = []
@@ -321,16 +323,93 @@ class _Evaluator:
         return dx
 
     def update_discrete(self, t, x, xd, values, due: set[str]) -> np.ndarray:
-        """Apply discrete updates for the blocks whose sample time is due."""
+        """
+        Apply discrete updates for the blocks whose sample time is due.
+
+        A block's update holds its output for the next sample, so a block fed
+        by another one due at the same hit must see that block's *new* output,
+        as in Simulink, where every output at a hit is computed before any
+        state moves on. Updating all of them from the values before the hit
+        instead adds a sample of delay at each discrete block in a chain.
+
+        So the blocks act upstream first, with the model re-evaluated between
+        rounds. A block whose held output does not read its input (a Unit
+        Delay; see :attr:`~evans.sim.block.Block.held_reads_input`) acts in a
+        first round on the old values — that settles its output — and again
+        in order with the new ones, which settles its state. That is what
+        resolves a discrete loop. A loop with no such block is a discrete
+        algebraic loop: its blocks act together on the values they have, and
+        the run carries a warning.
+        """
+        acting = [bid for bid in self.c.order if bid in due
+                  and self.c.plans[bid].block.n_dstates
+                  and _running(self.c.plans[bid].block)]
+        if not acting:
+            return xd.copy()
         new = xd.copy()
-        for bid in due:
-            plan = self.c.plans[bid]
-            if not plan.block.n_dstates or not _running(plan.block):
-                continue
-            self._values = values
-            new[plan.xd_slice] = plan.block.update(
-                t, x[plan.x_slice], xd[plan.xd_slice], self._inputs(plan))
+
+        def act(bids, values) -> None:
+            for bid in bids:
+                plan = self.c.plans[bid]
+                self._values = values
+                new[plan.xd_slice] = plan.block.update(
+                    t, x[plan.x_slice], xd[plan.xd_slice], self._inputs(plan))
+
+        early = [bid for bid in acting
+                 if not self.c.plans[bid].block.held_reads_input]
+        if early:
+            act(early, values)
+            values = self.evaluate(t, x, new)
+        waiting = set(acting) - set(early)
+        feeders = {bid: self._feeders(bid) & waiting for bid in acting}
+        done: set[str] = set()
+        while len(done) < len(acting):
+            ready = [bid for bid in acting
+                     if bid not in done and feeders[bid] <= done]
+            if not ready:
+                ready = [bid for bid in acting if bid not in done]
+                self._warn_discrete_loop(ready)
+            act(ready, values)
+            done.update(ready)
+            if len(done) < len(acting):
+                values = self.evaluate(t, x, new)
         return new
+
+    def _feeders(self, bid: str) -> set[str]:
+        """
+        The discrete blocks whose held output reaches ``bid``'s inputs within
+        one instant: back through blocks with direct feedthrough, stopping at
+        any block whose output reads only its own state.
+        """
+        cache = self._feeder_cache
+        if bid in cache:
+            return cache[bid]
+        found: set[str] = set()
+        seen: set[str] = set()
+        stack = [conn.src.block for conn in self.c.plans[bid].input_conns
+                 if conn is not None]
+        while stack:
+            src = stack.pop()
+            if src in seen:
+                continue
+            seen.add(src)
+            plan = self.c.plans[src]
+            if plan.sample_time > 0 and plan.block.n_dstates:
+                found.add(src)
+            elif plan.block.direct_feedthrough:
+                stack.extend(conn.src.block for conn in plan.input_conns
+                             if conn is not None)
+        cache[bid] = found
+        return found
+
+    def _warn_discrete_loop(self, bids) -> None:
+        message = (f"a discrete algebraic loop through "
+                   f"{', '.join(sorted(bids))}: each block's held output reads "
+                   f"an input that depends on it at the same sample hit. They "
+                   f"were updated from the values before the hit; put a Unit "
+                   f"Delay in the loop.")
+        if message not in self.warnings:
+            self.warnings.append(message)
 
     def inputs_for(self, plan, values) -> list[np.ndarray]:
         self._values = values
@@ -723,6 +802,9 @@ def _integrate(ev, compiled, x, xd, t0, t1, solver, max_step, rtol, atol,
     every step, and the run carries a warning naming the blocks.
     """
     inner = t_grid[(t_grid > t0) & (t_grid < t1)]
+    # The run's last grid point is t_end itself; nothing else logs it unless a
+    # discrete block happens to be due there.
+    log_end = t1 >= t_grid[-1] and not _blocks_due(compiled, t1)
 
     def rhs(t, x_vec):
         if pulse is not None:
@@ -743,15 +825,13 @@ def _integrate(ev, compiled, x, xd, t0, t1, solver, max_step, rtol, atol,
             ev.fire_events(t, x_now, xd)
 
         x_end = _fixed_step(rhs, x, t0, t1, solver, max_step,
-                            inner, record, xd, on_major_step=major_step)
+                            inner, record, xd, on_major_step=major_step,
+                            log_end=log_end)
         return x_end, max(1, len(inner))
 
     span = t1 - t0
     h_ref = min(span, max_step) if max_step else span
     window = _CHATTER_WINDOW * h_ref
-    # The run's last grid point is t_end itself; nothing else logs it unless a
-    # discrete block happens to be due there.
-    log_end = t1 >= t_grid[-1] and not _blocks_due(compiled, t1)
     use_grid = len(inner) > 0
 
     # A discrete update may just have pushed an input across a threshold.
@@ -1023,7 +1103,7 @@ def _rk_step(rhs, t, x, h, tableau):
 
 
 def _fixed_step(rhs, x, t0, t1, method, max_step, inner, record, xd,
-                on_major_step=None):
+                on_major_step=None, log_end=False):
     """
     A fixed-step explicit Runge–Kutta method — ``ode1`` (Euler) to ``ode5``
     (Dormand–Prince), see ``_TABLEAUS`` — stepping exactly onto each output
@@ -1041,6 +1121,9 @@ def _fixed_step(rhs, x, t0, t1, method, max_step, inner, record, xd,
     steps rather than inside one — latching a mode at a zero crossing is what
     it exists for — and on the last substep of an interval it gets the exact
     output instant, not the drifted sum of the substeps.
+
+    ``t1`` itself is logged only with ``log_end``: when the span ends the
+    run and no discrete block is due there to log it.
     """
     tableau = _TABLEAUS[method]
     h_max = max_step if max_step else (t1 - t0)
@@ -1058,7 +1141,7 @@ def _fixed_step(rhs, x, t0, t1, method, max_step, inner, record, xd,
             t = edge if i == n - 1 else t + h   # kill accumulated drift
             if on_major_step is not None:
                 on_major_step(t, x_now)
-        if edge < t1:
+        if edge < t1 or log_end:
             record(float(edge), x_now, xd)
     return x_now
 

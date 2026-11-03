@@ -89,6 +89,9 @@ class Cell(list):
     shape: ``{1,'a';2,'b'}`` is ``[1, 2, 'a', 'b']`` with ``rows = 2``.
     """
 
+    #: Reachable from more than one place (see :func:`share`).
+    _shared = False
+
     def __init__(self, items=(), rows: int = 1) -> None:
         super().__init__(items)
         self.rows = rows
@@ -128,6 +131,10 @@ class Cell(list):
 class Struct(dict):
     """A struct: a dict whose fields are also attributes."""
 
+    #: Reachable from more than one place (see :func:`share`). A class
+    #: attribute, so reading it never reaches ``__getattr__``'s fields.
+    _shared = False
+
     def __getattr__(self, name: str):
         try:
             return self[name]
@@ -152,6 +159,8 @@ class StructArray(list):
     Shaped as a :class:`Cell` is, its structs kept column by column.
     """
 
+    _shared = False
+
     def __init__(self, items=(), rows: int = 1) -> None:
         super().__init__(items)
         self.rows = rows
@@ -166,6 +175,47 @@ class StructArray(list):
         lines = [f"{r}×{c} struct array with fields:", ""]
         lines += [f"    {f}" for f in fields]
         return "\n".join(lines)
+
+
+_CONTAINERS = (Cell, Struct, StructArray)
+
+
+def share(*values):
+    """
+    Mark cells and structs, and everything inside them, as shared.
+
+    Cells and structs are values in MATLAB, so a write must not reach any
+    other variable holding the same object. Copying at every write is safe
+    but makes ``c{end+1} = k`` in a loop quadratic. Instead a value is
+    marked when a second reference to it can appear — stored in a variable,
+    bound to a parameter or a loop variable, captured by an anonymous
+    function, put inside another container, kept as ``ans`` — and a write
+    copies only a marked value (see ``Runtime.assign``). The copy is
+    unmarked: the variable it is written back to is its only holder.
+
+    The mark is deep, and stops at what is marked already: nothing inside a
+    marked value is ever written in place, so everything inside it stays
+    marked. Returns the first value, so a store can wrap its right side.
+    """
+    stack = list(values)
+    while stack:
+        v = stack.pop()
+        if isinstance(v, _CONTAINERS):
+            if v._shared:
+                continue
+            object.__setattr__(v, "_shared", True)
+            stack.extend(v.values() if isinstance(v, Struct) else v)
+        elif type(v) in (list, tuple):              # varargin, a capture
+            stack.extend(v)
+    return values[0] if values else None
+
+
+def _own(obj):
+    """A copy of a container to write into, unmarked (see :func:`share`)."""
+    obj = copy.copy(obj)
+    if isinstance(obj, _CONTAINERS):
+        object.__setattr__(obj, "_shared", False)
+    return obj
 
 
 class Table:
@@ -1108,25 +1158,34 @@ class Runtime:
 
     # ── assignment ──────────────────────────────────────────────
 
-    def assign(self, obj, path: list, value):
+    def assign(self, obj, path: list, value, owned: bool = False):
         """
         ``obj`` with ``path`` set to ``value``. Cells and structs are values
         in MATLAB, so each level written to is copied first: after
         ``b = c; b{1} = 5``, ``c`` is unchanged.
+
+        ``owned`` is set by translated code writing back to the variable it
+        read ``obj`` from. Then a level nobody else can reach — not marked
+        by :func:`share` — is written in place, so growing a cell in a loop
+        costs nothing per step. Everyone else gets a copy at every level.
         """
         if not path:
             return value
+        if owned and len(path) == 1:
+            share(value)                    # it now lives inside obj too
         (kind, key), rest = path[0], path[1:]
-        if isinstance(obj, (Mapping, Cell, StructArray)):
-            obj = copy.copy(obj)
+        if isinstance(obj, (Mapping, Cell, StructArray)) and not (
+                owned and isinstance(obj, _CONTAINERS) and not obj._shared):
+            obj = _own(obj)
         if kind == ".":
             if obj is None or (isinstance(obj, np.ndarray) and obj.size == 0):
                 obj = Struct()
             if isinstance(obj, StructArray) and len(obj) == 1:
-                obj = copy.copy(obj[0])
+                obj = (obj[0] if owned and not obj[0]._shared
+                       else _own(obj[0]))
             if isinstance(obj, Mapping):
                 current = obj.get(key)
-                obj[key] = self.assign(current, rest, value)
+                obj[key] = self.assign(current, rest, value, owned)
                 return obj
             if isinstance(obj, PlotOptions):
                 current = obj.get(key)
@@ -1141,7 +1200,8 @@ class Runtime:
             if not isinstance(cell, Cell):
                 raise MatlabError("Brace assignment needs a cell array.")
             k = self._cell_slot(cell, key)
-            cell[k] = self.assign(cell[k] if rest else None, rest, value)
+            cell[k] = self.assign(cell[k] if rest else None, rest, value,
+                                  owned)
             return cell
         # ()
         if rest or isinstance(value, Mapping) or isinstance(
@@ -1157,7 +1217,7 @@ class Runtime:
             k = self._cell_slot(array, key, lambda: Struct(
                 {f: np.zeros((0, 0)) for f in template}))
             element = array[k]
-            array[k] = (self.assign(element, rest, value) if rest
+            array[k] = (self.assign(element, rest, value, owned) if rest
                         else Struct(value))
             return array
         if isinstance(obj, Cell):
@@ -1414,7 +1474,7 @@ class Runtime:
     def statement(self, value, echo: bool) -> None:
         if value is None:
             return
-        self.ns["ans"] = value
+        self.ns["ans"] = share(value)
         if echo:
             self.show("ans", value)
 
@@ -1431,8 +1491,13 @@ class Runtime:
                               "possible.")
         return bool(x)
 
+    @classmethod
+    def iterate(cls, x):
+        # The loop variable holds what the loop hands it: mark it shared.
+        return [share(v) for v in cls._columns(x)]
+
     @staticmethod
-    def iterate(x):
+    def _columns(x):
         if x is None:
             return []
         if _is_sym(x):
@@ -1456,6 +1521,19 @@ class Runtime:
         if isinstance(x, str):
             return list(x)
         return [x]
+
+    share = staticmethod(share)
+
+    @staticmethod
+    def capture(scope: dict, names: tuple) -> tuple:
+        """
+        The values an anonymous function captures, when it is made.
+
+        MATLAB's ``@(x) a*x`` keeps the value ``a`` had then; a later
+        ``a = 10`` does not change it. A Python lambda would read ``a`` when
+        called. A name with no value yet is captured as ``None``.
+        """
+        return tuple(share(scope.get(n)) for n in names)
 
     def case_matches(self, subject, value) -> bool:
         if isinstance(value, Cell):
@@ -2810,8 +2888,20 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         return self._shift(np.fft.ifftshift, x, dim)
 
     @_nargout
-    def f_filter(self, b, a, x, zi=None, dim=None, nargout=1):
+    def f_filter(self, b, a, x=None, zi=None, dim=None, nargout=1):
         from scipy.signal import lfilter
+
+        from .lib_signal import DigitalFilter
+        if isinstance(b, DigitalFilter):            # y = filter(d, x)
+            if x is not None or nargout > 1:
+                raise MatlabError("Use y = filter(d, x) with a designfilt "
+                                  "filter.")
+            A, axis = self._along(a, None)
+            y = b.apply(A, axis)
+            y = y.reshape(-1) if np.ndim(a) <= 1 else y
+            return _scalar(y.reshape(-1)[0]) if np.ndim(a) == 0 else y
+        if x is None:
+            raise MatlabError("Not enough input arguments.")
         bb = np.atleast_1d(np.asarray(b)).reshape(-1)
         aa = np.atleast_1d(np.asarray(a)).reshape(-1)
         if not aa.size or aa[0] == 0:
@@ -2879,13 +2969,21 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
                          float(rs))
 
     @_nargout
-    def f_freqz(self, b, a=1, n=512, *rest, nargout=1):
+    def f_freqz(self, b, a=None, n=None, *rest, nargout=1):
         """
         ``[h, w] = freqz(b, a, n)`` over [0, π) rad/sample, or
         ``[h, f] = freqz(b, a, n, fs)`` in Hz; ``n`` may be the frequencies
-        themselves. With no outputs, magnitude over phase.
+        themselves. With no outputs, magnitude over phase. A designfilt
+        filter stands for ``b, a``: ``freqz(d, n, fs)``.
         """
         from scipy import signal
+
+        from .lib_signal import DigitalFilter
+        if isinstance(b, DigitalFilter):
+            given = [v for v in (a, n, *rest) if v is not None]
+            return self.f_freqz(*b.ba(), *given, nargout=nargout)
+        a = 1 if a is None else a
+        n = 512 if n is None else n
         whole = any(isinstance(r, str) and r.lower() == "whole"
                     for r in rest)
         numbers = [r for r in rest if not isinstance(r, str)]

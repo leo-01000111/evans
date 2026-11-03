@@ -23,11 +23,8 @@
         <h2>Known bugs</h2>
         <p>Each is on the <a href="@@repo@@/blob/main/docs/ROADMAP.md">roadmap</a>, with what fixing it involves.</p>
         <ul>
-          <li><strong>A PID block with <em>Limit output</em> ticked can stall a run.</strong> Once its output reaches the limit, the solver's step shrinks towards zero and the run stops making progress. Until it is fixed, leave <em>Limit output</em> off and put a Saturation block after the PID, or build the PI from a Gain and an Integrator with its own limits, as the <em>PID with a saturating actuator</em> example does.</li>
-          <li><strong>A Unit Delay fed by a continuous signal behaves as a zero-order hold.</strong> Over each sample period it shows the sample just taken, where Simulink shows the one before. Fed by another discrete block it delays correctly. A Memory block gives the previous sample from either kind of signal.</li>
-          <li><strong>A fixed-step run (<code>ode1</code> to <code>ode5</code>) does not log its last instant.</strong> The final sample is one output step before the stop time.</li>
           <li><strong><code>numel("hello")</code> is 5, not 1.</strong> Text in double quotes is a character array in Evans, because string arrays are not there yet.</li>
-          <li><strong>Growing a cell, struct or array one element at a time is slow.</strong> <code>c{end+1} = k</code> in a loop of 10,000 takes a few seconds. Preallocate (<code>c = cell(1, n)</code>) where you can.</li>
+          <li><strong>Writing into a large numeric array in a loop is slow.</strong> Each <code>a(k) = v</code> copies the array, so filling 100,000 elements one at a time takes about a minute. Build the values with vector operations where you can (<code>a = (1:n).^2</code>). Cells and structs no longer have this problem.</li>
         </ul>
       </div>
     </section>
@@ -38,7 +35,7 @@
         <p>These stop with an error that names them rather than giving a wrong answer. The <a href="matlab.html">MATLAB compatibility</a> page has the full list.</p>
         <ul>
           <li><strong>Language:</strong> <code>eval</code>, <code>classdef</code>, nested functions, N-D arrays (<code>zeros(2,2,2)</code>), integer types, string arrays and <code>containers.Map</code>.</li>
-          <li><strong>Data:</strong> Excel files (<code>.xlsx</code>), and <code>.mat</code> files saved as version 7.3.</li>
+          <li><strong>Data:</strong> the old Excel format (<code>.xls</code>) and <code>.ods</code> (save as <code>.xlsx</code>, which Evans reads and writes), and <code>.mat</code> files saved as version 7.3.</li>
           <li><strong>Plotting:</strong> 3-D plots, images, and annotations typed on a later line than the plot.</li>
           <li><strong>Simulink:</strong> opening <code>.slx</code> or <code>.mdl</code> files, buses, masks and block libraries, physical (Simscape-style) modelling, and a subsystem that is both enabled and triggered.</li>
           <li><strong>Symbolic maths:</strong> symbolic functions such as <code>syms y(t)</code>, and so <code>dsolve</code>.</li>

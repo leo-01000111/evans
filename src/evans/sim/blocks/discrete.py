@@ -75,7 +75,7 @@ class UnitDelay(_DiscreteBase):
 
     @property
     def n_dstates(self) -> int:
-        return 1
+        return 2                            # [last input, held output]
 
     @property
     def direct_feedthrough(self) -> bool:
@@ -83,14 +83,23 @@ class UnitDelay(_DiscreteBase):
         # reads the present one.
         return False
 
+    @property
+    def held_reads_input(self) -> bool:
+        return False
+
     def initial_discrete_state(self):
-        return np.array([float(self.params["x0"])])
+        x0 = float(self.params["x0"])
+        return np.array([x0, x0])
 
     def output(self, t, x, xd, u):
-        return [xd.copy()]
+        return [xd[1:2].copy()]
 
     def update(self, t, x, xd, u):
-        return np.atleast_1d(u[0])[:1].astype(float) if u else xd
+        # Over [k, k+1) the output is u(k−1), sampled at the hit before: the
+        # held value is the input kept last time, not the one read now. A
+        # single slot holding u(k) would make this a zero-order hold.
+        uu = float(np.atleast_1d(u[0])[0]) if u else xd[0]
+        return np.array([uu, xd[0]])
 
     def label(self):
         return "1/z"
@@ -164,6 +173,10 @@ class DiscreteTransferFcn(_DiscreteBase):
     def output_widths(self, input_widths):
         return [1]
 
+    @property
+    def held_reads_input(self) -> bool:
+        return bool(np.any(self._D))
+
     def output(self, t, x, xd, u):
         return [xd[-1:].copy()]
 
@@ -201,6 +214,10 @@ class DiscretePID(_DiscreteBase):
     def n_dstates(self) -> int:
         # [integral accumulator, previous error, held output]
         return 3
+
+    @property
+    def held_reads_input(self) -> bool:
+        return bool(self.params["Kp"] or self.params["Kd"])
 
     def _raw(self, xd, e):
         p = self.params
@@ -269,6 +286,10 @@ class DiscreteStateSpace(_DiscreteBase):
     def output_widths(self, input_widths):
         return [int(self._C.shape[0])]
 
+    @property
+    def held_reads_input(self) -> bool:
+        return bool(np.any(self._D))
+
     def output(self, t, x, xd, u):
         n = int(self._A.shape[0])
         return [xd[n:].copy()]
@@ -321,9 +342,8 @@ class Memory(_DiscreteBase):
     """
     The input one sample ago.
 
-    Unlike a Unit Delay, whose held output is what it last sampled, Memory
-    outputs the sample *before* that: at hit k it shows u(k−1). Simulink's
-    Memory inherits its rate; Evans needs the sample time stated.
+    At hit k it shows u(k−1), as a Unit Delay does. Simulink's Memory
+    inherits its rate; Evans needs the sample time stated.
     """
 
     type_name = "Memory"
@@ -340,6 +360,10 @@ class Memory(_DiscreteBase):
     @property
     def n_dstates(self) -> int:
         return 2                            # [previous input, held output]
+
+    @property
+    def held_reads_input(self) -> bool:
+        return False
 
     def initial_discrete_state(self):
         x0 = float(self.params["x0"])
@@ -394,6 +418,10 @@ class DiscreteIntegrator(_DiscreteBase):
     def n_dstates(self) -> int:
         return 2                            # [x, held output]
 
+    @property
+    def held_reads_input(self) -> bool:
+        return self.params["method"] != "Forward Euler"
+
     def initial_discrete_state(self):
         x0 = float(self.params["x0"])
         return np.array([x0, x0])
@@ -440,6 +468,10 @@ class DiscreteFIR(_DiscreteBase):
 
     def output_widths(self, input_widths):
         return [1]
+
+    @property
+    def held_reads_input(self) -> bool:
+        return bool(self._b[0])
 
     def output(self, t, x, xd, u):
         return [xd[-1:].copy()]
@@ -513,6 +545,10 @@ class Counter(_DiscreteBase):
     @property
     def n_dstates(self) -> int:
         return 2                            # [next count, held output]
+
+    @property
+    def held_reads_input(self) -> bool:
+        return False
 
     def initial_discrete_state(self):
         return np.zeros(2)

@@ -251,6 +251,23 @@ class Block(ABC):
         """
         return True
 
+    @property
+    def held_reads_input(self) -> bool:
+        """
+        Whether the output a discrete block holds after a sample hit depends
+        on the input at that hit — Simulink's "direct feedthrough" for a
+        discrete block, which :attr:`direct_feedthrough` cannot say, since
+        every discrete block here holds its output between hits.
+
+        The solver updates the blocks due at one hit upstream first, so each
+        sees the new values of the blocks feeding it (see
+        ``_Evaluator.update_discrete``). A block that answers ``False`` — a
+        Unit Delay, a strictly proper filter — can act first even inside a
+        discrete loop, which is how such a loop is resolved. Defaults to
+        ``True``, the safe answer.
+        """
+        return True
+
     def output_widths(self, input_widths: list[int]) -> list[int]:
         """
         Width of each output port given the input widths.

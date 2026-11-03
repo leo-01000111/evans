@@ -162,6 +162,11 @@ class Interpreter:
             return result
         finally:
             self._buffers.remove(buffer)
+            # Python makes references freely (`b = c`, `d = c[0]`), and the
+            # MATLAB side writes cells and structs in place unless they are
+            # marked: mark everything Python could have touched.
+            from .matlab_runtime import share
+            share(*loc.values())
             if in_function:
                 write_back(paused.frame)
 

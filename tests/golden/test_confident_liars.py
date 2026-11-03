@@ -493,3 +493,78 @@ def test_clear_resets_globals_and_persistents(it, tmp_path):
     run(it, "global G; G = 5; clear all")
     run(it, f"addpath('{folder}'); e = isempty(readg());")
     assert val(it, "e") is True
+
+
+# ──────────────────────────────────────────────────────────────
+#  Values written in place only when nobody else holds them
+# ──────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("source, name, expected", [
+    # b = c, then a write through either: the other keeps its value.
+    ("c = {1, {2}}; b = c; b{2}{1} = 5; r = c{2}{1};", "r", 2),
+    ("c = {1, {2}}; b = c; c{2}{1} = 5; r = b{2}{1};", "r", 2),
+    # An element taken out, then the original written to.
+    ("c = {1, {2}}; d = c{2}; c{2}{1} = 7; r = d{1};", "r", 2),
+    # A builtin that builds a new cell from the old one's elements.
+    ("a = {{1}}; b = [a; a]; b{1}{1} = 5; r = a{1}{1} + 10*b{2}{1};", "r", 11),
+    # Nested structs, and a struct's cell field.
+    ("u.x.y = 1; t = u; t.x.y = 2; r = u.x.y;", "r", 1),
+    ("w.x = {1}; t = w.x; w.x{1} = 3; r = t{1};", "r", 1),
+    # Stored inside another container, then either written to.
+    ("c = {1}; v = {}; v{1} = c; c{1} = 2; r = v{1}{1};", "r", 1),
+    ("c = {1}; v = {}; v{1} = c; v{1}{1} = 2; r = c{1};", "r", 1),
+    ("c = {1}; v = {c}; c{1} = 2; r = v{1}{1};", "r", 1),
+    # A loop variable over a cell's columns.
+    ("c = {{1}}; for x = c, y = x; end; c{1}{1} = 9; r = y{1}{1};", "r", 1),
+    # A struct array element.
+    ("s = struct('a', {1, 2}); t = s; t(2).a = 9; r = s(2).a;", "r", 2),
+    # A library function handed the value.
+    ("p = struct('a', 1); q = setfield(p, 'a', 2); r = p.a;", "r", 1),
+])
+def test_writes_never_reach_another_holder(it, source, name, expected):
+    run(it, source)
+    assert val(it, name) == expected
+
+
+def test_a_function_writing_its_argument_leaves_the_callers(it, tmp_path):
+    (tmp_path / "bump.m").write_text(
+        "function r = bump(a)\na{1} = 9;\nr = a;\nend\n")
+    folder = str(tmp_path).replace("\\", "/")
+    run(it, f"addpath('{folder}'); c = {{1}}; d = bump(c); r = c{{1}};"
+            " q = d{1};")
+    assert (val(it, "r"), val(it, "q")) == (1, 9)
+
+
+def test_python_aliases_are_respected(it):
+    """``b = c`` typed as Python shares the object; a MATLAB write to ``c``
+    afterwards must not reach ``b``."""
+    run(it, "c = {1};")
+    it.run("b = c")
+    run(it, "c{1} = 5; r = b{1};")
+    assert val(it, "r") == 1
+
+
+def test_growing_a_cell_in_a_loop_is_not_quadratic(it):
+    """
+    Every write used to copy the whole cell, so 10⁴ appends took about 3.5 s.
+    Unshared, the cell is written in place. Timed against a loop of the same
+    length that does no cell work, so a slow machine slows both.
+    """
+    import time
+    t0 = time.perf_counter()
+    run(it, "for k = 1:20000, z = k; end")
+    plain = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    run(it, "c = {}; for k = 1:20000, c{end+1} = k; end; n = numel(c);")
+    grown = time.perf_counter() - t0
+    assert val(it, "n") == 20000
+    assert grown < 10 * plain + 0.5
+
+
+def test_an_anonymous_function_keeps_the_values_it_was_made_with(it):
+    """MATLAB captures the variables when ``@`` runs: later assignments
+    don't reach the handle. Evans read them when the handle was called."""
+    run(it, "c = {1}; k = 2; g = @() c{1} + k; c{1} = 5; k = 10; r = g();"
+            " h = @(z) z + k; k = 0; q = h(1);")
+    assert val(it, "r") == 3
+    assert val(it, "q") == 11

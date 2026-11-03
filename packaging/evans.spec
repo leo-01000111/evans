@@ -39,7 +39,9 @@ VERSION = re.search(r'__version__ = "([^"]+)"',
 # scan already follows the parts of `control` this code actually imports.
 HIDDEN = (
     collect_submodules("evans")
-    + ["scipy.special._cdflib", "scipy._lib.messagestream"]
+    + ["scipy.special._cdflib", "scipy._lib.messagestream",
+       # Imported only when a .xlsx is read or written.
+       "openpyxl"]
 )
 
 # Qt modules this app never touches. Dropping them takes a large bite out of

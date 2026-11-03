@@ -53,14 +53,23 @@ Left over from this phase:
 - [ ] `numel("hello")` is 5 and should be 1 (string arrays, Phase 4). **S–M**
       *Deferred to Phase 4's string arrays:* it needs `"…"` to be its own type,
       and changing `numel` alone would make `"…"` disagree with itself.
-- [ ] Writing one element of a cell, struct or array copies it, so growing one in a
+- [x] Writing one element of a cell, struct or array copies it, so growing one in a
       loop is quadratic. `c{end+1} = k` for 10⁴ elements takes about 3.5 s, against
       about 0.5 s before cells were copied; numeric arrays already behaved this way.
       Copy only when the value is shared, for example by marking it at `b = c` and at
-      function calls. **M** *Deferred:* every route a value can be shared by
-      (`b = c`, `d = c{1}`, `t = s.a`, arguments, returns, loop variables,
-      globals) must mark it, and missing one gives a silent wrong answer, the
-      failure this phase exists to remove. It wants its own change and tests.
+      function calls. **M** *Done 2026-11-03 for cells and structs (0.09 s):*
+      `share()` in the runtime marks a value, deeply, wherever a second
+      reference can appear: every plain store (so `b = c`, `d = c{1}` and a
+      builtin's result are all covered), parameters, loop variables, lambda
+      captures, `ans`, values put into a container, and everything a Python
+      chunk leaves in the workspace. Translated writes pass `owned=True` and
+      write an unmarked level in place; library callers still always copy.
+      Writing the marked tests turned up a second liar: anonymous functions
+      read their variables when called. They now capture them when made.
+- [ ] The same for numeric arrays: `a(k) = v` copies the array, about 0.4 s for
+      10⁴ writes and quadratic past that. **M** An ndarray cannot carry the
+      mark, and NumPy views share memory (`b = a(:)` may be a view), so
+      in-place writes need their own tracking and tests.
 - [ ] Search the rest of the language for more of these, with a probe script of
       MATLAB lines run against known MATLAB answers (see Phase 6, reference
       corpus). **M** *Deferred to Phase 6:* the known answers need a MATLAB
@@ -72,10 +81,8 @@ Needed for any "process my logged data" job, whether coursework, a hobby project
 data at work. All of it is in numpy and scipy already.
 
 The functions live in `src/evans/console/lib_*.py`, one mixin of `_Library` per group
-below, with tests in `tests/golden/test_lib_*.py`. **Left to do:** about 90 of the new
-commands have no help page yet (the index lists the ones that do; see the "Data files",
-"Signal processing", "Fitting and optimisation" and "System" groups), and the
-`fitlm` and `.xlsx` items below.
+below, with tests in `tests/golden/test_lib_*.py`. **Left to do:** `fitlm` below. *Every
+command has had a help page since 2026-11-03 (`interp`, which only refuses, aside).*
 
 **File I/O** **M**
 - [x] `readmatrix`, `writematrix`, `csvread`, `csvwrite`, `dlmread`, with a header row
@@ -91,9 +98,12 @@ commands have no help page yet (the index lists the ones that do; see the "Data 
       `textscan`, `fread`, `fwrite`.
       *Also `feof`, `frewind`, `ftell`, `fseek`. `cd` lasts one run, as before.*
 - [x] `jsondecode` and `jsonencode`.
-- [ ] `xlsread`/`readtable` on `.xlsx`. This needs openpyxl, a new dependency, so
-      decide first. **M** *Not decided; still open.* `readmatrix`,
-      `readtable` and `writematrix` refuse `.xlsx` by name.
+- [x] `xlsread`/`readtable` on `.xlsx`. This needs openpyxl, a new dependency, so
+      decide first. **M** *Done 2026-11-03, openpyxl added:* `readmatrix`,
+      `readtable`, `writematrix`, `writetable` with `'Sheet'` and `'Range'`;
+      `xlsread`, `xlswrite`, `sheetnames`. A sheet is read into the same text
+      grid a CSV is split into, so header detection is shared. `.xls` and
+      `.ods` are refused by name.
 
 **Statistics and linear algebra** **S**
 - [x] `var`, `mode`, `cov`, `corrcoef`, `prctile`, `quantile`, `skewness`,
@@ -130,8 +140,8 @@ commands have no help page yet (the index lists the ones that do; see the "Data 
 - [x] `filtfilt`, `fir1`, `fir2`, `designfilt` (the common forms), `pwelch`,
       `periodogram`, `spectrogram`, `resample`, `decimate`, `interp`, `xcorr`,
       `impz`, `grpdelay`. *`designfilt` covers the Butterworth IIR and window
-      FIR forms and works with `filtfilt(d, x)`; `filter(d, x)` and
-      `freqz(d)` don't take it yet.*
+      FIR forms and works with `filtfilt(d, x)`, `filter(d, x)`, `freqz(d)`,
+      `impz(d)` and `grpdelay(d)`.*
 - [x] Windows: `hann`, `hamming`, `blackman`, `kaiser`, `window`.
       *Also `hanning`, `rectwin`, `triang`, `bartlett`.*
 - [x] Start from the `_iir`/`freqz` code in `matlab_runtime.py`.
@@ -238,17 +248,31 @@ The engine was ahead of the editor and of its links to the console. Tests:
 
 Found while doing this phase, not fixed in it:
 
-- [ ] A **PID block with "Limit output" on stalls the solver** once its output reaches
+- [x] A **PID block with "Limit output" on stalls the solver** once its output reaches
       the limit (already so on `main`): the conditional integration in its
       derivative is not latched, so the step size collapses. Give the PID modes,
-      as Saturation has. **S–M**
-- [ ] A **Unit Delay fed by a continuous signal acts as a zero-order hold**: it
+      as Saturation has. **S–M** *Done 2026-11-03:* latched `[clip, run]`
+      modes and a third zero crossing on the error. Riding the limit is a
+      true sliding mode, so it still ends in the chatter fallback (with its
+      warning, as Simulink warns of consecutive zero crossings), now about
+      1 s instead of 40. The output is hard-clipped, since a latched mode
+      lags a step in that fallback.
+- [x] A **Unit Delay fed by a continuous signal acts as a zero-order hold**: it
       outputs u(k) over [k, k+1), not u(k−1). Fed by another discrete block it
       delays correctly, because it reads that block's value before the update.
       Simulink gives u(k−1) either way. Decide the update order before changing
       it; the triggered subsystem's held outputs follow the same convention. **S–M**
-- [ ] A fixed-step run does not log its final instant (`_fixed_step` records
-      only the edges before `t1`). **S**
+      *Done 2026-11-03, Simulink's order:* blocks due at one hit update
+      upstream first, the model re-evaluated between rounds, so each sees its
+      feeders' new outputs (this also removed an extra sample of delay after a
+      ZOH). Unit Delay holds two states, like Memory. Blocks whose held output
+      does not read their input (`Block.held_reads_input`: Unit Delay, Memory,
+      Counter, forward Euler, strictly proper filters) act first, which
+      resolves discrete loops; a loop without one runs with a warning. The
+      conditional subsystems' holds act at events, not at sample hits, so
+      they were not affected.
+- [x] A fixed-step run does not log its final instant (`_fixed_step` records
+      only the edges before `t1`). **S** *Done 2026-11-03.*
 
 ## Phase 3 — Plotting
 
@@ -273,6 +297,8 @@ This is what decides whether a colleague's `.m` file runs.
 - [ ] An error for an unknown name that says when the function is a MATLAB one Evans
       does not have yet, so the user knows they haven't mistyped it, with a link to
       a "not in Evans" list. **S**
+- [ ] Everyday basics found missing while writing the help pages: `magic`,
+      `fileread`. **S**
 - [ ] `eval`, `evalin`, `feval`, `str2func`, `func2str`, `exist`, `inputParser`,
       `validateattributes`, `nargin(fn)`. **M**
 - [ ] Nested functions that share the parent's variables. **M**
@@ -322,7 +348,7 @@ Professional users need this before Evans can be used for paid work.
       343 MB. **S**
 - [ ] A `CHANGELOG.md` in the repo; patch notes live only on the site now. A stated
       stability policy, and a 1.0 once Phases 1–2 land. **S**
-- [ ] Fix the `pyproject.toml` comment that still says "432 tests". **S**
+- [x] Fix the `pyproject.toml` comment that still says "432 tests". **S**
 - [ ] A profiler (`profile on/off/viewer`), `publish` for plain `.m` files to HTML/PDF,
       and git status in the file browser. **M each**
 - [ ] The `B905` audit (`zip(..., strict=True)`), deferred in PLAN Part 4. **S**

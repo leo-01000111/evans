@@ -529,3 +529,21 @@ def test_window_by_handle_and_name(it):
                                i0(3 * np.sqrt(1 - r ** 2)) / i0(3))
     assert val(it, "c").shape == (0, 1)
     assert "flattopwin" in error_of(it, "w = window('flattopwin', 8);")
+
+
+def test_designfilt_runs_through_filter_freqz_impz_and_grpdelay(it):
+    """A designfilt filter stands for the same Butterworth b, a everywhere."""
+    run(it, "d = designfilt('lowpassiir', 'FilterOrder', 4, "
+            "'HalfPowerFrequency', 0.2); [b, a] = butter(4, 0.2);"
+            "x = sin((1:200)'/3) + cos((1:200)'/7);"
+            "y1 = filter(d, x); y2 = filter(b, a, x);"
+            "[h1, w1] = freqz(d, 64); [h2, w2] = freqz(b, a, 64);"
+            "g1 = impz(d, 30); g2 = impz(b, a, 30);"
+            "gd1 = grpdelay(d, 32); gd2 = grpdelay(b, a, 32);")
+    for one, two in (("y1", "y2"), ("h1", "h2"), ("w1", "w2"), ("g1", "g2"),
+                     ("gd1", "gd2")):
+        np.testing.assert_allclose(val(it, one), val(it, two), atol=1e-9)
+    run(it, "e = designfilt('lowpassfir', 'FilterOrder', 10, "
+            "'CutoffFrequency', 0.3); y = filter(e, [1 zeros(1, 15)]);"
+            "c = e.Coefficients;")
+    np.testing.assert_allclose(val(it, "y")[:11], val(it, "c"))

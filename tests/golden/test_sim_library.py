@@ -220,11 +220,12 @@ def test_memory_is_one_sample_behind_its_input():
 
 
 @pytest.mark.parametrize("method, gain_at_4", [
-    # Σ over the samples the integrator has seen, by its rule; the hold
-    # gives it 0, 0, 1, 2, 3 at hits 0…4 (see the Memory test).
-    ("Forward Euler", 0 + 0 + 1 + 2),
-    ("Backward Euler", 0 + 0 + 1 + 2 + 3),
-    ("Trapezoidal", (0 + 0) / 2 + (0 + 1) / 2 + (1 + 2) / 2 + (2 + 3) / 2),
+    # Σ over the samples the integrator has seen, by its rule. The hold is
+    # updated first at each hit, so it gives 0, 1, 2, 3, 4 at hits 0…4, as
+    # Simulink's does; it used to hand over the sample before (0, 0, 1, 2, 3).
+    ("Forward Euler", 0 + 1 + 2 + 3),
+    ("Backward Euler", 0 + 1 + 2 + 3 + 4),
+    ("Trapezoidal", (0 + 1) / 2 + (1 + 2) / 2 + (2 + 3) / 2 + (3 + 4) / 2),
 ])
 def test_discrete_integrator_methods(method, gain_at_4):
     r = simulate(discrete_chain("DiscreteIntegrator", method=method),
@@ -580,3 +581,97 @@ def test_integrator_reset_with_a_fixed_step_solver():
     # Reset on the step that reaches t = 3.
     assert at(r, "I.out", 3.0) == pytest.approx(0.5, abs=1e-9)
     assert at(r, "I.out", 4.5) == pytest.approx(2.0, abs=1e-6)
+
+
+# ──────────────────────────────────────────────────────────────
+#  Discrete update order, Unit Delay, the end of a fixed-step run
+# ──────────────────────────────────────────────────────────────
+
+def test_unit_delay_fed_continuously_is_one_sample_late():
+    """Sampling the clock, a Unit Delay shows u(k−1) over [k, k+1), as
+    Simulink's does; it used to show u(k), a zero-order hold."""
+    m = SimModel("ud")
+    m.add("Clock", "c")
+    m.add("UnitDelay", "b", sample_time=1.0, x0=-1.0)
+    m.connect("c", "b")
+    sink(m, "b")
+    r = simulate(m, t_end=5.0, n_points=11)
+    assert [at(r, "b.out", k + 0.5) for k in range(5)] == [-1, 0, 1, 2, 3]
+
+
+def test_a_chain_of_discrete_blocks_adds_no_extra_delay():
+    """Updated upstream first, a hold followed by two Unit Delays is two
+    samples late, not three or four."""
+    m = discrete_chain("UnitDelay")
+    m.add("UnitDelay", "b2", sample_time=1.0)
+    m.connect("b", "b2")
+    sink(m, "b2", "t2")
+    r = simulate(m, t_end=5.0, n_points=11)
+    assert [at(r, "h.out", k + 0.5) for k in range(5)] == [0, 1, 2, 3, 4]
+    assert [at(r, "b.out", k + 0.5) for k in range(5)] == [0, 0, 1, 2, 3]
+    assert [at(r, "b2.out", k + 0.5) for k in range(5)] == [0, 0, 0, 1, 2]
+
+
+def test_a_unit_delay_closes_a_discrete_loop():
+    """y = z⁻¹(y + 1) counts 0, 1, 2, …: the delay acts first, then the
+    sum it feeds."""
+    m = SimModel("acc")
+    m.add("Constant", "one", value=1.0)
+    m.add("Sum", "s", signs="++")
+    m.add("UnitDelay", "z", sample_time=1.0)
+    m.connect("one", "s.in1")
+    m.connect("z", "s.in2")
+    m.connect("s", "z")
+    sink(m, "z")
+    r = simulate(m, t_end=4.0, n_points=9)
+    assert [at(r, "z.out", k + 0.5) for k in range(5)] == [0, 1, 2, 3, 4]
+    assert not r.warnings
+
+
+def test_a_loop_of_discrete_blocks_that_feed_through_is_reported():
+    m = SimModel("loop")
+    m.add("Constant", "one", value=1.0)
+    m.add("Sum", "s", signs="+-")
+    m.add("ZeroOrderHold", "h", sample_time=1.0)
+    m.connect("one", "s.in1")
+    m.connect("h", "s.in2")
+    m.connect("s", "h")
+    sink(m, "h")
+    r = simulate(m, t_end=2.0, n_points=5)
+    assert any("discrete algebraic loop" in w for w in r.warnings)
+
+
+@pytest.mark.parametrize("solver", ["ode1", "ode4", "RK45"])
+def test_every_solver_logs_the_last_instant(solver):
+    m = SimModel("end")
+    m.add("Step", "s", step_time=0.0)
+    m.add("Integrator", "i")
+    m.connect("s", "i")
+    sink(m, "i")
+    r = simulate(m, t_end=2.0, solver=solver, n_points=5)
+    assert r.t[-1] == 2.0
+    assert r.trace("i.out")[-1] == pytest.approx(2.0)
+
+
+def test_a_pid_riding_its_limit_does_not_stall():
+    """
+    With a small Kp and a large Ki the clamped integrator slides along the
+    upper limit. Evaluated live, its rate jumped inside every step and the
+    run took half a million steps (about 40 s); latched, it takes about one
+    second. The output never leaves its limits.
+    """
+    import time
+    m = SimModel("slide")
+    m.add("Step", "r", final=0.95)
+    m.add("Sum", "e", signs="+-")
+    m.add("PID", "C", Kp=0.5, Ki=10.0, limit=True, upper=1.0, lower=-1.0)
+    m.add("TransferFcn", "P", num="1", den="1, 1")
+    m.connect("r", "e.in1")
+    m.connect("P", "e.in2")
+    m.connect("e", "C")
+    m.connect("C", "P")
+    t0 = time.perf_counter()
+    r = simulate(m, t_end=10.0)
+    assert time.perf_counter() - t0 < 10.0
+    assert r.trace("C.out").max() <= 1.0
+    assert r.trace("P.out")[-1] == pytest.approx(0.95, abs=1e-3)

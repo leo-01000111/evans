@@ -5,7 +5,7 @@ from __future__ import annotations
 import control as ctl
 import numpy as np
 
-from ..block import Block, BlockError, ParamSpec, as_array, register
+from ..block import Block, BlockError, ModeLatch, ParamSpec, as_array, register
 
 _CAT = "Continuous"
 
@@ -288,7 +288,19 @@ class Derivative(Block):
 
 
 @register
-class PID(Block):
+class PID(ModeLatch, Block):
+    """
+    Kp + Ki/s + Kd·s/(Tf·s+1). With "Limit output", the output is clipped
+    and the integrator is clamped: it stops while the output sits on a limit
+    and the error would push it further out.
+
+    Both decisions are latched modes, as Saturation's is: ``[clip, run]``,
+    with ``clip`` +1 on the upper limit, −1 on the lower, 0 between, and
+    ``run`` 1 while the integrator charges. Evaluated live instead, the
+    integrator's rate jumps inside a solver step whenever the output rides a
+    limit, and the step size collapsed until the run stalled.
+    """
+
     type_name = "PID"
     category = _CAT
     description = "Kp + Ki/s + Kd·s/(Tf·s+1), with anti-windup clamping."
@@ -312,23 +324,37 @@ class PID(Block):
         d_term = p["Kd"] * (uu - x[1]) / max(p["Tf"], 1e-12)
         return p["Kp"] * uu + p["Ki"] * x[0] + d_term
 
+    def _fresh_mode(self, x, uu):
+        p = self.params
+        v = self._unclamped(x, uu)
+        clip = 1.0 if v - p["upper"] >= 0 else (
+            -1.0 if v - p["lower"] < 0 else 0.0)
+        run = 0.0 if (clip > 0 and uu > 0) or (clip < 0 and uu < 0) else 1.0
+        return np.array([clip, run])
+
+    def _mode_at(self, x, uu):
+        return self._mode_or(self._fresh_mode(x, uu))
+
     def output(self, t, x, xd, u):
         uu = np.atleast_1d(u[0])[0] if u else 0.0
         v = self._unclamped(x, uu)
-        if self.params["limit"]:
-            v = float(np.clip(v, self.params["lower"], self.params["upper"]))
+        p = self.params
+        if p["limit"]:
+            clip = self._mode_at(x, uu)[0]
+            if clip:
+                v = p["upper"] if clip > 0 else p["lower"]
+            # Where the modes are recomputed only between steps (a fixed-step
+            # solver, a chattering span), a latched "between the limits" can
+            # lag a step behind. The limit is a hard one all the same.
+            v = min(max(v, p["lower"]), p["upper"])
         return [np.array([v])]
 
     def derivative(self, t, x, xd, u):
         p = self.params
         uu = np.atleast_1d(u[0])[0] if u else 0.0
         di = uu
-        if p["limit"]:
-            # Conditional integration: stop charging the integrator while the
-            # output is saturated and the error would push it further out.
-            v = self._unclamped(x, uu)
-            if (v > p["upper"] and uu > 0) or (v < p["lower"] and uu < 0):
-                di = 0.0
+        if p["limit"] and not self._mode_at(x, uu)[1]:
+            di = 0.0
         return np.array([di, (uu - x[1]) / max(p["Tf"], 1e-12)])
 
     def zero_crossings(self, t, x, xd, u):
@@ -336,10 +362,22 @@ class PID(Block):
             return np.zeros(0)
         uu = np.atleast_1d(u[0])[0] if u else 0.0
         v = self._unclamped(x, uu)
-        return np.array([v - self.params["upper"], v - self.params["lower"]])
+        # The error's sign decides whether a clipped integrator charges, and
+        # matters only then. Watched between the limits too, it fires on
+        # every rounding error once the loop settles with zero error, which
+        # is exactly where an integral action leaves it.
+        clipped = self._mode is None or self._mode[0] != 0
+        return np.array([v - self.params["upper"], v - self.params["lower"],
+                         uu if clipped else 1.0])
 
     def n_zero_crossings(self, input_widths):
-        return 2 if self.params["limit"] else 0
+        return 3 if self.params["limit"] else 0
+
+    def update_modes(self, t, x, xd, u):
+        if not self.params["limit"]:
+            return False
+        uu = np.atleast_1d(u[0])[0] if u else 0.0
+        return self._latch(self._fresh_mode(x, uu))
 
     labels_expressions = True
 

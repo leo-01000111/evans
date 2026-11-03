@@ -1151,6 +1151,21 @@ _PY_RESERVED = set(keyword.kwlist) | {"print", "exec", "eval", "type", "id",
 _PY_RESERVED -= {"if", "else"}       # never reach here as names anyway
 
 
+def _names_in(node) -> set[str]:
+    """Every name an expression mentions, nested lambdas included."""
+    found: set[str] = set()
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if isinstance(n, _Name):
+            found.add(n.name)
+        if isinstance(n, _Node):
+            stack.extend(vars(n).values())
+        elif isinstance(n, (list, tuple)):
+            stack.extend(n)
+    return found
+
+
 def _py_name(name: str) -> str:
     """A MATLAB name that is a Python keyword or builtin gets a suffix."""
     return f"{name}_" if name in _PY_RESERVED or name == _RT else name
@@ -1333,6 +1348,11 @@ class _Emitter:
                 self._put(body_indent, "nargin += len(varargin)", f.line)
             else:
                 self._put(body_indent, "nargin = len(varargin)", f.line)
+        if f.params:
+            # The caller still holds what it passed.
+            self._put(body_indent, f"{_RT}.share("
+                      + "".join(f"{_py_name(p)}, " for p in f.params)
+                      + ")", f.line)
         for out in f.outputs:
             if out not in f.params:
                 self._put(body_indent, f"{_py_name(out)} = None", f.line)
@@ -1373,7 +1393,10 @@ class _Emitter:
     def _store(self, target: _Node, value: str, i: int, line: int) -> None:
         if isinstance(target, _Name):
             self.vars.add(target.name)
-            self._put(i, f"{_py_name(target.name)} = {value}", line)
+            # The right side may be held elsewhere too (another variable, an
+            # element of a cell): see the runtime's share().
+            self._put(i, f"{_py_name(target.name)} = {_RT}.share({value})",
+                      line)
             self._write_back(target.name, i, line)
             return
         path = []
@@ -1393,7 +1416,7 @@ class _Emitter:
         current = (self._linked_read(node.name) if node.name in self.linked
                    else f"{_RT}.existing({name!r}, locals())")
         self._put(i, f"{name} = {_RT}.assign({current}, "
-                     f"[{', '.join(path)}], {value})", line)
+                     f"[{', '.join(path)}], {value}, owned=True)", line)
         self._write_back(node.name, i, line)
 
     def _declare(self, s: _Declare, i: int) -> None:
@@ -1534,7 +1557,17 @@ class _Emitter:
         if isinstance(node, _Lambda):
             inner = _Emitter(self.vars | set(node.params))
             params = ", ".join(_py_name(p) for p in node.params)
-            return f"(lambda {params}: {inner.expr(node.body)})"
+            body = f"(lambda {params}: {inner.expr(node.body)})"
+            # MATLAB captures the variables' values when the handle is made;
+            # a Python lambda would read them when called.
+            free = sorted(n for n in _names_in(node.body) - set(node.params)
+                          if n in self.vars)
+            if not free:
+                return body
+            names = ", ".join(_py_name(n) for n in free)
+            keys = "".join(f"{_py_name(n)!r}, " for n in free)
+            return (f"(lambda {names}: {body})"
+                    f"(*{_RT}.capture(locals(), ({keys})))")
         if isinstance(node, _Handle):
             return self._callee(node.name)
         raise MatlabSyntaxError("unsupported expression", node.line)

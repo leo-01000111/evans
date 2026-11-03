@@ -12,8 +12,8 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Leon Gorecki" }]
 
-# Pinned to the versions the 432 tests were verified against. numpy 2.x
-# matters: it removed `ndarray.ptp`, which the 1.x-era code relied on.
+# Lower bounds the test suite is verified against. numpy 2.x matters: it
+# removed `ndarray.ptp`, which the 1.x-era code relied on.
 dependencies = [
     "numpy>=2.0,<3",
     "scipy>=1.14",
@@ -27,6 +27,8 @@ dependencies = [
     # The assistant panel's OpenRouter client: streamed replies that Stop
     # can cut off, and a mock transport so its tests never touch the network.
     "httpx>=0.27",
+    # readmatrix, readtable, writematrix, xlsread and the rest on .xlsx.
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]

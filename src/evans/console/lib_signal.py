@@ -368,6 +368,24 @@ class DigitalFilter:
                           "an IIR designfilt filter, since it can't promise "
                           "MATLAB's grouping of them; use butter for [b, a].")
 
+    def ba(self) -> tuple[np.ndarray, np.ndarray]:
+        """The transfer function ``b/a``, for freqz, impz and grpdelay."""
+        if self.ImpulseResponse == "fir":
+            return np.asarray(self._b, float).reshape(-1), np.ones(1)
+        from scipy.signal import sos2tf
+        b, a = sos2tf(self._sos)
+        return np.asarray(b, float), np.asarray(a, float)
+
+    def apply(self, X: np.ndarray, axis: int = 0) -> np.ndarray:
+        """``filter(d, x)``: the filter run once along ``axis``."""
+        from scipy.signal import lfilter, sosfilt
+        if self.ImpulseResponse == "fir":
+            return lfilter(np.asarray(self._b, float).reshape(-1), 1.0, X,
+                           axis=axis)
+        # Section by section: a high-order IIR filter multiplied out into
+        # one b/a loses its poles to rounding.
+        return sosfilt(self._sos, X, axis=axis)
+
     def __repr__(self) -> str:
         return (f"  digitalFilter ({self.FrequencyResponse}, "
                 f"{self.ImpulseResponse.upper()}, order "
@@ -954,9 +972,12 @@ class SignalLibrary:
         return out
 
     @_nargout
-    def f_impz(self, b, a=1, n=None, fs=None, nargout=1):
+    def f_impz(self, b, a=None, n=None, fs=None, nargout=1):
         from scipy.signal import lfilter
-        bb, aa = _ba(b, a)
+        if isinstance(b, DigitalFilter):            # impz(d, n, fs)
+            given = [v for v in (a, n, fs) if v is not None]
+            return self.f_impz(*b.ba(), *given, nargout=nargout)
+        bb, aa = _ba(b, 1 if a is None else a)
         if _empty(n):
             if aa.size > 1 and np.any(aa[1:] != 0):
                 raise MatlabError("Evans needs the length for an IIR filter: "
@@ -987,7 +1008,12 @@ class SignalLibrary:
         return (H, _column(t)) if nargout >= 2 else H
 
     @_nargout
-    def f_grpdelay(self, b, a=1, n=512, *rest, nargout=1):
+    def f_grpdelay(self, b, a=None, n=None, *rest, nargout=1):
+        if isinstance(b, DigitalFilter):            # grpdelay(d, n, fs)
+            given = [v for v in (a, n, *rest) if v is not None]
+            return self.f_grpdelay(*b.ba(), *given, nargout=nargout)
+        a = 1 if a is None else a
+        n = 512 if n is None else n
         whole = any(isinstance(r, str) and r.lower() == "whole"
                     for r in rest)
         bad = [r for r in rest if isinstance(r, str) and r.lower() != "whole"]

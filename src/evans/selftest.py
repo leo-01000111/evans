@@ -214,6 +214,15 @@ def _check_simulation(report: Report, say) -> None:
     except Exception as exc:                                    # noqa: BLE001
         report.record(False, f"simulation raised {type(exc).__name__}: {exc}")
         say(f"      FAILED: {exc}")
+    # openpyxl is imported only when a workbook is opened, so nothing at
+    # start-up would notice a build that left it out.
+    try:
+        import openpyxl
+        report.record(True)
+        say(f"      openpyxl {openpyxl.__version__} present for .xlsx files")
+    except Exception as exc:                                    # noqa: BLE001
+        report.record(False, f"openpyxl missing: {exc}")
+        say(f"      FAILED: openpyxl missing ({exc})")
 
 
 def _check_ui(report: Report, say) -> None:
