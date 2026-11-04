@@ -210,6 +210,33 @@ class MetricsPane(QWidget, GuardedPanel):
 #  One pane
 # ──────────────────────────────────────────────────────────────
 
+class _FitCombo(QComboBox):
+    """
+    A combo as wide as what it currently shows, and no wider.
+
+    `AdjustToMinimumContentsLength` pins the hint at N characters, so long
+    names clipped with room to spare beside them. The hint here follows the
+    selected text; the minimum stays at N characters, so a short pane still
+    elides rather than forcing the window wider.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(12)
+        self.currentIndexChanged.connect(lambda _i: self.updateGeometry())
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        fm = self.fontMetrics()
+        text_w = fm.horizontalAdvance(self.currentText())
+        base = fm.horizontalAdvance("0") * 12
+        extra = max(0, text_w - base)
+        hint.setWidth(hint.width() + extra + 4)
+        return hint
+
+
 class AnalysisPane(QFrame):
     """A content picker, a source picker, and whatever they selected."""
 
@@ -232,7 +259,7 @@ class AnalysisPane(QFrame):
 
         header = QHBoxLayout()
         header.setSpacing(TIGHT)
-        self._picker = QComboBox()
+        self._picker = _FitCombo()
         for entry in PANE_KINDS:
             self._picker.addItem(entry.label, entry.key)
         self._picker_icons()
@@ -243,7 +270,7 @@ class AnalysisPane(QFrame):
         self._picker.currentIndexChanged.connect(self._on_kind_picked)
         header.addWidget(self._picker)
 
-        self._source = QComboBox()
+        self._source = _FitCombo()
         for entry in Source:
             self._source.addItem(entry.value)
         # An explicit source wins; otherwise the kind's own default. That is
@@ -402,11 +429,17 @@ class AnalysisPane(QFrame):
             # plots. A scroll area does not pass height-for-width up, so the
             # grid's equal stretch decides; the classic Tabs view was scrolled
             # for the same reason.
-            scroll = QScrollArea()
-            scroll.setWidgetResizable(True)
-            scroll.setFrameShape(QFrame.NoFrame)
-            scroll.setWidget(self._content)
-            self._host.addWidget(scroll)
+            #
+            # Not the frequency tab: it scrolls its own control column, so
+            # its plots take the pane's height rather than the pane scrolling.
+            if self._kind.key == "frequency":
+                self._host.addWidget(self._content)
+            else:
+                scroll = QScrollArea()
+                scroll.setWidgetResizable(True)
+                scroll.setFrameShape(QFrame.NoFrame)
+                scroll.setWidget(self._content)
+                self._host.addWidget(scroll)
         self.refresh()
 
     def _make_content(self) -> QWidget | None:

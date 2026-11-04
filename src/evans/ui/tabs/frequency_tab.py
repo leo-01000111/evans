@@ -16,10 +16,12 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -147,7 +149,17 @@ class FrequencyTab(QWidget, GuardedPanel):
         ctrl_lay.addWidget(self._margins_label)
         ctrl_lay.addStretch()
 
-        root.addWidget(ctrl)
+        # The controls scroll on their own, so the plots keep the pane's
+        # height instead of the pane scrolling to fit the controls' minimum.
+        # The wrapped margins label lives inside this scroll area too, which
+        # keeps height-for-width out of the tab (the pane needs no scroll).
+        ctrl_scroll = QScrollArea()
+        ctrl_scroll.setWidgetResizable(True)
+        ctrl_scroll.setFrameShape(QFrame.NoFrame)
+        ctrl_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        ctrl_scroll.setFixedWidth(ctrl.maximumWidth() + 18)
+        ctrl_scroll.setWidget(ctrl)
+        root.addWidget(ctrl_scroll)
 
         # ── Right: sub-tabs for Bode / Nyquist / Nichols ──
         self._sub_tabs = QTabWidget()
