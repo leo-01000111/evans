@@ -33,6 +33,10 @@ desktop.ini
 # The app reads them locally; they must not be redistributed here.
 COURSE MATERIAL/
 
+# ── Promo renders ───────────────────────────────────────────────
+# Videos, posters and share copy for announcements. Large, and not source.
+brag-output/
+
 # ── Local scratch ───────────────────────────────────────────────
 scratch/
 *.log
