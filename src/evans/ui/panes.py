@@ -120,6 +120,58 @@ def kind(key: str) -> PaneKind:
     return _BY_KEY[key]
 
 
+#: The pairs of view and system that answer no question practice asks, and
+#: why: the source menu marks these with a warning, but still draws them.
+#: Every view of every system can be *computed*, so this is about meaning.
+#: The tools that read stability off an open loop (Nyquist, Nichols, root
+#: locus) need L, or G when the controller is a plain gain; time responses
+#: and their metrics need a real signal path, which L, the loop cut open, is
+#: not. Bode and the pole-zero map are fine for all four: |S| and |T| peaks
+#: and S's zeros (L's poles) are standard reading.
+_OPEN_LOOP_ONLY = ("{view} reads closed-loop stability off the open loop: "
+                   "the −1 point and the encirclement count assume the curve "
+                   "is L. Drawn for {name}, they describe closing a loop "
+                   "around a loop that is already closed.")
+_NO_SIGNAL = ("L is the loop cut open, not a path any signal takes, so its "
+              "{view} is not something the system ever does. Use T for "
+              "r → y or S for the error.")
+POOR_FITS: dict[tuple[str, Source], str] = {
+    ("step", Source.OPEN_LOOP): _NO_SIGNAL.format(view="step response"),
+    ("impulse", Source.OPEN_LOOP): _NO_SIGNAL.format(view="impulse response"),
+    ("ramp", Source.OPEN_LOOP): _NO_SIGNAL.format(view="ramp response"),
+    ("metrics", Source.OPEN_LOOP): _NO_SIGNAL.format(view="step metrics"),
+    ("impulse", Source.SENSITIVITY): (
+        "S = 1/(1+L) passes a reference straight through (S → 1 at high "
+        "frequency), so its impulse response is mostly an impulse. The "
+        "error after a reference step, step of S, is the useful one."),
+    ("metrics", Source.SENSITIVITY): (
+        "S's step response is the tracking error: it starts at 1 and should "
+        "decay to 0, so rise time, overshoot and settling, which assume a "
+        "rise to a final value, mean nothing. Its final value is the "
+        "steady-state error."),
+    ("ramp", Source.PLANT): (
+        "Ramp tracking is a closed-loop question, answered by the system "
+        "type of L: T for the output, S for the error. A plant on its own "
+        "is hardly ever driven by a ramp."),
+    **{(view, source): _OPEN_LOOP_ONLY.format(view=label, name=name)
+       for view, label in (("nyquist", "The Nyquist plot"),
+                           ("nichols", "The Nichols chart"))
+       for source, name in ((Source.CLOSED_LOOP, "T"),
+                            (Source.SENSITIVITY, "S"))},
+    **{("rlocus", source): (
+        "The root locus draws the roots of 1 + K·sys(s) = 0, so sys must be "
+        f"the open loop L (or G, under a gain controller). On {name} it "
+        "traces the poles of a loop nobody closes.")
+       for source, name in ((Source.CLOSED_LOOP, "T"),
+                            (Source.SENSITIVITY, "S"))},
+}
+
+
+def poor_fit(key: str, source: Source) -> str | None:
+    """Why ``source`` makes no practical sense in view ``key``, or None."""
+    return POOR_FITS.get((key, source))
+
+
 # ──────────────────────────────────────────────────────────────
 #  Metrics pane
 # ──────────────────────────────────────────────────────────────
@@ -200,10 +252,19 @@ class AnalysisPane(QFrame):
         self._source.setCurrentIndex(list(Source).index(
             source if source is not None else self._kind.default_source))
         self._source.setEnabled(self._uses_source)
+        # Both combos may elide rather than set the pane's minimum width: the
+        # header also carries the layout buttons in the top-right pane.
+        for combo in (self._picker, self._source):
+            combo.setSizeAdjustPolicy(
+                QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(12)
         self._source.setAccessibleName("signal shown")
-        self._source.currentIndexChanged.connect(lambda _i: self.refresh())
+        self._source.currentIndexChanged.connect(self._on_source_picked)
         header.addWidget(self._source)
+        self._mark_sources()
+        iconset.on_theme_change(self, AnalysisPane._mark_sources)
         header.addStretch()
+        self._header = header
         outer.addLayout(header)
 
         self._host = QVBoxLayout()
@@ -275,6 +336,7 @@ class AnalysisPane(QFrame):
         """
         self._kind = kind(self._picker.itemData(index))
         self._source.setEnabled(self._uses_source)
+        self._mark_sources()
         self._rebuild()
         self.changed.emit()
 
@@ -284,6 +346,42 @@ class AnalysisPane(QFrame):
 
     def set_source(self, source: Source) -> None:
         self._source.setCurrentIndex(list(Source).index(source))
+
+    def _on_source_picked(self, _index: int) -> None:
+        self._mark_sources()
+        self.refresh()
+
+    def _mark_sources(self) -> None:
+        """
+        A warning beside each system this view makes no practical sense
+        for, with the reason as its tooltip; the combo shows the chosen
+        one's. Marked, not removed: drawing it is still allowed, and seeing
+        why it is meaningless is part of learning what each view is for.
+        The others get a blank icon of the same size, so the names line up.
+        """
+        from PySide6.QtGui import QIcon, QPixmap
+
+        try:
+            blank = QPixmap(iconset.size())
+            blank.fill(Qt.transparent)
+            warning = iconset.icon("warning")
+            reasons = [poor_fit(self._kind.key, source)
+                       if self._uses_source else None for source in Source]
+            for index, reason in enumerate(reasons):
+                self._source.setItemIcon(
+                    index, warning if reason else QIcon(blank))
+                self._source.setItemData(index, reason, Qt.ToolTipRole)
+            current = reasons[self._source.currentIndex()]
+            self._source.setToolTip(
+                f"Not a practical combination. {current}" if current
+                else "Which system this pane shows")
+        except RuntimeError:            # the pane is gone; Qt deleted it
+            pass
+
+    def set_corner(self, widget: QWidget | None) -> None:
+        """Put ``widget`` at the right-hand end of this pane's header."""
+        if widget is not None:
+            self._header.addWidget(widget)
 
     # ── content ─────────────────────────────────────────────────
 
@@ -374,6 +472,9 @@ class PaneGrid(QWidget):
         self._arch = arch
         self._tab_factory = tab_factory
         self.panes: list[AnalysisPane] = []
+        #: What sits at the right of the top-right pane's header: the layout
+        #: buttons, which used to cost a row of their own above the grid.
+        self._corner: QWidget | None = None
 
         self._grid = QGridLayout(self)
         self._grid.setContentsMargins(0, 0, 0, 0)
@@ -402,6 +503,8 @@ class PaneGrid(QWidget):
             wanted.append(DEFAULT_LAYOUT[len(wanted) % len(DEFAULT_LAYOUT)])
         chosen += [None] * (count - len(chosen))
 
+        if self._corner is not None:
+            self._corner.setParent(self)        # out of the pane it dies with
         for pane in self.panes:
             self._grid.removeWidget(pane)
             pane.setParent(None)
@@ -421,7 +524,20 @@ class PaneGrid(QWidget):
                                 source=chosen[index])
             self.panes.append(pane)
             self._grid.addWidget(pane, index // columns, index % columns)
+        self._place_corner()
         self.refresh()
+
+    def set_corner(self, widget: QWidget) -> None:
+        """Show ``widget`` at the top right of the grid, whatever its size."""
+        self._corner = widget
+        self._place_corner()
+
+    def _place_corner(self) -> None:
+        if self._corner is None or not self.panes:
+            return
+        _rows, columns = LAYOUTS[len(self.panes)]
+        self.panes[columns - 1].set_corner(self._corner)
+        self._corner.show()
 
     @property
     def count(self) -> int:

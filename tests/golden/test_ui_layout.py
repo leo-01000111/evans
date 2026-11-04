@@ -950,3 +950,75 @@ def test_sisotool_opens_on_the_compensator_it_was_given(app, win):
     assert comp.gain == pytest.approx(5.0)
     assert comp.zeros == pytest.approx([-2.0])
     assert comp.poles == pytest.approx([-10.0])
+
+
+# ──────────────────────────────────────────────────────────────
+#  The pane header
+# ──────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("count", [1, 2, 4])
+def test_the_pane_count_buttons_sit_in_the_top_right_pane_header(
+        app, win, count):
+    """No row of their own: they share the top-right pane's header line."""
+    win.set_pane_layout(count)
+    _settle(app)
+    _rows, columns = {1: (1, 1), 2: (1, 2), 4: (2, 2)}[count]
+    corner = win._grid.panes[columns - 1]
+    button = win._layout_buttons[count]
+    assert corner.isAncestorOf(button) and button.isVisible()
+    # Right-aligned: past the pane's own pickers.
+    picker = corner._source
+    assert button.mapTo(corner, button.rect().topLeft()).x() > \
+        picker.mapTo(corner, picker.rect().topRight()).x()
+
+
+def test_the_snapshot_bar_can_be_hidden_and_stays_hidden(app, win):
+    from evans.ui import persist
+
+    win.set_snapshot_bar_visible(False)
+    _settle(app)
+    assert not win._snapshot_bar.isVisible()
+    assert persist.snapshot_bar() is False
+    assert not win._act_snapshots.isChecked()
+    win.set_snapshot_bar_visible(True)
+    _settle(app)
+    assert win._snapshot_bar.isVisible() and persist.snapshot_bar()
+
+
+def test_nonsense_view_and_system_pairs_carry_a_warning(app, win):
+    from PySide6.QtCore import Qt
+
+    from evans.ui.panes import poor_fit
+
+    pane = win._grid.panes[0]
+    sources = list(Source)
+
+    def tip(source):
+        return pane._source.itemData(sources.index(source), Qt.ToolTipRole)
+
+    pane.set_kind("rlocus")
+    assert tip(Source.CLOSED_LOOP) and tip(Source.SENSITIVITY)
+    assert not tip(Source.OPEN_LOOP) and not tip(Source.PLANT)
+    pane.set_kind("step")
+    assert tip(Source.OPEN_LOOP)
+    assert not tip(Source.CLOSED_LOOP) and not tip(Source.SENSITIVITY)
+    pane.set_kind("bode")
+    assert not any(tip(s) for s in sources)
+    # Hosted workflows take no source, so nothing is marked.
+    pane.set_kind("system")
+    assert not any(tip(s) for s in sources)
+    # The chosen one's reason is on the combo itself.
+    pane.set_kind("nyquist")
+    pane.set_source(Source.CLOSED_LOOP)
+    assert poor_fit("nyquist", Source.CLOSED_LOOP) in pane._source.toolTip()
+    assert pane.source is Source.CLOSED_LOOP     # the text is untouched
+
+
+def test_the_open_loop_views_accept_l_and_g_only():
+    from evans.ui.panes import poor_fit
+
+    for view in ("nyquist", "nichols", "rlocus"):
+        assert poor_fit(view, Source.OPEN_LOOP) is None
+        assert poor_fit(view, Source.PLANT) is None
+        assert poor_fit(view, Source.CLOSED_LOOP)
+        assert poor_fit(view, Source.SENSITIVITY)

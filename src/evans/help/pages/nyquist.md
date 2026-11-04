@@ -18,13 +18,15 @@ The title states the Nyquist count for closing the loop with unity negative feed
 
 `nyquist(sys, w)` evaluates the response at the frequencies in `w` (rad/s), and `nyquist(sys, {wmin, wmax})` at 500 logarithmically spaced points between the limits. `nyquist(sys1, sys2, ...)` overlays several systems.
 
-With output arguments nothing is drawn. `re` and `im` are the real and imaginary parts of the response for positive frequencies and `w` the frequencies, all row vectors. Plot options from [nyquistoptions](nyquistoptions) are accepted and ignored for now.
+`grid on` after the plot replaces the rectangular grid with M-circles, as in MATLAB: the loci of constant closed-loop gain `|L/(1+L)|`, labelled in dB, with 0 dB the vertical line Re = -1/2. The largest circle the curve touches gives the resonant peak of the closed loop.
+
+With output arguments nothing is drawn. `re` and `im` are the real and imaginary parts of the response for positive frequencies and `w` the frequencies, all row vectors. Plot options from [nyquistoptions](nyquistoptions) are accepted: `Grid` set to `'on'` draws the M-circles, and the other options are ignored for now.
 
 ## Example
 
 ```matlab
 L = tf(4, [1 3 3 1]);
-nyquist(L)
+nyquist(L); grid on
 [re, im, w] = nyquist(L, {0.01, 100});
 k = find(im(1:end-1) .* im(2:end) < 0, 1);
 fprintf('Crosses the real axis at %.3f (w = %.3f rad/s)\n', re(k), w(k))

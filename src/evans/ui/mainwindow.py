@@ -9,7 +9,7 @@ Main application window.
   ├──────────────────────────────────────────────────────────┤
   │ G(s) = …   K₂(s) = …   ● stable   PM 60°   [Edit model ▾]│  context bar
   ├──────────────────────────────────────────────────────────┤
-  │ 📌 Snapshot  [ … ]  Restore  Delete  Compare             │
+  │ 📌 Snapshot  [ … ]  Restore  Delete  Compare   (hideable)│
   ├──────────────────────────────────────────────────────────┤
   │ System │ Time │ Frequency │ … │ Simulink │ Modern        │
   │                                                          │
@@ -46,7 +46,6 @@ from PySide6.QtWidgets import (
     QDockWidget,
     QFileDialog,
     QHBoxLayout,
-    QLabel,
     QMainWindow,
     QMenu,
     QMenuBar,
@@ -70,7 +69,7 @@ from ..core.tf_utils import (
     second_order,
     unity,
 )
-from . import help, keys, persist, theme, winframe
+from . import help, iconset, keys, persist, theme, winframe
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
 from .assistant import AssistantDock
 from .block_editor import BlockEditor
@@ -252,6 +251,7 @@ class MainWindow(QMainWindow):
         self._snapshot_bar = SnapshotBar(self._arch, self.snapshots)
         self._snapshot_bar.restored.connect(self._on_snapshot_restored)
         self._snapshot_bar.compare_requested.connect(self._compare_snapshots)
+        self._snapshot_bar.setVisible(persist.snapshot_bar())
         main_lay.addWidget(self._snapshot_bar)
 
         # The pane grid *is* the analysis area. It used to sit beside a
@@ -287,32 +287,40 @@ class MainWindow(QMainWindow):
 
 
     def _wrap_grid(self) -> QWidget:
-        """The pane grid with its layout selector above it."""
-        holder = QWidget()
-        column = QVBoxLayout(holder)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(TIGHT)
-
-        row = QHBoxLayout()
+        """
+        The pane grid, its layout selector at the right of the top-right
+        pane's header rather than on a row of its own.
+        """
+        selector = QWidget()
+        row = QHBoxLayout(selector)
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(TIGHT)
-        row.addWidget(QLabel("Panes:"))
         self._layout_buttons = {}
-        for count, label in ((1, "1"), (2, "1 × 2"), (4, "2 × 2")):
+        # Pictograms, not "Panes: 1  1 × 2  2 × 2": a pane's header has the
+        # width of one pane, which with the apps docked is not much.
+        for count, label, name in ((1, "1", "grid-1"), (2, "1 × 2", "grid-1x2"),
+                                   (4, "2 × 2", "grid-2x2")):
             button = QToolButton()
             button.setText(label)
+            iconset.bind(button, name)
+            button.setToolButtonStyle(Qt.ToolButtonIconOnly)
             button.setCheckable(True)
             button.setAutoRaise(True)
-            button.setToolTip(f"Show {count} analysis pane"
+            button.setToolTip(f"{label}: show {count} analysis pane"
                               f"{'s' if count > 1 else ''}")
             button.setAccessibleName(f"{count} panes")
             button.clicked.connect(
                 lambda _checked=False, n=count: self.set_pane_layout(n))
             row.addWidget(button)
             self._layout_buttons[count] = button
-        row.addStretch()
-        column.addLayout(row)
-        column.addWidget(self._grid, stretch=1)
-        return holder
+        self._grid.set_corner(selector)
+        return self._grid
+
+    def set_snapshot_bar_visible(self, on: bool) -> None:
+        """Settings ▸ Show snapshot bar, remembered for the next launch."""
+        persist.set_snapshot_bar(on)
+        self._snapshot_bar.setVisible(on)
+        self._act_snapshots.setChecked(on)
 
     def set_pane_layout(self, count: int) -> None:
         """1, 2 or 4 panes. A fresh 2×2 opens on step, Bode, locus, metrics."""
@@ -1038,6 +1046,16 @@ class MainWindow(QMainWindow):
                                        triggered=self._preset_satellite))
 
         # Help menu
+        # Settings menu: preferences that outlast Reset layout.
+        settings_menu = mb.addMenu("&Settings")
+        act_snapshots = QAction("Show &snapshot bar", self, checkable=True)
+        act_snapshots.setChecked(persist.snapshot_bar())
+        act_snapshots.setStatusTip(
+            "The Snapshot · Restore · Compare row above the analysis panes")
+        act_snapshots.triggered.connect(self.set_snapshot_bar_visible)
+        self._act_snapshots = act_snapshots
+        settings_menu.addAction(act_snapshots)
+
         help_menu = mb.addMenu("&Help")
         help_menu.addAction(QAction("Documentation", self, shortcut="F1",
                                      triggered=lambda: help.open_help()))

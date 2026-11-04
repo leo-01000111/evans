@@ -573,7 +573,11 @@ def bode(*systems, w=None, plot: bool = True):
 
 
 def nyquist(*systems, w=None, plot: bool = True):
-    """Nyquist diagram, with the −1 point and the encirclement count."""
+    """
+    Nyquist diagram, with the −1 point and the encirclement count.
+
+    ``grid on`` afterwards draws the M-circles, as MATLAB's does.
+    """
     systems, w = _split_trailing(systems, w, "w")
     spec = FigureSpec("nyquist", "Nyquist Diagram", "Re", "Im")
     out = []
@@ -590,9 +594,11 @@ def nyquist(*systems, w=None, plot: bool = True):
 
 
 def nichols(*systems, w=None, plot: bool = True):
-    """Nichols chart."""
+    """Nichols chart. ``grid on`` or ``ngrid`` adds the M- and N-contours."""
     systems, w = _split_trailing(systems, w, "w")
     spec = FigureSpec("xy", "Nichols Chart", "Phase (°)", "|L| (dB)")
+    # So that ``grid on`` draws the Nichols chart's grid, as in MATLAB.
+    spec.extra["nichols"] = True
     out = []
     for i, sys in enumerate(systems):
         data = _freq.nichols(sys, omega=w)

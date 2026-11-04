@@ -356,7 +356,7 @@ def nyquist(
     N = _winding_number(H_pos, H_neg, centre=complex(-1, 0))
     P = int(sum(1 for p in np.atleast_1d(ctl.poles(tf)) if p.real > 0))
 
-    circles = [(m, _m_circle(m)) for m in m_circle_values]
+    circles = [(m, m_circle(m)) for m in m_circle_values]
 
     return NyquistData(
         omega=omega, H_pos=H_pos, H_neg=H_neg,
@@ -379,7 +379,7 @@ def _winding_number(H_pos: np.ndarray, H_neg: np.ndarray,
     return -int(np.round(total / (2 * np.pi)))     # CCW positive → return CW
 
 
-def _m_circle(M: float, n: int = 400) -> np.ndarray:
+def m_circle(M: float, n: int = 400) -> np.ndarray:
     """
     The locus ``|L/(1+L)| = M`` in the ``L``-plane.
 
@@ -428,13 +428,33 @@ def nichols_m_contour(M: float, n: int = 721) -> np.ndarray:
 
         x²(1 − M²) − 2M²·cos θ·x − M² = 0
 
-    and keep the positive root. Returns an ``N×2`` array of
-    ``[phase_deg, mag_dB]``, with NaN rows separating disjoint branches so a
-    plot does not join them with a stray line.
+    and keep the positive root. For ``M > 1`` both roots are positive
+    wherever either is, and the contour is a closed loop round the
+    critical point: the larger root is its upper half, the smaller its
+    lower, and keeping only one left an open arc. Returns an ``N×2`` array
+    of ``[phase_deg, mag_dB]``, with NaN rows separating disjoint branches so
+    a plot does not join them with a stray line.
     """
     theta_deg = np.linspace(-359.0, -1.0, n)
     theta = np.radians(theta_deg)
     cos_t = np.cos(theta)
+
+    if M > 1.0:
+        a, c = 1.0 - M ** 2, -M ** 2
+        b = -2.0 * M ** 2 * cos_t
+        disc = b * b - 4 * a * c
+        # The roots share a sign (their product is positive): both positive
+        # only where cos θ < 0, i.e. on the critical point's side.
+        ok = (disc >= 0) & (cos_t < 0)
+        if not ok.any():
+            return np.empty((0, 2))
+        sq = np.sqrt(disc[ok])
+        upper = (-b[ok] - sq) / (2 * a)          # a < 0: this is the larger
+        lower = (-b[ok] + sq) / (2 * a)
+        phase = np.concatenate([theta_deg[ok], theta_deg[ok][::-1],
+                                theta_deg[ok][:1]])
+        x = np.concatenate([upper, lower[::-1], upper[:1]])
+        return np.column_stack([phase, 20.0 * np.log10(x)])
 
     out: list[tuple[float, float]] = []
     a = 1.0 - M ** 2
@@ -456,10 +476,41 @@ def nichols_m_contour(M: float, n: int = 721) -> np.ndarray:
         if not positive:
             out.append((np.nan, np.nan))
             continue
-        x = max(positive) if M > 1.0 else min(positive)
+        x = min(positive)
         out.append((td, 20.0 * np.log10(x)))
 
     return np.array(out, dtype=float) if out else np.empty((0, 2))
+
+
+def nichols_n_contour(phi_deg: float, n: int = 721) -> np.ndarray:
+    """
+    The constant-``arg T`` contour in Nichols coordinates, ``ngrid``'s
+    other family.
+
+    With ``L = x·e^{jθ}``, ``1/T = 1 + 1/L``, and ``arg T = φ`` asks that
+    ``(1 + e^{−jθ}/x)·e^{jφ}`` be real and positive, so::
+
+        x = −sin(φ − θ) / sin φ
+
+    The root also satisfies ``arg T = φ + 180°``; those points belong to the
+    other contour and are dropped. Same ``N×2`` ``[phase_deg, mag_dB]``
+    layout as :func:`nichols_m_contour`, NaN rows between branches.
+    """
+    phi = np.radians(phi_deg)
+    if abs(np.sin(phi)) < 1e-9:                 # 0° and ±180°: straight lines
+        return np.empty((0, 2))
+    theta_deg = np.linspace(-359.5, -0.5, n)
+    theta = np.radians(theta_deg)
+    x = -np.sin(phi - theta) / np.sin(phi)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        L = x * np.exp(1j * theta)
+        T = L / (1.0 + L)
+        off = np.abs(np.angle(T * np.exp(-1j * phi)))
+        mag_dB = 20.0 * np.log10(x)
+    keep = (x > 1e-12) & (off < 1e-6)
+    pts = np.column_stack([theta_deg, mag_dB])
+    pts[~keep] = np.nan
+    return pts
 
 
 # ──────────────────────────────────────────────────────────────

@@ -509,3 +509,59 @@ def test_a_new_plot_does_not_redraw_the_one_before(sink):
     first = last(sink)
     it.command("plot(1:4)")
     assert sum(spec is first for spec in sink.figures) == 1
+
+
+# ── the control charts' own grids ────────────────────────────────
+
+def _drawn(spec):
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    figure = Figure()
+    FigureCanvasAgg(figure)
+    (ax,) = figure_mpl.draw(figure, spec)
+    return ax
+
+
+def test_grid_on_draws_m_circles_on_a_nyquist_diagram(it, sink):
+    run(it, "L = tf(4, [1 3 3 1]); nyquist(L)")
+    plain = _drawn(last(sink))
+    run(it, "L = tf(4, [1 3 3 1]); nyquist(L); grid on")
+    ax = _drawn(last(sink))
+    labels = {t.get_text() for t in ax.texts}
+    assert "0 dB" in labels and "6 dB" in labels
+    assert len(ax.lines) > len(plain.lines) + 5
+    assert not ax.xaxis.get_gridlines()[0].get_visible()
+    # The circles do not stretch the view the data set.
+    assert ax.get_xlim() == pytest.approx(plain.get_xlim())
+
+
+def test_nyquistoptions_grid_draws_the_m_circles(it, sink):
+    run(it, "o = nyquistoptions; o.Grid = 'on'; "
+            "nyquist(tf(4, [1 3 3 1]), o)")
+    assert last(sink).extra["grid"] == "on"
+
+
+def test_ngrid_draws_gain_and_phase_contours(it, sink):
+    run(it, "nichols(tf(20, [1 6 5 0])); ngrid")
+    spec = last(sink)
+    assert spec.extra["nichols"] and spec.extra["grid"] == "on"
+    labels = {t.get_text() for t in _drawn(spec).texts}
+    assert any(t.endswith(" dB") for t in labels)
+    assert any(t.endswith("°") for t in labels)
+
+
+def test_grid_on_a_nichols_chart_is_ngrid(it, sink):
+    run(it, "nichols(tf(20, [1 6 5 0])); grid on")
+    assert any(t.get_text().endswith("dB") for t in _drawn(last(sink)).texts)
+
+
+def test_ngrid_new_holds_for_the_plot_that_follows(it, sink):
+    run(it, "ngrid('new'); nichols(tf(20, [1 6 5 0]))")
+    spec = last(sink)
+    assert spec.extra.get("grid") == "on" and spec.traces
+
+
+def test_a_plain_nyquist_has_no_m_circles(it, sink):
+    run(it, "nyquist(tf(4, [1 3 3 1]))")
+    assert not _drawn(last(sink)).texts

@@ -533,6 +533,12 @@ class _Painter:
                     linewidth=0.8)
             ax.plot([-1], [0], "x", color=look.danger, markersize=10)
             ax.set_aspect("equal", adjustable="datalim")
+        # An explicit ``grid on`` on a Nyquist or Nichols chart means its own
+        # grid, M-circles or the M/N-contours, in place of the rectangular one.
+        chart_grid = str(extra.get("grid", "")).lower() == "on" and \
+            not self.three and (spec.kind == "nyquist" or extra.get("nichols"))
+        if chart_grid:
+            (self._m_circles if spec.kind == "nyquist" else self._ngrid)()
         if spec.kind in ("nyquist", "pzmap", "rlocus"):
             ax.axhline(0, color=look.muted, linewidth=0.6)
             ax.axvline(0, color=look.muted, linewidth=0.6)
@@ -583,6 +589,7 @@ class _Painter:
         if extra.get("ydir") == "reverse":
             ax.invert_yaxis()
         if extra.get("grid", "on") != "off" and not extra.get("axis_off") \
+                and not chart_grid \
                 and any(t.style not in ("image",) for t in spec.traces):
             ax.grid(True, color=look.grid, linewidth=0.6, alpha=0.8)
         if extra.get("axis_off"):
@@ -596,6 +603,86 @@ class _Painter:
             if extra["colorbar"].get("label"):
                 bar.set_label(extra["colorbar"]["label"], color=look.ink)
         self._legend()
+
+    # ── control charts' own grids ───────────────────────────────
+
+    #: The closed-loop gains (dB) and phases (°) MATLAB's grids are drawn at.
+    NYQUIST_DB = (-20, -10, -6, -4, -2, 0, 2, 4, 6, 10, 20)
+    NICHOLS_DB = (6, 3, 1, 0.5, 0.25, 0, -1, -3, -6, -12, -20, -40)
+    NICHOLS_DEG = (-1, -5, -10, -20, -30, -45, -60, -90, -120, -150)
+
+    def _m_circles(self) -> None:
+        """``|T|`` constant on the Nyquist plane, labelled in dB, under the data."""
+        from ..core.freqresp import m_circle
+
+        ax, look = self.ax, self.look
+        ax.apply_aspect()           # the view "equal" widens the data's to
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        for db in self.NYQUIST_DB:
+            M = 10 ** (db / 20)
+            path = m_circle(M) if db else -0.5 + 1j * np.array([-1e3, 1e3])
+            ax.plot(path.real, path.imag, ":", color=look.muted,
+                    linewidth=0.6, zorder=0)
+            # Each circle's top, or for 0 dB the line at the top of the view.
+            if db:
+                centre, radius = -M ** 2 / (M ** 2 - 1), abs(M / (M ** 2 - 1))
+                x, y = centre, radius
+            else:
+                x, y = -0.5, ylim[1]
+            if xlim[0] <= x <= xlim[1] and ylim[0] <= y <= ylim[1]:
+                ax.text(x, y, f"{db:g} dB", fontsize=7, color=look.muted,
+                        ha="center", va="bottom" if db else "top",
+                        clip_on=True)
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+
+    def _ngrid(self) -> None:
+        """
+        The Nichols chart: closed-loop gain (M) and phase (N) contours,
+        repeated every 360° across the phase the data spans.
+        """
+        from ..core.freqresp import nichols_m_contour, nichols_n_contour
+
+        ax, look = self.ax, self.look
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        shifts = range(int(np.floor(xlim[0] / 360.0)),
+                       int(np.ceil(xlim[1] / 360.0)) + 1)
+        families = [(f"{db:g} dB", nichols_m_contour(10 ** (db / 20)), True)
+                    for db in self.NICHOLS_DB]
+        families += [(f"{deg:g}°", nichols_n_contour(deg), False)
+                     for deg in self.NICHOLS_DEG]
+        width, height = xlim[1] - xlim[0], ylim[1] - ylim[0]
+        placed: list[tuple[float, float]] = []
+        for label, pts, is_gain in families:
+            if not len(pts):
+                continue
+            for k in shifts:
+                phase, mag = pts[:, 0] + 360.0 * k, pts[:, 1]
+                ax.plot(phase, mag, ":", color=look.muted, linewidth=0.6,
+                        zorder=0)
+                seen = (np.isfinite(mag) & (phase >= xlim[0])
+                        & (phase <= xlim[1]) & (mag >= ylim[0])
+                        & (mag <= ylim[1]))
+                if not seen.any():
+                    continue
+                # Gain contours are labelled at the top of their crossing of
+                # the critical −180°; phase contours all meet there, so at
+                # their lowest visible point instead, where they fan out.
+                score = np.abs(phase - (360.0 * k - 180.0)) - 1e-9 * mag \
+                    if is_gain else mag
+                i = int(np.argmin(np.where(seen, score, np.inf)))
+                # Near −180°, 0 dB every contour crowds in: label only those
+                # with room, as an unreadable pile helps nobody.
+                spot = ((phase[i] - xlim[0]) / width, (mag[i] - ylim[0]) / height)
+                if any(abs(spot[0] - u) < 0.06 and abs(spot[1] - v) < 0.035
+                       for u, v in placed):
+                    continue
+                placed.append(spot)
+                ax.text(phase[i], mag[i], label, fontsize=7,
+                        color=look.muted, ha="center", va="bottom",
+                        clip_on=True)
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
 
     def _refline(self, draw, entry: dict, vertical: bool) -> None:
         colour = self.ink(entry.get("color", "#262626"))

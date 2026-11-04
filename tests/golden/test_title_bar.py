@@ -73,7 +73,7 @@ def test_the_title_bar_is_the_menu_widget_and_holds_the_menus(win):
     assert win.menuBar() is bar.menu_bar
     assert bar.menu_bar.parentWidget() is bar
     titles = [a.text().replace("&", "") for a in win.menuBar().actions()]
-    assert titles == ["File", "Export", "View", "Apps", "Presets",
+    assert titles == ["File", "Export", "View", "Apps", "Presets", "Settings",
                       "Help"]
 
 

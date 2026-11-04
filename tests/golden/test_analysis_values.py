@@ -12,7 +12,13 @@ import numpy as np
 import pytest
 
 from evans.core.architecture import CourseArchitecture
-from evans.core.freqresp import bode, nichols_m_contour, nyquist, response
+from evans.core.freqresp import (
+    bode,
+    nichols_m_contour,
+    nichols_n_contour,
+    nyquist,
+    response,
+)
 from evans.core.stability import marginal_gain, root_locus
 from evans.core.tf_utils import dc_gain, pure_delay_pade, second_order
 from evans.core.timeresp import compute_step_metrics, step_response
@@ -157,6 +163,16 @@ def test_nichols_m_contours_have_the_right_magnitude(M):
     assert len(pts) > 10
     L = 10 ** (pts[:, 1] / 20.0) * np.exp(1j * np.radians(pts[:, 0]))
     assert np.allclose(np.abs(L / (1 + L)), M, rtol=1e-6)
+
+
+@pytest.mark.parametrize("phi", [-1, -10, -45, -90, -150])
+def test_nichols_n_contours_have_the_right_phase(phi):
+    """Every point on the ``arg T = φ`` contour gives that closed-loop phase."""
+    pts = nichols_n_contour(phi)
+    pts = pts[np.isfinite(pts[:, 1])]
+    assert len(pts) > 10
+    L = 10 ** (pts[:, 1] / 20.0) * np.exp(1j * np.radians(pts[:, 0]))
+    assert np.allclose(np.angle(L / (1 + L), deg=True), phi, atol=1e-6)
 
 
 # ──────────────────────────────────────────────────────────────

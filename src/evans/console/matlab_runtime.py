@@ -3893,12 +3893,16 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
     @_named
     @_nargout
     def f_nyquist(self, *args, nargout=1, names=None):
-        systems, labels, rest, _ = self._systems(args, names)
+        systems, labels, rest, options = self._systems(args, names)
         w = self._freq_grid(rest)
         if nargout == 0:
             api.nyquist(*systems, w=w)
-            if self.rt.figures.current is not None:
-                self._label(self.rt.figures.current, labels)
+            spec = self.rt.figures.current
+            if spec is not None:
+                self._label(spec, labels)
+                if options is not None and str(
+                        options.get("Grid", "off")).lower() == "on":
+                    spec.extra["grid"] = "on"         # the M-circles
             return None
         data = api.nyquist(systems[0], w=w, plot=False)
         out = (data.H_pos.real, data.H_pos.imag, data.omega)
@@ -3912,6 +3916,20 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         systems, labels, rest, _ = self._systems(args, names)
         api.nichols(*systems, w=self._freq_grid(rest), plot=(nargout == 0))
         return None
+
+    def f_ngrid(self, *args):
+        """
+        ``ngrid``: the Nichols chart's M- and N-contours on the current axes.
+        ``ngrid('new')`` starts empty axes, and holds them for the plot to come.
+        """
+        figs = self.rt.figures
+        if args and str(args[0]).lower() == "new":
+            figs.collect(FigureSpec("xy", "Nichols Chart", "Phase (°)",
+                                    "|L| (dB)"))
+            figs.hold = True
+        spec = figs.ensure()
+        spec.extra["nichols"] = True
+        spec.extra["grid"] = "on"
 
     @_named
     @_nargout

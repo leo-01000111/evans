@@ -180,6 +180,24 @@ def set_integrated_title_bar(on: bool) -> None:
     settings().setValue(INTEGRATED_TITLE_BAR_KEY, bool(on))
 
 
+#: Whether the snapshot bar shows above the analysis panes. A preference
+#: like the title bar's: those who never take snapshots want the row back.
+SNAPSHOT_BAR_KEY = "analysis/snapshotBar"
+
+
+def snapshot_bar() -> bool:
+    value = settings().value(SNAPSHOT_BAR_KEY)
+    if value is None:
+        return True
+    if isinstance(value, str):            # the INI backend stores text
+        return value.lower() in ("true", "1")
+    return bool(value)
+
+
+def set_snapshot_bar(on: bool) -> None:
+    settings().setValue(SNAPSHOT_BAR_KEY, bool(on))
+
+
 #: Help ▸ Check for updates: whether Evans looks by itself, when it last did,
 #: and the one release the user asked not to hear about again.
 UPDATE_AUTO_KEY = "updates/autoCheck"
