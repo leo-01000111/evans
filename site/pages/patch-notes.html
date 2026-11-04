@@ -13,10 +13,27 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="issues.html#bugs">known issues</a><a href="issues.html#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.15.0">
+      <div class="card prose notes">
+        <h2>0.15.0 · 4 November 2026</h2>
+        <p>The console draws the closed-loop grids of the frequency charts, the Nichols chart's gain contours are drawn right, and the analysis panes warn you off views that do not mean anything for the system you picked.</p>
+        <h3>New</h3>
+        <ul>
+          <li><strong>M-circles and the Nichols grid in the console.</strong> <code>grid on</code> after <code>nyquist</code> draws the M-circles of constant closed-loop gain, labelled in dB; after <code>nichols</code>, or with the new <code>ngrid</code>, it draws the Nichols chart's closed-loop gain and phase contours. <code>ngrid('new')</code> starts held axes for the plot that follows, and <code>nyquistoptions</code>' <code>Grid</code> is honoured.</li>
+          <li><strong>Warnings in the analysis panes.</strong> The system picker marks the combinations that make no practical sense, such as a Nyquist plot or root locus of the closed loop T, or the step response of the open loop L. They still draw; the tooltip says why the result means nothing.</li>
+          <li><strong>More room for the panes.</strong> The pane count buttons sit at the right of the top pane's header instead of on a row of their own, and Settings ▸ Show snapshot bar hides the snapshot row.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li>The Nichols chart's gain contours above 0 dB were drawn as open arcs, only their upper half. They are the closed loops round the critical point they should be, on the Frequency tab as well as in the console.</li>
+        </ul>
       </div>
     </section>
 
