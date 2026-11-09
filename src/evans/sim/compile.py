@@ -134,7 +134,13 @@ def compile_model(model: SimModel, evaluate=None) -> CompiledModel:
         model = resolve_model(model, evaluate)
 
     warnings: list[str] = []
-    model = resolve_links(flatten(model))
+    flat = flatten(model)
+    model = resolve_links(flat)
+    if model is not flat:                   # rebuilt: keep the wire names
+        ids = {b.block_id for b in model}
+        model.signal_names = {ref: label
+                              for ref, label in flat.signal_names.items()
+                              if ref.rsplit(".", 1)[0] in ids}
     link_gates(model)
     bind_code(model, evaluate)
     widths = _propagate_widths(model, warnings)
@@ -303,6 +309,26 @@ def flatten(model: SimModel, _depth: int = 0) -> SimModel:
 
         flat.connect(f"{src.block}.{src.port}",
                      f"{conn.dst.block}.{conn.dst.port}")
+
+    # Wire names follow their signals: a name inside a subsystem keeps its
+    # wire under the prefixed id, and one on a subsystem's output moves to
+    # whatever produces it.
+    for sub in subsystems:
+        prefix = f"{sub.block_id}/"
+        inner = flatten(sub.inner_model(), _depth + 1)
+        for ref, label in inner.signal_names.items():
+            block, _, port = ref.rpartition(".")
+            if block in inner._blocks and inner.block(block).type_name \
+                    not in ("Inport", "Outport"):
+                flat.signal_names[f"{prefix}{block}.{port}"] = label
+    for ref, label in model.signal_names.items():
+        block, _, port = ref.rpartition(".")
+        if block in sub_ids:
+            if PortRef(block, port) in outward:
+                src = outward[PortRef(block, port)]
+                flat.signal_names[f"{src.block}.{src.port}"] = label
+        else:
+            flat.signal_names[ref] = label
 
     if _depth == 0:
         _check_stray_ports(flat)

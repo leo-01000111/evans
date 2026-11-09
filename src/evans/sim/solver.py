@@ -155,6 +155,13 @@ class SimResult:
     warnings: list[str] = field(default_factory=list)
     solver:   str = ""
     n_steps:  int = 0
+    #: The names given to wires, by signal key: what a scope shows in its
+    #: legend in place of ``"Sum1.out"``.
+    labels:   dict[str, str] = field(default_factory=dict)
+
+    def label(self, name: str) -> str:
+        """The name to show for a signal: its wire's name, else its key."""
+        return self.labels.get(name, name)
 
     def signal(self, name: str) -> np.ndarray:
         """One logged signal, as ``(n_time, width)``."""
@@ -1200,4 +1207,6 @@ def _assemble(compiled, times, states, logged, run_warnings, solver, n_steps):
         outputs=[src for _order, _bid, src in sorted(outports)],
         formats=formats, xy=xy,
         warnings=run_warnings, solver=solver, n_steps=n_steps,
+        labels={k: v for k, v in compiled.model.signal_names.items()
+                if k in signals},
     )

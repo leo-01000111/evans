@@ -595,7 +595,10 @@ class WireItem(QGraphicsObject):
     def mouseReleaseEvent(self, event) -> None:
         if self._dragging:
             self._dragging = False
-            self.bend_moved.emit(self.connection, float(self.bend))
+            # A click on the run without a drag leaves the bend unset (the
+            # default midpoint); only a real move is an edit.
+            if self.bend is not None:
+                self.bend_moved.emit(self.connection, float(self.bend))
             event.accept()
             return
         super().mouseReleaseEvent(event)

@@ -424,3 +424,72 @@ def test_the_block_label_shows_the_expression(app):
     m.block("K").set_param("gain", "Kp")
     item = BlockItem(m.block("K"), 0, 0)
     assert item.block.display_label() == "Kp"
+
+
+# ──────────────────────────────────────────────────────────────
+#  A wire's name is its legend entry
+# ──────────────────────────────────────────────────────────────
+
+def _legend_names(scope):
+    return [item.name() for item in scope._plot.getPlotItem().listDataItems()]
+
+
+def test_a_named_wire_is_that_name_in_the_scope(app):
+    m = loop()
+    m.signal_names["G.out"] = "speed"
+    result = simulate(m, t_end=1.0, n_points=20)
+    assert result.label("G.out") == "speed"
+    assert result.label("K.out") == "K.out"
+    scope = ScopeWidget()
+    scope.show_result(result, preferred=["G.out", "K.out"])
+    assert sorted(_legend_names(scope)) == ["K.out", "speed"]
+    assert scope._checks["G.out"].text() == "speed"
+    scope.deleteLater()
+
+
+def test_a_wire_name_survives_grouping_into_a_subsystem(app):
+    m = loop()
+    m.signal_names["G.out"] = "speed"      # inside the group: K and G
+    m.signal_names["e.out"] = "error"      # outside it
+    sub = group_into_subsystem(m, ["K", "G"], "plant")
+    result = simulate(m, t_end=1.0, n_points=20)
+    assert result.label("plant/G.out") == "speed"
+    assert result.label("e.out") == "error"
+    assert sub in {b.block_id for b in m}
+
+
+# ──────────────────────────────────────────────────────────────
+#  Clicking a wire, then deleting it
+# ──────────────────────────────────────────────────────────────
+
+def test_clicking_a_wire_and_deleting_it_does_not_crash(canvas, app):
+    """
+    A click on a wire's movable run began a bend drag, and releasing it
+    without moving did ``float(None)`` inside a Qt override, which aborted
+    the application.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    canvas.resize(900, 500)
+    canvas.show()
+    canvas.setFocus()
+    app.processEvents()
+    def wires():
+        return sorted((i for i in canvas.scene().items()
+                       if isinstance(i, WireItem)), key=lambda w: str(w.connection))
+
+    assert len(wires()) == 4
+    for k in range(4):
+        wire = wires()[k]
+        point = canvas.mapFromScene(
+            wire.mapToScene(wire._path.pointAtPercent(0.5)))
+        QTest.mouseClick(canvas.viewport(), Qt.LeftButton,
+                         Qt.NoModifier, point)
+        assert wires()[k].isSelected()
+        QTest.keyClick(canvas, Qt.Key_Delete)
+        assert len(canvas.model.connections) == 3
+        canvas.undo_stack.undo()
+        assert len(canvas.model.connections) == 4
+        # The click was not a drag, so it must not have set a bend.
+        assert not canvas.model.bends

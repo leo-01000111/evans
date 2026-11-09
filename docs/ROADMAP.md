@@ -242,9 +242,29 @@ The engine was ahead of the editor and of its links to the console. Tests:
       There are none in the repo now. **S** *`src/evans/examples/`, rebuilt by
       `tools/build_examples.py`. The PID example builds its anti-windup loop
       from blocks: see the PID limit below.*
-- [ ] **Later:** masks and block libraries, referenced models, MIMO `linearize`, live
-      parameter sliders during a run, and a user block API (S-function
-      equivalent). **M each**
+- [ ] **Later:** MIMO `linearize`, live parameter sliders during a run, and a user
+      block API (S-function equivalent). **M each**
+- [ ] **Subsystems, what is left.** Create Subsystem from Selection, descending into
+      one, nested subsystems and conditional (enabled, triggered, action)
+      subsystems exist (`sim/blocks/subsystem.py`, `compile.flatten`). Not done:
+      - **Ungroup / Expand Subsystem**, the inverse of Create Subsystem. **S**
+      - **Masks:** a parameter dialog for a subsystem, with its own variables
+        (`gain`, `Ts`) used by the blocks inside, an icon or text on the block, and
+        a documentation line. This is what makes a subsystem reusable. **M–L**
+      - **Block libraries and linked blocks:** save a subsystem to a library file,
+        drag it into other models as a link, update every link when the library
+        changes, and break a link. **M–L**
+      - **Referenced models** (Model block): run another `.fmdl` as a block, with
+        its own run settings and a normal-mode/accelerated choice. **L**
+      - **Atomic subsystems** and a subsystem-level sample time, which Simulink
+        has and Evans flattens away. **M**
+      - **Variant subsystems** and **function-call subsystems.** **M each**
+      - **Port handling:** name the ports from the Inport/Outport blocks, reorder
+        them, show the names on the block, and keep the wires when a port is added
+        or removed. **S–M**
+      - **Stable signal names across a subsystem edit** (renaming or moving
+        a block inside it keeps the wire names; wire names already pass through
+        flattening since 2026-11-09). **S**
 
 Found while doing this phase, not fixed in it:
 
@@ -419,6 +439,14 @@ work.
 
 Professional users need this before Evans can be used for paid work.
 
+- [ ] **Autosave and crash recovery.** Nothing is saved on its own today. Write a
+      recovery copy of every unsaved document (editor scripts, live scripts, Model
+      tab diagrams, console history, the workspace) to a folder under the user's
+      app data every minute or so and after each edit pause, never over the real
+      file. On the next start after a crash, offer to restore them. Add a setting
+      for the interval and for turning it off, delete the copy on a normal save or
+      close, and keep the last few versions of a model. Test with a simulated kill
+      mid-edit. **M**
 - [ ] A Linux build (AppImage or a `.deb`). CI already tests on Ubuntu. **M**
 - [ ] macOS notarisation, and an Intel build if anyone asks. **M**
 - [ ] Windows code signing (deferred on purpose until there are more users; a Certum

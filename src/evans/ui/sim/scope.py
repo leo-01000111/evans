@@ -145,7 +145,8 @@ class ScopeWidget(QWidget):
         self._export.setEnabled(True)
 
         for name in names:
-            check = QCheckBox(name)
+            check = QCheckBox(result.label(name))
+            check.setToolTip(name)
             check.setChecked(name in preferred)
             check.stateChanged.connect(self._redraw)
             self._picker_layout.insertWidget(
@@ -179,7 +180,8 @@ class ScopeWidget(QWidget):
                 continue
             data = self._result.signals[name]
             for channel in range(data.shape[1]):
-                label = name if data.shape[1] == 1 else f"{name}[{channel}]"
+                shown = self._result.label(name)
+                label = shown if data.shape[1] == 1 else f"{shown}[{channel}]"
                 for age, old in enumerate(self._earlier(), start=1):
                     if name in old.signals and \
                             old.signals[name].shape[1] > channel:
@@ -204,7 +206,9 @@ class ScopeWidget(QWidget):
     def _draw_xy(self, plot, title: str) -> None:
         """An XY Graph block's y against x, with earlier runs' if asked."""
         x_name, y_name = self._result.xy[title]
-        apply_theme(plot, title, x_name, y_name)
+        x_shown, y_shown = (self._result.label(x_name),
+                            self._result.label(y_name))
+        apply_theme(plot, title, x_shown, y_shown)
         plot.addLegend(offset=(-10, 10))
         for age, old in enumerate(self._earlier(), start=1):
             if x_name in old.signals and y_name in old.signals:
@@ -212,7 +216,7 @@ class ScopeWidget(QWidget):
                           pen=_faded(0, age), name=f"run −{age}")
         plot.plot(self._result.signals[x_name][:, 0],
                   self._result.signals[y_name][:, 0],
-                  pen=curve_pen(0, 1.9), name=f"{y_name} vs {x_name}")
+                  pen=curve_pen(0, 1.9), name=f"{y_shown} vs {x_shown}")
         self._readout.setText("")
 
     def export(self, path, names: list[str] | None = None):
@@ -242,7 +246,8 @@ class ScopeWidget(QWidget):
             data = self._result.signals[name]
             for channel in range(data.shape[1]):
                 value = float(np.interp(x, self._result.t, data[:, channel]))
-                label = name if data.shape[1] == 1 else f"{name}[{channel}]"
+                shown = self._result.label(name)
+                label = shown if data.shape[1] == 1 else f"{shown}[{channel}]"
                 parts.append(f"{label} = {value:.5g}")
         self._readout.setText("   ".join(parts))
 
