@@ -43,6 +43,7 @@ import control as ctl
 import numpy as np
 
 from . import api
+from . import numtypes as _nt
 from .figures import FigureSpec
 
 # ──────────────────────────────────────────────────────────────
@@ -180,6 +181,44 @@ class Cell(list):
         lines = ("    {" + "    ".join(_brief(v) for v in row) + "}"
                  for row in self.grid())
         return f"{r}×{c} cell array\n" + "\n".join(lines)
+
+
+class Str(str):
+    """
+    A MATLAB string scalar, ``"abc"``: one element holding text. It is a
+    ``str`` so every text function takes it, but it counts as one element,
+    not one per character, and ``class`` says ``string``.
+    """
+
+    __slots__ = ()
+
+
+class StrArray(Cell):
+    """
+    A string array of more than one element (``["a" "b"]``), kept like a cell
+    of :class:`Str`. A cell to the functions that expect one; ``class`` says
+    ``string``.
+    """
+
+    def __repr__(self) -> str:
+        r, c = self.dims
+        width = max((len(v) for v in self), default=0) + 2
+        lines = ["    " + "    ".join(f'"{v}"'.ljust(width)
+                                        for v in row).rstrip()
+                 for row in self.grid()]
+        return f"  {r}×{c} string array\n\n" + "\n".join(lines)
+
+
+def _strarray(items, rows: int = 1):
+    """A string array of ``items``, or a string scalar when there is one."""
+    items = [Str(v) for v in items]
+    if len(items) == 1:
+        return items[0]
+    return StrArray(items, rows=rows)
+
+
+def _is_text(x) -> bool:
+    return isinstance(x, (str, StrArray))
 
 
 class Struct(dict):
@@ -772,7 +811,9 @@ def _normalise(a):
         v = a.reshape(-1)[0]
         # An object array (a symbolic matrix being indexed) holds the
         # element itself, not a numpy scalar.
-        return v.item() if isinstance(v, np.generic) else v
+        if isinstance(v, np.generic):
+            return v if _nt.is_typed(v) else v.item()
+        return v
     if a.ndim == 2 and a.shape[0] == 1:
         return a.reshape(-1)
     return a
@@ -818,6 +859,8 @@ def _size_text(dims) -> str:
 def _shape(x) -> tuple[int, int]:
     if x is None:
         return (0, 0)
+    if isinstance(x, Str):
+        return (1, 1)
     if isinstance(x, str):
         return (1 if x else 0, len(x))
     if isinstance(x, (Cell, StructArray)):
@@ -849,6 +892,8 @@ def _numel(x) -> int:
 def _scalar(value):
     """A numpy scalar → a plain Python number; integral floats → int."""
     if isinstance(value, np.generic):
+        if _nt.is_typed(value):
+            return value
         value = value.item()
     if isinstance(value, float) and value.is_integer() and abs(value) < 2**53:
         return int(value)
@@ -884,6 +929,8 @@ def _number(v) -> str:
         re_, im = v.real, v.imag
         sign = "+" if im >= 0 else "-"
         return f"{_number(re_)} {sign} {_number(abs(im))}i"
+    if isinstance(v, np.integer):
+        return str(int(v))
     v = float(v)
     if math.isnan(v):
         return "NaN"
@@ -900,19 +947,24 @@ def _number(v) -> str:
 
 def _brief(v) -> str:
     """One-line description, for cells, structs and tables."""
+    if isinstance(v, Str):
+        return f'"{v}"'
     if isinstance(v, str):
         return f"'{v}'"
     if _is_number(v):
         return _number(v)
     if v is None:
         return "[]"
+    if isinstance(v, StrArray):
+        r, c = v.dims
+        return f"[{r}×{c} string]"
     if isinstance(v, np.ndarray):
         if v.ndim > 2:
             return f"[{_size_text(v.shape)} double]"
         if v.size <= 6:
             return "[" + " ".join(_number(x) for x in v.ravel()) + "]"
         r, c = _shape(v)
-        return f"[{r}×{c} double]"
+        return f"[{r}×{c} {_nt.num_class(v) or 'double'}]"
     if _is_lti(v):
         kind = "tf" if isinstance(v, ctl.TransferFunction) else "ss"
         return f"[1×1 {kind}]"
@@ -929,6 +981,10 @@ def _brief(v) -> str:
 
 def display(value) -> str:
     """How MATLAB shows a value after ``name =``."""
+    if isinstance(value, Str):
+        return f'"{value}"'
+    if isinstance(value, StrArray):
+        return repr(value)
     if isinstance(value, str):
         return f"'{value}'"
     if _is_number(value):
@@ -1014,6 +1070,8 @@ def _matrix_text(a: np.ndarray, max_columns: int = 10, width: int = 0) -> str:
     if m.dtype == bool:
         m = m.astype(int)
     rows, cols = m.shape
+    integer = _nt.is_int(m)
+    suffix = _nt.num_class(m) or "double"
     shown_cols = list(range(cols))
     elided = None
     row_gap = col_gap = 0
@@ -1040,16 +1098,17 @@ def _matrix_text(a: np.ndarray, max_columns: int = 10, width: int = 0) -> str:
                 col_gap = full_cols - 10
                 shown_cols = list(range(m.shape[1]))
     cells = [[_number(m[r, c]) for c in shown_cols] for r in range(rows)]
-    width = max(width, max(len(x) for row in cells for x in row) + 3)
+    width = max(width, max(len(x) for row in cells for x in row)
+                + (2 if integer else 3))
     lines = []
     if rows == 1 and elided:
         head = "".join(x.rjust(width) for x in cells[0][:5])
         tail = "".join(x.rjust(width) for x in cells[0][5:])
-        return f"{head}   … {elided} more …{tail}\n\n  (1×{cols} double)"
+        return f"{head}   … {elided} more …{tail}\n\n  (1×{cols} {suffix})"
     if elided:
         body = ["".join(x.rjust(width) for x in row) for row in cells]
         return "\n".join(body[:5] + [f"   … {elided} more …"] + body[5:]
-                         + ["", f"  ({rows + elided}×1 double)"])
+                         + ["", f"  ({rows + elided}×1 {suffix})"])
     for start in range(0, len(shown_cols), max_columns):
         block = range(start, min(start + max_columns, len(shown_cols)))
         if len(shown_cols) > max_columns:
@@ -1065,7 +1124,7 @@ def _matrix_text(a: np.ndarray, max_columns: int = 10, width: int = 0) -> str:
         if start + max_columns < len(shown_cols):
             lines.append("")
     if row_gap or col_gap:
-        note = f"  ({full_rows}×{full_cols} double"
+        note = f"  ({full_rows}×{full_cols} {suffix}"
         if col_gap:
             note += f", {col_gap} more columns not shown"
         lines += ["", note + ")"]
@@ -1418,6 +1477,27 @@ def _symbolic_aware(name: str):
     return wrap
 
 
+def _typed_binary(method):
+    """
+    Integer and single operands (see :mod:`.numtypes`) and string operands:
+    work in double and cast the answer, or treat the text as text.
+    """
+    @functools.wraps(method)
+    def operator(self, a, b):
+        if isinstance(a, (Str, StrArray)) or isinstance(b, (Str, StrArray)):
+            return self._string_operator(method.__name__, a, b)
+        if _nt.is_typed(a) or _nt.is_typed(b):
+            cls = _nt.check_pair(a, b)
+            out = method(self, _nt.to_double(a), _nt.to_double(b))
+            if isinstance(out, (np.ndarray, np.generic, int, float,
+                                complex)) and not isinstance(out, bool):
+                return _nt.cast(out, cls)
+            return out
+        # numpy makes int64 of bool * int; MATLAB's answer is a double.
+        return _nt.plain(method(self, a, b))
+    return operator
+
+
 class Runtime:
     """Bound to one console namespace as ``__ml__``."""
 
@@ -1743,7 +1823,20 @@ class Runtime:
                 kwargs["nargout"] = nargout
             if names is not None and getattr(f, "_ml_names", False):
                 kwargs["names"] = names
+            name = None
+            if getattr(f, "__self__", None) is self.lib:
+                name = self.lib.func_names.get(id(f.__func__))
+            library = name is not None
+            typed_args = args
+            if library:
+                if name in _nt.COMPUTE and any(_nt.is_typed(a) for a in args):
+                    args = tuple(_nt.to_double(a) for a in args)
             result = f(*args, **kwargs)
+            if library:
+                result = _nt.finish(name, typed_args, result)
+                if name in _STRING_KEEP and any(
+                        isinstance(a, (Str, StrArray)) for a in typed_args):
+                    result = _restring(result)
             if (nargout == 1 and not getattr(f, "_ml_nargout", False)
                     and type(result) is tuple):
                 return result[0]
@@ -1777,8 +1870,14 @@ class Runtime:
         if _is_sym(x):
             return _symbolic.from_objects(
                 self.index(_symbolic.as_objects(x), args))
+        if isinstance(x, Str):
+            picked = self._pick_cell(Cell([x]), args)
+            return _strarray(picked, picked.rows)
         if isinstance(x, Cell):
-            return self._pick_cell(x, args)
+            picked = self._pick_cell(x, args)
+            if isinstance(x, StrArray):
+                return _strarray(picked, picked.rows) if picked else picked
+            return picked
         if isinstance(x, StructArray):
             picked = self._pick_cell(x, args)
             return picked[0] if len(picked) == 1 else picked
@@ -2096,7 +2195,13 @@ class Runtime:
         delete = isinstance(v, np.ndarray) and v.size == 0
         if not delete:
             v = np.asarray(v)
-            if np.iscomplexobj(v) and not np.iscomplexobj(a):
+            kept = _nt.dominant((a, value)) if _nt.num_class(a) in _nt.INTS \
+                else _nt.dominant((value, a))
+            if kept:
+                # An integer array keeps its class; a double or single
+                # array that takes an integer becomes that integer.
+                a, v = _nt.cast(a, kept), np.asarray(_nt.cast(v, kept))
+            elif np.iscomplexobj(v) and not np.iscomplexobj(a):
                 a = a.astype(complex)
             elif a.dtype == bool and v.dtype != bool:
                 a = a.astype(float)
@@ -2247,6 +2352,22 @@ class Runtime:
                 return flat[0]
             raise MatlabError("Concatenating systems into a MIMO model is "
                               "not supported.")
+        if any(isinstance(x, (Str, StrArray)) for x in flat) \
+                and not any(isinstance(x, Cell) and not isinstance(
+                    x, StrArray) for x in flat):
+            grid = []
+            for row in rows:
+                parts = [g for g in (_string_grid(x) for x in row)
+                         if g and g[0]]
+                if not parts:
+                    continue
+                if len({len(p) for p in parts}) > 1:
+                    raise MatlabError("Dimensions of arrays being "
+                                      "concatenated are not consistent.")
+                grid += [sum((p[i] for p in parts), [])
+                         for i in range(len(parts[0]))]
+            out = StrArray.from_grid(grid)
+            return _strarray(out, out.rows)
         if any(isinstance(x, (Cell,)) for x in flat):
             # [a, b; c] joins the cells' tables side by side, then stacks
             # the rows; a value that is not a cell joins as one element.
@@ -2283,8 +2404,10 @@ class Runtime:
             return self.cat_arrays(1, [self.cat_arrays(2, row)
                                        for row in rows if row])
         blocks = []
+        cls = _nt.dominant(flat)
         for row in rows:
-            parts = [_as2d(x) for x in row if _numel(x) > 0]
+            parts = [_as2d(_nt.cast(x, cls) if cls else x)
+                     for x in row if _numel(x) > 0]
             if not parts:
                 continue
             try:
@@ -2299,7 +2422,8 @@ class Runtime:
         except ValueError:
             raise MatlabError("Dimensions of arrays being concatenated are "
                               "not consistent.") from None
-        out = _float_array(out)
+        if not cls:
+            out = _float_array(out)
         if out.shape[0] == 1:
             return out.reshape(-1)
         return out
@@ -2325,13 +2449,16 @@ class Runtime:
     def colon(self, start, step, stop):
         if _any_deferred(start, step, stop):
             return _defer(self.colon, start, step, stop)
+        cls = _nt.dominant((start, step, stop))
         start, step, stop = (_scalar_of(start), _scalar_of(step),
                              _scalar_of(stop))
         if step == 0 or (step > 0 and start > stop) or (step < 0
                                                         and start < stop):
-            return np.zeros(0)
-        n = int(math.floor((stop - start) / step + 1e-10)) + 1
-        return start + step * np.arange(n, dtype=float)
+            out = np.zeros(0)
+        else:
+            n = int(math.floor((stop - start) / step + 1e-10)) + 1
+            out = start + step * np.arange(n, dtype=float)
+        return _nt.cast(out, cls) if cls else out
 
     # ── statements ──────────────────────────────────────────────
 
@@ -2340,8 +2467,10 @@ class Runtime:
             print(_nd_text(value, name) + "\n")
             return
         text = display(value)
-        if "\n" in text or (isinstance(value, np.ndarray) and value.size > 1) \
-                or _is_lti(value) or _is_sym(value):
+        if isinstance(value, StrArray):
+            print(f"{name} =\n\n{text}\n")
+        elif "\n" in text or (isinstance(value, np.ndarray) and value.size > 1) \
+                or _is_lti(value) or _is_sym(value) or isinstance(value, Str):
             body = "\n".join("    " + line for line in text.splitlines())
             print(f"{name} =\n\n{body}\n")
         else:
@@ -2444,30 +2573,37 @@ class Runtime:
     # ── operators ───────────────────────────────────────────────
 
     @_symbolic_aware("plus")
+    @_typed_binary
     def plus(self, a, b):
         return self._arith(a, b, lambda x, y: x + y)
 
     @_symbolic_aware("minus")
+    @_typed_binary
     def minus(self, a, b):
         return self._arith(a, b, lambda x, y: x - y)
 
     @_symbolic_aware("times")
+    @_typed_binary
     def times(self, a, b):
         return self._arith(a, b, lambda x, y: x * y)
 
     @_symbolic_aware("rdivide")
+    @_typed_binary
     def rdivide(self, a, b):
         return self._arith(a, b, _divide)
 
     @_symbolic_aware("ldivide")
+    @_typed_binary
     def ldivide(self, a, b):
         return self._arith(a, b, lambda x, y: _divide(y, x))
 
     @_symbolic_aware("power")
+    @_typed_binary
     def power(self, a, b):
         return self._arith(a, b, _power)
 
     @_symbolic_aware("mtimes")
+    @_typed_binary
     def mtimes(self, a, b):
         if _any_deferred(a, b):
             return _defer(self.mtimes, a, b)
@@ -2488,6 +2624,7 @@ class Runtime:
         return a * b
 
     @_symbolic_aware("mrdivide")
+    @_typed_binary
     def mrdivide(self, a, b):
         if _any_deferred(a, b):
             return _defer(self.mrdivide, a, b)
@@ -2499,6 +2636,7 @@ class Runtime:
         return _divide(a, b)
 
     @_symbolic_aware("mldivide")
+    @_typed_binary
     def mldivide(self, a, b):
         a, b = _coerce(a, b)
         if isinstance(a, np.ndarray) and a.size > 1:
@@ -2513,6 +2651,7 @@ class Runtime:
         return _divide(b, a)
 
     @_symbolic_aware("mpower")
+    @_typed_binary
     def mpower(self, a, b):
         if _any_deferred(a, b):
             return _defer(self.mpower, a, b)
@@ -2552,7 +2691,45 @@ class Runtime:
         with np.errstate(divide="ignore", invalid="ignore"):
             return op(a, b)
 
+    @staticmethod
+    def string(text) -> Str:
+        """A ``"…"`` literal."""
+        return Str(text)
+
+    def _string_operator(self, name: str, a, b):
+        if name != "plus":
+            sym = {"minus": "-", "times": ".*", "rdivide": "./",
+                   "ldivide": ".\\", "power": ".^", "mtimes": "*",
+                   "mrdivide": "/", "mldivide": "\\", "mpower": "^"}[name]
+            raise MatlabError(f"Operator '{sym}' is not supported for "
+                              f"operands of type 'string'.")
+        left, right = _string_items(a), _string_items(b)
+        if len(left) == 1 and len(right) != 1:
+            left = left * len(right)
+        elif len(right) == 1 and len(left) != 1:
+            right = right * len(left)
+        elif len(left) != len(right):
+            raise MatlabError("Arrays have incompatible sizes for this "
+                              "operation.")
+        rows = a.rows if isinstance(a, StrArray) else (
+            b.rows if isinstance(b, StrArray) else 1)
+        return _strarray([x + y for x, y in zip(left, right)], rows)
+
     def _compare(self, a, b, op):
+        if isinstance(a, (Str, StrArray)) or isinstance(b, (Str, StrArray)):
+            left, right = _string_items(a), _string_items(b)
+            if len(left) == 1 and len(right) != 1:
+                left = left * len(right)
+            elif len(right) == 1 and len(left) != 1:
+                right = right * len(left)
+            elif len(left) != len(right):
+                raise MatlabError("Arrays have incompatible sizes for this "
+                                  "operation.")
+            out = [bool(op(x, y)) for x, y in zip(left, right)]
+            return out[0] if len(out) == 1 else np.array(out, dtype=bool)
+        if _nt.is_typed(a) or _nt.is_typed(b):
+            _nt.check_pair(a, b)
+            a, b = _nt.to_double(a), _nt.to_double(b)
         a, b = _coerce(a, b)
         if isinstance(a, str) and isinstance(b, str):
             if len(a) != len(b) and len(a) != 1 and len(b) != 1:
@@ -2605,6 +2782,11 @@ class Runtime:
     def uminus(self, a):
         if isinstance(a, Deferred):
             return -a
+        if _nt.is_typed(a):
+            return _nt.cast(-_nt.to_double(a), _nt.num_class(a))
+        if isinstance(a, (Str, StrArray)):
+            raise MatlabError("Operator '-' is not supported for operands "
+                              "of type 'string'.")
         return -a
 
     @staticmethod
@@ -2862,6 +3044,42 @@ def _power(a, b):
         return np.power(a_arr, b_arr)
 
 
+#: Text functions that give a string back when they are given one.
+_STRING_KEEP = frozenset("""
+upper lower strtrim strrep strcat regexprep replace pad deblank erase
+extractBefore extractAfter strip insert join split strsplit fliplr flipud
+reverse
+""".split())
+
+
+def _restring(result):
+    """A text function's char (or cell of char) result, as strings."""
+    if type(result) is str:
+        return Str(result)
+    if type(result) is Cell and result and all(
+            isinstance(v, str) for v in result):
+        return _strarray(result, result.rows)
+    return result
+
+
+def _string_items(x) -> list[str]:
+    """The text of each element of a string operand (or of a number)."""
+    if isinstance(x, StrArray):
+        return list(x)
+    if isinstance(x, str):
+        return [str(x)]
+    if _is_number(x) or isinstance(x, np.ndarray):
+        return [_number(v) for v in np.asarray(x).reshape(-1)]
+    raise MatlabError(f"Operator is not supported for operands of type "
+                      f"'{type(x).__name__}' and 'string'.")
+
+
+def _string_grid(x) -> list[list]:
+    if isinstance(x, StrArray):
+        return x.grid()
+    return [[Str(t) for t in _string_items(x)]]
+
+
 def _as_text(x) -> str:
     if isinstance(x, str):
         return x
@@ -2871,6 +3089,8 @@ def _as_text(x) -> str:
         return chr(int(x))
     return str(x)
 
+
+_NUMERIC_CLASSES = ("double", "single") + _nt.INT_NAMES
 
 #: An error identifier: ``component:mnemonic``, one or more colons.
 _IDENTIFIER = re.compile(r"^[A-Za-z][\w-]*(:[\w-]+)+$")
@@ -2924,16 +3144,20 @@ from .lib_sim import SimulinkLibrary  # noqa: E402
 from .lib_stats import StatsLibrary  # noqa: E402
 from .lib_system import SystemLibrary  # noqa: E402
 from .lib_text import TextLibrary  # noqa: E402
+from .lib_types import TypesLibrary  # noqa: E402
 
 
 class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
                SignalLibrary, OptimLibrary, SystemLibrary, SimulinkLibrary,
-               PlotLibrary, LanguageLibrary):
+               PlotLibrary, LanguageLibrary, TypesLibrary):
     """MATLAB's own functions, with MATLAB's shapes and argument rules."""
 
     def __init__(self, rt: Runtime) -> None:
         self.rt = rt
         self.names = {n[2:] for n in dir(self) if n.startswith("f_")}
+        #: A method's function object → its MATLAB name, for :meth:`Runtime.call`.
+        self.func_names = {id(getattr(type(self), f"f_{n}")): n
+                           for n in self.names}
 
     # ── constants ───────────────────────────────────────────────
 
@@ -2944,8 +3168,6 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
     f_i = f_j = 1j
     f_true = True
     f_false = False
-    f_realmax = float(np.finfo(float).max)
-    f_realmin = float(np.finfo(float).tiny)
 
     # ── workspace and session ───────────────────────────────────
 
@@ -3130,15 +3352,17 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         return "\n"
 
     def f_char(self, x):
-        return _as_text(x)
-
-    f_string = f_char
+        return str(_as_text(x))
 
     # ── types ───────────────────────────────────────────────────
 
     def f_class(self, x) -> str:
+        if isinstance(x, (Str, StrArray)):
+            return "string"
         if isinstance(x, str):
             return "char"
+        if _nt.is_typed(x):
+            return _nt.num_class(x)
         if isinstance(x, (bool, np.bool_)) or (isinstance(x, np.ndarray)
                                                and x.dtype == bool):
             return "logical"
@@ -3161,17 +3385,19 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         return "double"
 
     def f_isa(self, x, name):
-        return self.f_class(x) == name or (name == "numeric"
-                                           and self.f_class(x) == "double")
+        cls = self.f_class(x)
+        return cls == name or (name == "numeric" and cls in _NUMERIC_CLASSES) \
+            or (name == "float" and cls in ("double", "single")) \
+            or (name == "integer" and cls in _nt.INTS)
 
     def f_isnumeric(self, x):
-        return self.f_class(x) == "double"
+        return self.f_class(x) in _NUMERIC_CLASSES
 
     def f_ischar(self, x):
-        return isinstance(x, str)
+        return isinstance(x, str) and not isinstance(x, Str)
 
     def f_iscell(self, x):
-        return isinstance(x, Cell)
+        return isinstance(x, Cell) and not isinstance(x, StrArray)
 
     def f_isstruct(self, x):
         return isinstance(x, (Struct, StructArray))
@@ -3305,13 +3531,40 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         r, c = sizes
         return _normalise_row(fill((r, c)), True) if r == 1 else fill((r, c))
 
+    @staticmethod
+    def _class_argument(dims) -> tuple[tuple, str | None]:
+        """``zeros(2, 3, 'int8')`` / ``zeros(2, 'like', p)``: the class."""
+        dims = list(dims)
+        cls = None
+        for k, d in enumerate(dims):
+            if isinstance(d, str) and d.lower() == "like" and k + 1 < len(
+                    dims):
+                cls = _nt.num_class(dims[k + 1])
+                del dims[k:k + 2]
+                break
+        else:
+            for d in dims:
+                if isinstance(d, str):
+                    if d in _nt.INTS or d in ("single", "double"):
+                        cls = d
+                    elif d != "like":
+                        raise MatlabError(f"Invalid data type '{d}': use "
+                                          f"'double', 'single' or an "
+                                          f"integer class.")
+            dims = [d for d in dims if not isinstance(d, str)]
+        return tuple(dims), cls
+
     def f_zeros(self, *dims):
+        dims, cls = self._class_argument(dims)
         out = self._filled(np.zeros, dims)
-        return _scalar(out[0]) if np.size(out) == 1 else out
+        out = _scalar(out[0]) if np.size(out) == 1 else out
+        return _nt.cast(out, cls) if cls and cls != "double" else out
 
     def f_ones(self, *dims):
+        dims, cls = self._class_argument(dims)
         out = self._filled(np.ones, dims)
-        return _scalar(out[0]) if np.size(out) == 1 else out
+        out = _scalar(out[0]) if np.size(out) == 1 else out
+        return _nt.cast(out, cls) if cls and cls != "double" else out
 
     def f_eye(self, *dims):
         r, c = self._dims(dims)
@@ -5558,6 +5811,10 @@ for _name, _impl in _symbolic.OVERLOADS.items():
     setattr(_Library, _lib_attr(_name),
             _either(getattr(_Library, _lib_attr(_name)), _impl))
 for _name, _impl in _symbolic.NEW.items():
+    if _name == "double":                  # numbers are TypesLibrary's
+        setattr(_Library, _lib_attr(_name),
+                _either(getattr(_Library, _lib_attr(_name)), _impl))
+        continue
     setattr(_Library, _lib_attr(_name),
             _only(_impl, _name in _symbolic.COUNTS_OUTPUTS))
 del _name, _impl

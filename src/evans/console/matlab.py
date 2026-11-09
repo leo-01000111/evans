@@ -282,6 +282,7 @@ class _Tok:
     text:  str
     line:  int
     space_before: bool = False
+    dq: bool = False    # a "double-quoted" string, not a char vector
 
 
 _NUMBER = re.compile(
@@ -463,6 +464,7 @@ class _Lexer:
             chars.append(ch)
             self.i += 1
         self._emit("str", "".join(chars))
+        self.out[-1].dq = quote == '"'
 
     def _skip_block_comment(self) -> None:
         src = self.src
@@ -499,6 +501,7 @@ class _Num(_Node):
 @dataclass
 class _Str(_Node):
     value: str
+    dq: bool = False
 
 
 @dataclass
@@ -1116,7 +1119,7 @@ class _Parser:
             return _Num(t.line, t.text)
         if t.kind == "str":
             self._advance()
-            return _Str(t.line, t.text)
+            return _Str(t.line, t.text, t.dq)
         if t.kind == "id":
             self._advance()
             return _Name(t.line, t.text)
@@ -1175,8 +1178,10 @@ class _Parser:
 
 def _source_text(tokens: list[_Tok]) -> str:
     """An expression's tokens as text, closed up as MATLAB's func2str does."""
-    return "".join("'" + t.text.replace("'", "''") + "'" if t.kind == "str"
-                   else t.text for t in tokens)
+    return "".join(
+        ('"' + t.text.replace('"', '""') + '"' if t.dq else
+         "'" + t.text.replace("'", "''") + "'") if t.kind == "str"
+        else t.text for t in tokens)
 
 
 def _is_lvalue(node: _Node) -> bool:
@@ -1576,6 +1581,8 @@ class _Emitter:
                 return f"{text[:-1]}j"
             return text
         if isinstance(node, _Str):
+            if node.dq:
+                return f"{_RT}.string({node.value!r})"
             return repr(node.value)
         if isinstance(node, _Name):
             if nargout != 1 and node.name not in self.vars:

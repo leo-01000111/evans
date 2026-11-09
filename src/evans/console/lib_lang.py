@@ -84,20 +84,44 @@ def _magic(n: int) -> np.ndarray:
     return m
 
 
+def _class_is(*names):
+    return lambda x: _class_name(x) in names
+
+
+def _class_name(x) -> str:
+    from . import numtypes as nt
+    if isinstance(x, (_mr.Str, _mr.StrArray)):
+        return "string"
+    if isinstance(x, str):
+        return "char"
+    if nt.is_typed(x):
+        return nt.num_class(x)
+    if isinstance(x, (bool, np.bool_)) or (isinstance(x, np.ndarray)
+                                           and x.dtype == bool):
+        return "logical"
+    if isinstance(x, Cell):
+        return "cell"
+    if isinstance(x, dict):
+        return "struct"
+    if _is_function(x):
+        return "function_handle"
+    return "double" if _is_number(x) or isinstance(x, np.ndarray) else "?"
+
+
 _CLASSES = {
-    "numeric": lambda x: _is_number(x) and not isinstance(x, bool)
-    or (isinstance(x, np.ndarray) and x.dtype != bool),
-    "double": lambda x: _is_number(x) and not isinstance(x, bool)
-    or (isinstance(x, np.ndarray) and x.dtype != bool),
-    "single": lambda x: False,
-    "float": lambda x: _is_number(x) and not isinstance(x, bool),
-    "char": lambda x: isinstance(x, str),
-    "string": lambda x: isinstance(x, str),
-    "logical": lambda x: isinstance(x, (bool, np.bool_))
-    or (isinstance(x, np.ndarray) and x.dtype == bool),
-    "cell": lambda x: isinstance(x, Cell),
-    "struct": lambda x: isinstance(x, dict),
-    "function_handle": _is_function,
+    "numeric": _class_is("double", "single", "int8", "int16", "int32",
+                         "int64", "uint8", "uint16", "uint32", "uint64"),
+    "double": _class_is("double"),
+    "single": _class_is("single"),
+    "float": _class_is("double", "single"),
+    "integer": _class_is("int8", "int16", "int32", "int64", "uint8",
+                         "uint16", "uint32", "uint64"),
+    "char": _class_is("char"),
+    "string": _class_is("string"),
+    "logical": _class_is("logical"),
+    "cell": _class_is("cell"),
+    "struct": _class_is("struct"),
+    "function_handle": _class_is("function_handle"),
 }
 
 

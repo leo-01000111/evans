@@ -50,9 +50,8 @@ Left over from this phase:
 - [x] `clear all`, `clear global` and `clear functions` do not reset globals or
       persistents. **S** *Done:* MATLAB's rules; plain `clear` keeps a global's
       value and drops only the workspace's link.
-- [ ] `numel("hello")` is 5 and should be 1 (string arrays, Phase 4). **S–M**
-      *Deferred to Phase 4's string arrays:* it needs `"…"` to be its own type,
-      and changing `numel` alone would make `"…"` disagree with itself.
+- [x] `numel("hello")` is 5 and should be 1 (string arrays, Phase 4). **S–M**
+      *Done 2026-11-09 with Phase 4's string arrays: `"…"` is its own type.*
 - [x] Writing one element of a cell, struct or array copies it, so growing one in a
       loop is quadratic. `c{end+1} = k` for 10⁴ elements takes about 3.5 s, against
       about 0.5 s before cells were copied; numeric arrays already behaved this way.
@@ -466,8 +465,20 @@ the cheap items are done; the large types are not.
       own; it becomes a closure defined at the top of the parent, and the variables
       both use are `nonlocal`. Files where every function runs to the next
       `function` are unchanged.*
-- [ ] Integer and single types: `int8`…`uint64`, `single`, `logical()`, `double()`,
-      with saturation. Images and hardware data depend on them. **M**
+- [x] Integer and single types: `int8`…`uint64`, `single`, `logical()`, `double()`,
+      with saturation. Images and hardware data depend on them. **M** *Done
+      2026-11-09 (`console/numtypes.py`, `lib_types.py`). Values are numpy
+      integer and float32 scalars and arrays; arithmetic runs in double and is
+      cast back, rounding half away from zero and saturating, so `int64` and
+      `uint64` beyond 2^53 are not exact. An integer meets a double (or single)
+      and stays an integer; two integer classes are an error. Also `cast`,
+      `intmax`/`intmin`/`flintmax`/`realmax`/`realmin`, `isinteger`/`isfloat`,
+      `idivide`, `bitand`/`bitor`/`bitxor`/`bitshift`/`bitcmp`, `zeros(…,'int8')`
+      and `'like'`, and `imshow` of `uint8` spans 0–255. Library functions
+      keep an integer input's class only when MATLAB's do (`sum`, `max`,
+      `abs`, `sort`, `reshape` …); the rest hand back doubles. Display is
+      the classic form (`x = 5`, no `int8` banner). Not done: `typecast`,
+      integer-valued `containers.Map` keys (still stored as doubles), N-D.*
 - [x] `containers.Map`. **S–M** *Done 2026-11-09. A handle; text or double keys
       (other key types are stored as doubles until integer types exist);
       `copy` and `Map` arrays are not done. The translator turns
@@ -475,8 +486,14 @@ the cheap items are done; the large types are not.
       called `containers`.*
 - [ ] A real `table`: constructor, `T.col`, row filtering, `height`, `width`,
       `sortrows`, `join`; then `datetime`, `duration`, `timetable`. **L**
-- [ ] String arrays as their own type (`numel("abc") == 1`, `["a" "b"]`), distinct
-      from `char`. **M**
+- [x] String arrays as their own type (`numel("abc") == 1`, `["a" "b"]`), distinct
+      from `char`. **M** *Done 2026-11-09. `"abc"` is a `Str` (a `str`
+      subclass, so every text function takes it); `["a" "bc"]` is a `StrArray`
+      (a cell subclass of `Str`). `+` joins, `==`/`<` compare, `string`,
+      `strlength`, `isstring`; `upper`, `strrep`, `strsplit`, `join` … give
+      strings back for strings. Not done: assigning into a string array keeps
+      cell rules, `missing`, `<missing>` and `strings(n)`, string `.^`/`*`
+      errors only name the operator.*
 - [x] N-D arrays (`zeros(2,2,2)`, `cat(3,…)`, `permute`, `squeeze`). The 2-D
       assumption runs through the runtime, so this is a large change. **L**
       *Numeric and logical arrays and cells of any rank: `zeros`/`ones`/`rand`/

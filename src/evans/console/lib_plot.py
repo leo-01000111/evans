@@ -1138,6 +1138,7 @@ class PlotLibrary:
         else:
             x = y = None
             C, rest = numbers[0], numbers[1:]
+        raw_dtype = np.asarray(C).dtype
         C = _image_matrix(C, who)
         rows, cols = C.shape[:2]
         xr = [1.0, float(cols)] if x is None else _vector(x)[[0, -1]]
@@ -1164,7 +1165,11 @@ class PlotLibrary:
                     lims = _vector(rest[0])
                     extra["clim"] = (float(lims[0]), float(lims[1]))
                 else:
-                    extra["clim"] = (0.0, 1.0)
+                    # An integer image spans its type's range: uint8 is 0–255.
+                    extra["clim"] = ((float(np.iinfo(raw_dtype).min),
+                                      float(np.iinfo(raw_dtype).max))
+                                     if raw_dtype.kind in "iu"
+                                     else (0.0, 1.0))
         elif who == "imagesc" and rest:
             lims = _vector(rest[0])
             if lims.size != 2 or lims[0] >= lims[1]:
