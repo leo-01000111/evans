@@ -872,6 +872,8 @@ def _shape(x) -> tuple[int, int]:
             else (1, 1)
     if _is_lti(x):
         return (x.noutputs, x.ninputs)
+    if hasattr(x, "ml_shape"):
+        return x.ml_shape()
     if _is_sym(x):
         return x.shape
     a = _as_array(x)
@@ -1815,7 +1817,8 @@ class Runtime:
         if _is_function(f) or (callable(f) and not _is_lti(f)
                                and not isinstance(f, (np.ndarray, str,
                                                       Mapping, list))):
-            if any(isinstance(a, Deferred) for a in args):
+            if any(isinstance(a, Deferred) for a in args) and not getattr(
+                    f, "ml_class", None):
                 raise MatlabError("'end' can only be used inside an index.")
             args = tuple(None if a is COLON else a for a in args)
             kwargs = {}
@@ -1993,6 +1996,8 @@ class Runtime:
         return int(out) if out.ndim == 0 else out.reshape(-1)
 
     def cell_index(self, c, args: tuple):
+        if hasattr(c, "brace"):
+            return c.brace(args)
         if isinstance(c, (Cell, list)):
             picked = (self._pick_cell(c, args) if isinstance(c, Cell)
                       else self._pick_list(c, args))
@@ -2002,6 +2007,8 @@ class Runtime:
 
     def cell_list(self, c, args: tuple) -> tuple:
         """``c{...}`` as a comma-separated list: always a tuple of values."""
+        if hasattr(c, "brace"):
+            return (c.brace(args),)
         if isinstance(c, (Cell, list)):
             picked = (self._pick_cell(c, args) if isinstance(c, Cell)
                       else self._pick_list(c, args))
@@ -2042,6 +2049,9 @@ class Runtime:
         """
         if not path:
             return value
+        if hasattr(obj, "_ml_assign"):
+            return obj._ml_assign(self, path[0][0], path[0][1], path[1:],
+                                  value)
         if owned and len(path) == 1:
             share(value)                    # it now lives inside obj too
         (kind, key), rest = path[0], path[1:]
@@ -2345,6 +2355,9 @@ class Runtime:
                 [[_resolve(x, n) for x in row] for row in rows]))
         if not flat:
             return np.zeros((0, 0))
+        if any(hasattr(x, "ml_class") and (hasattr(x, "ml_vec") or hasattr(
+                x, "brace")) for x in flat):
+            return concat_objects(rows)
         if any(_is_sym(x) for x in flat):
             return _symbolic.concat(rows)
         if any(_is_lti(x) for x in flat):
@@ -3135,6 +3148,7 @@ def _is_linespec(x) -> bool:
 # The everyday-data functions live in modules of their own, one mixin each;
 # a method defined here wins over a mixin's of the same name.
 from .lib_cells import CellLibrary  # noqa: E402
+from .lib_dates import DateLibrary  # noqa: E402
 from .lib_files import FileLibrary  # noqa: E402
 from .lib_lang import LanguageLibrary  # noqa: E402
 from .lib_optim import OptimLibrary  # noqa: E402
@@ -3143,11 +3157,17 @@ from .lib_signal import SignalLibrary  # noqa: E402
 from .lib_sim import SimulinkLibrary  # noqa: E402
 from .lib_stats import StatsLibrary  # noqa: E402
 from .lib_system import SystemLibrary  # noqa: E402
+from .lib_tables import (  # noqa: E402,E501
+    TableLibrary,
+    concat_objects,
+    install_dispatch,
+)
 from .lib_text import TextLibrary  # noqa: E402
 from .lib_types import TypesLibrary  # noqa: E402
 
 
-class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
+class _Library(FileLibrary, TableLibrary, DateLibrary, StatsLibrary,
+               TextLibrary, CellLibrary,
                SignalLibrary, OptimLibrary, SystemLibrary, SimulinkLibrary,
                PlotLibrary, LanguageLibrary, TypesLibrary):
     """MATLAB's own functions, with MATLAB's shapes and argument rules."""
@@ -3382,6 +3402,8 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
             return "sym"
         if _is_function(x):
             return "function_handle"
+        if hasattr(x, "ml_class") and x.ml_class:
+            return x.ml_class
         return "double"
 
     def f_isa(self, x, name):
@@ -3810,6 +3832,8 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
 
     def _reduce(self, fn, x, dim=None):
         a = np.asarray(x)
+        if a.ndim == 0:
+            a = a.reshape(1)
         if a.size == 0:
             return fn(np.zeros(0))
         if a.ndim > 2:
@@ -5825,3 +5849,6 @@ from . import lib_ui as _lib_ui  # noqa: E402
 
 _lib_sparse.install()
 _lib_ui.install()
+
+# Datetimes, durations and tables answer the older builtins themselves.
+install_dispatch(_Library)
