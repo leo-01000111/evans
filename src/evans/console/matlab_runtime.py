@@ -1522,6 +1522,15 @@ class Runtime:
         raise MatlabError("Brace indexing is only for cell arrays; use "
                           "() for this value.")
 
+    def cell_list(self, c, args: tuple) -> tuple:
+        """``c{...}`` as a comma-separated list: always a tuple of values."""
+        if isinstance(c, (Cell, list)):
+            picked = (self._pick_cell(c, args) if isinstance(c, Cell)
+                      else self._pick_list(c, args))
+            return tuple(picked)
+        raise MatlabError("Brace indexing is only for cell arrays; use "
+                          "() for this value.")
+
     def field(self, obj, name):
         if isinstance(obj, StructArray):
             if len(obj) == 1:

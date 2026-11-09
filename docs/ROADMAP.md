@@ -354,6 +354,31 @@ the cheap items are done; the large types are not.
       reads variables and refuses to set them. `evalin` takes `'base'` only. `nargin(fn)`
       is not reachable inside a function, where `nargin` is the call's own count.
       The operators exist as functions (`plus`, `minus`, …) so `@plus` works.*
+- [x] **`c{:}` / `varargin{:}` in a call's argument list.** Found 2026-11-09 from a
+      lab (`ore.m`, which forwards `varargin{:}` to a recursion function). The cell is
+      not expanded into separate arguments: `f3(c{:})`, `fwd(1,2,3)` with
+      `f3(varargin{:})`, `fh(1,2,varargin{:})` and `@(varargin) f3(varargin{:})` all
+      fail with a raw Python `TypeError`, while `sprintf('%s,', c{:})` on a builtin
+      works. Fix at the call site so a cs-list expands to zero or more arguments,
+      mixed with fixed ones; also check `[c{:}]`, `{c{:}}` and
+      `[varargout{1:nargout}] = f(...)`. `varargin` itself is already a list of the
+      surplus arguments (`matlab.py` ~1357). Repros R-A to R-E are in the writeup;
+      are tests in `tests/golden/test_lib_lang.py`. **M** *Done 2026-11-09: the
+      translator splices `c{:}` into argument lists and matrix rows
+      (`cell_list` in the runtime), and `@(a, varargin)` lambdas take any number
+      of arguments. `[varargout{1:nargout}] = f(...)` was not checked.*
+- [ ] **MATLAB-style errors for user functions.** Too many arguments should say
+      `Too many input arguments.`, and a missing parameter that is used should say
+      `Not enough input arguments.` or name the variable, not `NoneType` arithmetic.
+      Anonymous functions and handles must say the same, not `<lambda>() takes 1
+      positional argument`. Keep whatever supports `nargin` and `exist('x','var')`.
+      **S–M**
+- [ ] **Errors name the function and line,** in MATLAB's form (`Error using f (line 2)`
+      then `Error in ore (line 10)` with the source line), instead of `Error in
+      line 11`. This misled the lab user twice. Keep the Python traceback behind a
+      debug flag. **M**
+- [ ] A script file named with dots (`C.3.2.m`) cannot be called by name in MATLAB;
+      say what Evans does and give a clear message. **S**
 - [ ] Nested functions that share the parent's variables. **M**
 - [ ] Integer and single types: `int8`…`uint64`, `single`, `logical()`, `double()`,
       with saturation. Images and hardware data depend on them. **M**

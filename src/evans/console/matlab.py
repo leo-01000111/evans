@@ -1486,7 +1486,18 @@ class _Emitter:
     def _arg(self, node: _Node, k: int, n: int) -> str:
         if isinstance(node, _Colon):
             return f"{_RT}.COLON"
-        return self.expr(node, end_dim=(k, n))
+        return self._spread(node, (k, n))
+
+    def _spread(self, node: _Node, end_dim=None) -> str:
+        """
+        An element of an argument list or matrix row. ``c{:}`` there is a
+        comma-separated list: zero or more values, spliced in place.
+        """
+        if isinstance(node, _CellIndex):
+            target = self.expr(node.target, end_dim=end_dim)
+            return (f"*{_RT}.cell_list({target}, "
+                    f"({self._arglist(node.args)}))")
+        return self.expr(node, end_dim=end_dim)
 
     def _name_ref(self, name: str) -> str:
         """A bare name: a variable as is; a function is called with no args."""
@@ -1567,14 +1578,21 @@ class _Emitter:
                    else e(node.name))
             return f"{_RT}.field({e(node.target)}, {key})"
         if isinstance(node, _Matrix):
-            rows = ", ".join("[" + ", ".join(e(x) for x in row) + "]"
+            rows = ", ".join("[" + ", ".join(self._spread(x, end_dim)
+                                             for x in row) + "]"
                              for row in node.rows)
             fn = "cell" if node.cell else "concat"
             return f"{_RT}.{fn}([{rows}])"
         if isinstance(node, _Lambda):
             inner = _Emitter(self.vars | set(node.params))
             params = ", ".join(_py_name(p) for p in node.params)
-            body = f"(lambda {params}: {inner.expr(node.body)})"
+            if node.params and node.params[-1] == "varargin":
+                fixed = ", ".join(_py_name(p) for p in node.params[:-1])
+                lead = fixed + ", " if fixed else ""
+                body = (f"(lambda {lead}*_va: (lambda varargin: "
+                        f"{inner.expr(node.body)})(list(_va)))")
+            else:
+                body = f"(lambda {params}: {inner.expr(node.body)})"
             text = repr(node.text)
             # MATLAB captures the variables' values when the handle is made;
             # a Python lambda would read them when called.

@@ -226,3 +226,54 @@ def test_a_map_method_syntax(it):
 def test_a_variable_called_containers_is_left_alone(it):
     run(it, "containers = struct('Map', 3);")
     assert value(it, "containers.Map") == 3
+
+
+# ── c{:} and varargin{:} as call arguments ─────────────────────
+
+def test_a_cell_list_spreads_into_a_call(it):
+    run(it, "function r = f3(a, b, c)\n r = a + b + c;\nend")
+    run(it, "c = {1, 2, 3};")
+    assert value(it, "f3(c{:})") == 6
+
+
+def test_varargin_forwards_through_a_function(it):
+    run(it, "function r = f3(a, b, c)\n r = a + b + c;\nend")
+    run(it, "function r = fwd(varargin)\n r = f3(varargin{:});\nend")
+    assert value(it, "fwd(1, 2, 3)") == 6
+
+
+def test_an_empty_varargin_adds_no_arguments(it):
+    run(it, "function r = cnt(varargin)\n r = numel(varargin);\nend")
+    run(it, "function r = fwd0(varargin)\n r = cnt(varargin{:});\nend")
+    assert value(it, "fwd0()") == 0
+    assert value(it, "fwd0(7, 8)") == 2
+
+
+def test_fixed_and_forwarded_arguments_mix(it):
+    run(it, "function r = g(n, x, a, b)\n r = n + x + a + b;\nend")
+    run(it, "function r = h(fh, varargin)\n r = fh(1, 2, varargin{:});\nend")
+    assert value(it, "h(@g, 10, 20)") == 33
+
+
+def test_an_anonymous_varargin_forwards(it):
+    run(it, "function r = f3(a, b, c)\n r = a + b + c;\nend")
+    run(it, "fa = @(varargin) f3(varargin{:});")
+    assert value(it, "fa(1, 2, 3)") == 6
+    run(it, "fb = @(k, varargin) k * f3(varargin{:});")
+    assert value(it, "fb(2, 1, 2, 3)") == 12
+
+
+def test_cell_lists_spread_in_matrices(it):
+    run(it, "c = {1, 2, 3};")
+    assert list(value(it, "[c{:}]")) == [1, 2, 3]
+    assert len(value(it, "{c{:}, 4}")) == 4
+
+
+def test_the_ore_pattern_runs_end_to_end(it):
+    run(it, "function xp = step(n, x, a, b, ts)\n xp = a*x + b*ts;\nend")
+    run(it, "function [N, Xe] = ore(eq, N, x0, varargin)\n"
+            " N = N(1):N(2);\n Xe = zeros(length(N), 1);\n xe = x0;\n"
+            " for k = 1:length(N)\n  Xe(k) = xe;\n"
+            "  xe = eq(N(k), xe, varargin{:});\n end\nend")
+    run(it, "[N, Xe] = ore(@step, [0 4], 0, 1, 1, 0.5);")
+    assert list(value(it, "Xe")) == [0, 0.5, 1.0, 1.5, 2.0]
