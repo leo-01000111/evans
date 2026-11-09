@@ -669,6 +669,7 @@ def _matrix_text(a: np.ndarray, max_columns: int = 10) -> str:
     rows, cols = m.shape
     shown_cols = list(range(cols))
     elided = None
+    row_gap = col_gap = 0
     if rows * cols > 200:
         if rows == 1:
             shown_cols = list(range(5)) + list(range(cols - 5, cols))
@@ -677,6 +678,20 @@ def _matrix_text(a: np.ndarray, max_columns: int = 10) -> str:
             m = np.vstack([m[:5], m[-5:]])
             elided = rows - 10
             rows = m.shape[0]
+        else:
+            # A matrix with a huge side (a stereo audio signal is 1.3M×2):
+            # show the corners only, or the console and live scripts choke
+            # on millions of lines.
+            full_rows, full_cols = rows, cols
+            if rows > 10:
+                m = np.vstack([m[:5], m[-5:]])
+                row_gap = full_rows - 10
+                rows = m.shape[0]
+            if cols > 100:
+                keep = list(range(5)) + list(range(cols - 5, cols))
+                m = m[:, keep]
+                col_gap = full_cols - 10
+                shown_cols = list(range(m.shape[1]))
     cells = [[_number(m[r, c]) for c in shown_cols] for r in range(rows)]
     width = max(len(x) for row in cells for x in row) + 3
     lines = []
@@ -695,10 +710,18 @@ def _matrix_text(a: np.ndarray, max_columns: int = 10) -> str:
             label = (f"Column {last}" if len(block) == 1 else
                      f"Columns {block[0] + 1} through {last}")
             lines += [f"  {label}", ""]
-        lines += ["".join(cells[r][c].rjust(width) for c in block)
-                  for r in range(rows)]
+        body = ["".join(cells[r][c].rjust(width) for c in block)
+                for r in range(rows)]
+        if row_gap:
+            body.insert(5, f"   … {row_gap} more rows …")
+        lines += body
         if start + max_columns < len(shown_cols):
             lines.append("")
+    if row_gap or col_gap:
+        note = f"  ({full_rows}×{full_cols} double"
+        if col_gap:
+            note += f", {col_gap} more columns not shown"
+        lines += ["", note + ")"]
     return "\n".join(lines)
 
 

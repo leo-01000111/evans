@@ -96,6 +96,7 @@ PREVIEW_SHORTCUT = "Ctrl+Alt+P"
 FIGURE_HEIGHT = 260
 #: Tallest an output pane grows before it scrolls.
 OUTPUT_MAX_HEIGHT = 320
+OUTPUT_MAX_LINES = 500
 
 _KIND_LABELS = {CellKind.TEXT: "Text", CellKind.TITLE: "Title",
                 CellKind.HEADING: "Heading 1", CellKind.HEADING2: "Heading 2",
@@ -393,6 +394,12 @@ class CodeCellWidget(CellWidget):
     def refresh(self, evaluate=None) -> None:
         output = self.cell.output
         text = output.text if output else ""
+        lines = text.split("\n", OUTPUT_MAX_LINES)
+        if len(lines) > OUTPUT_MAX_LINES:
+            # Millions of printed lines freeze the window; the full text
+            # stays on the cell, only the view is cut.
+            text = "\n".join(lines[:OUTPUT_MAX_LINES]) + \
+                f"\n… output cut at {OUTPUT_MAX_LINES} lines …"
         self.output.setPlainText(text)
         self.output.setVisible(bool(text.strip()))
         if text.strip():
