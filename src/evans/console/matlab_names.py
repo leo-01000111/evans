@@ -15,7 +15,7 @@ from __future__ import annotations
 NOT_IN_EVANS: dict[str, tuple[str, ...]] = {
     "Arrays and indexing": (
         "accumarray", "bsxfun", "cat", "colon", "cummax", "cummin", "histc",
-        "idivide", "mat2cell", "mink", "maxk", "ndgrid", "nnz", "nonzeros",
+        "mat2cell", "mink", "maxk", "ndgrid", "nnz", "nonzeros",
         "permute", "rot90", "squeeze", "sortrows", "issorted", "bounds",
         "normalize", "rescale", "histcounts2", "histogram2", "vander", "hilb", "invhilb",
         "toeplitz", "hankel", "pascal", "rosser", "wilkinson", "gallery",
@@ -23,12 +23,7 @@ NOT_IN_EVANS: dict[str, tuple[str, ...]] = {
         "swapbytes",
     ),
     "Sets": ("intersect", "setdiff", "setxor", "union", "uniquetol", "ismembertol"),
-    "Numeric types": (
-        "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32",
-        "uint64", "single", "intmax", "intmin", "flintmax", "cast",
-        "typecast", "bitand", "bitor", "bitxor", "bitshift", "bitcmp",
-        "isinteger", "isfloat",
-    ),
+    "Numeric types": ("typecast",),
     "Sparse and iterative solvers": (
         "sparse", "speye", "spones", "sprand", "full", "issparse", "spalloc",
         "pcg", "gmres", "bicg", "bicgstab", "minres", "lsqr", "eigs", "svds",
