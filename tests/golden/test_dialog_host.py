@@ -5,6 +5,8 @@ nothing waits for a person. The commands themselves are in ``test_lib_ui.py``.
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 pytest.importorskip("PySide6", reason="Qt not available")
@@ -103,9 +105,11 @@ def test_messages_show_their_text_and_icon(host, monkeypatch):
         (self.text(), self.windowTitle(), self.icon())) or 0)
     host.message("error", "bad", "")
     host.message("msg", "hi", "Note")
-    assert shown[0][:2] == ("bad", "Error")
+    # A Mac alert has no title bar, and Qt reports its title as empty there.
+    mac = sys.platform == "darwin"
+    assert shown[0][:2] == ("bad", "" if mac else "Error")
     assert shown[0][2] == QMessageBox.Critical
-    assert shown[1][:2] == ("hi", "Note")
+    assert shown[1][:2] == ("hi", "" if mac else "Note")
 
 
 def test_the_list_dialog(host, monkeypatch):
