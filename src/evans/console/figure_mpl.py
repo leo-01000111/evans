@@ -895,3 +895,232 @@ def _annotations(figure, spec: FigureSpec, look: Look) -> None:
         if a.get("string"):
             figure.text(x + 0.01, y + h - 0.01, a["string"], color=colour,
                         fontsize=a.get("fontsize", 9), ha="left", va="top")
+
+
+# ──────────────────────────────────────────────────────────────
+#  Changing the look of a drawn figure
+# ──────────────────────────────────────────────────────────────
+
+def _hex(colour) -> str | None:
+    from matplotlib.colors import to_hex
+    try:
+        return to_hex(colour, keep_alpha=False).lower()
+    except (ValueError, TypeError):
+        return None
+
+
+def _look_map(old: Look, new: Look) -> dict[str, str]:
+    """Old look's colours to the new look's, keyed by lower-case hex."""
+    pairs = [(old.ink, new.ink), (old.background, new.background),
+             (old.muted, new.muted), (old.grid, new.grid),
+             (old.reference, new.reference), (old.danger, new.danger)]
+    pairs += list(zip(old.cycle, new.cycle))
+    if _dark(new.background):                 # black is the ink on a dark page
+        pairs.append(("#000000", new.ink))
+    mapping: dict[str, str] = {}
+    for a, b in pairs:
+        key = _hex(a)
+        if key is not None:
+            mapping.setdefault(key, b)
+    return mapping
+
+
+def _remap_colours(colours, mapping):
+    """``colours`` (anything matplotlib takes) re-mapped, or None if unchanged."""
+    from matplotlib.colors import to_rgba_array
+    try:
+        rgba = to_rgba_array(colours)
+    except (ValueError, TypeError):
+        return None
+    if not len(rgba):
+        return None
+    out, changed = rgba.copy(), False
+    cache: dict[tuple, np.ndarray | None] = {}
+    for i, row in enumerate(rgba):
+        key = tuple(row)
+        if key not in cache:
+            target = mapping.get(_hex(row[:3]) or "")
+            cache[key] = None if target is None else np.array(
+                (*_rgb(target), row[3]))
+        if cache[key] is not None:
+            out[i], changed = cache[key], True
+    return out if changed else None
+
+
+def retheme(figure, old: Look, new: Look) -> None:
+    """
+    Recolour a figure drawn in ``old`` into ``new`` where it stands.
+
+    Nothing is drawn again: the camera of a 3-D view, the pinned data tips and
+    the colour map stay as they are. Every colour that is one of the old
+    look's is swapped for its counterpart; a colour the script chose, or one
+    the colour map made, is left alone.
+    """
+    from matplotlib.collections import Collection
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    from matplotlib.text import Text
+
+    mapping = _look_map(old, new)
+    for artist in figure.findobj():
+        if isinstance(artist, Text):
+            _swap(artist, "get_color", "set_color", mapping)
+            box = artist.get_bbox_patch()
+            if box is not None:
+                _swap(box, "get_facecolor", "set_facecolor", mapping)
+                _swap(box, "get_edgecolor", "set_edgecolor", mapping)
+        elif isinstance(artist, Line2D):
+            _swap(artist, "get_color", "set_color", mapping)
+            _swap(artist, "get_markerfacecolor", "set_markerfacecolor",
+                  mapping)
+            _swap(artist, "get_markeredgecolor", "set_markeredgecolor",
+                  mapping)
+        elif isinstance(artist, Collection):
+            _swap(artist, "get_facecolor", "set_facecolor", mapping)
+            _swap(artist, "get_edgecolor", "set_edgecolor", mapping)
+        elif isinstance(artist, Patch):
+            _swap(artist, "get_facecolor", "set_facecolor", mapping)
+            _swap(artist, "get_edgecolor", "set_edgecolor", mapping)
+    for ax in figure.axes:                    # the chrome, whatever it was
+        _style(ax, new, None)
+        ax.title.set_color(new.ink)
+        for text in ax.get_xticklabels() + ax.get_yticklabels():
+            text.set_color(new.ink)
+    figure.set_facecolor(new.background)
+
+
+def _swap(artist, getter: str, setter: str, mapping) -> None:
+    try:
+        current = getattr(artist, getter)()
+    except (AttributeError, TypeError):
+        return
+    if isinstance(current, str) and current in ("none", "auto", "default"):
+        return
+    swapped = _remap_colours(current, mapping)
+    if swapped is None:
+        return
+    try:
+        getattr(artist, setter)(swapped if len(swapped) > 1 else swapped[0])
+    except (AttributeError, TypeError, ValueError):
+        pass
+
+
+# ──────────────────────────────────────────────────────────────
+#  Data tips on 3-D axes
+# ──────────────────────────────────────────────────────────────
+
+def trace_points(trace: Trace) -> np.ndarray:
+    """A trace's vertices as an ``(n, 3)`` array; a 2-D trace lies at z = 0."""
+    x = np.asarray(trace.x, float)
+    y = np.asarray(trace.y, float)
+    z = None if trace.z is None else np.asarray(trace.z, float)
+    if z is None:
+        z = np.zeros_like(y)
+    if z.ndim == 2 and (x.ndim < 2 or y.ndim < 2):
+        x, y = np.meshgrid(x.reshape(-1) if x.ndim < 2 else x[0],
+                           y.reshape(-1) if y.ndim < 2 else y[:, 0])
+    try:
+        x, y, z = np.broadcast_arrays(x, y, z)
+    except ValueError:
+        return np.empty((0, 3))
+    pts = np.column_stack([x.reshape(-1), y.reshape(-1), z.reshape(-1)])
+    return pts[np.isfinite(pts).all(axis=1)]
+
+
+class DataTips3D:
+    """
+    MATLAB's data cursor on a 3-D axes: a click pins a tip on the vertex
+    nearest the pointer, a click on a pinned tip takes it off. A tip is an
+    artist in the axes, so it turns with the view.
+
+    Pure matplotlib: :class:`~evans.ui.console.figure_view.FigureView` only
+    has to create it for a 3-D canvas.
+    """
+
+    #: How near, in pixels, a click must be to a vertex (or a tip).
+    RADIUS = 14.0
+    #: How far the pointer may move between press and release to be a click.
+    SLOP = 4.0
+
+    def __init__(self, ax, spec: FigureSpec, look: Look = PRINT) -> None:
+        self.ax = ax
+        self.look = look
+        self.points = np.vstack([trace_points(t) for t in spec.traces]
+                                or [np.empty((0, 3))])
+        self.pinned: list[tuple] = []         # (point, marker, label)
+        self._press: tuple[float, float] | None = None
+        canvas = ax.figure.canvas
+        canvas.mpl_connect("button_press_event", self._on_press)
+        canvas.mpl_connect("button_release_event", self._on_release)
+
+    # ── geometry ────────────────────────────────────────────────
+
+    def _screen(self, pts: np.ndarray) -> np.ndarray:
+        from mpl_toolkits.mplot3d import proj3d
+        xs, ys, _ = proj3d.proj_transform(pts[:, 0], pts[:, 1], pts[:, 2],
+                                          self.ax.get_proj())
+        return self.ax.transData.transform(np.column_stack([xs, ys]))
+
+    def nearest(self, px: float, py: float, pts: np.ndarray | None = None):
+        """The vertex of ``pts`` (default: the data) nearest pixel ``(px, py)``
+        within :attr:`RADIUS`, or None."""
+        pts = self.points if pts is None else pts
+        if not len(pts):
+            return None
+        d = np.hypot(*(self._screen(pts) - (px, py)).T)
+        k = int(np.argmin(d))
+        return pts[k] if d[k] <= self.RADIUS else None
+
+    # ── events ──────────────────────────────────────────────────
+
+    def _on_press(self, event) -> None:
+        self._press = (event.x, event.y) if event.button == 1 else None
+
+    def _on_release(self, event) -> None:
+        start, self._press = self._press, None
+        if start is None or event.button != 1 or event.inaxes is not self.ax:
+            return
+        if np.hypot(event.x - start[0], event.y - start[1]) > self.SLOP:
+            return                                 # a rotation, not a click
+        self.click(event.x, event.y)
+
+    def click(self, px: float, py: float) -> None:
+        """Handle a click at pixel ``(px, py)``: unpin a tip there, else pin."""
+        if self.pinned:
+            spots = np.array([t[0] for t in self.pinned])
+            hit = self.nearest(px, py, spots)
+            if hit is not None:
+                for tip in self.pinned:
+                    if np.array_equal(tip[0], hit):
+                        self._remove(tip)
+                        break
+                self.ax.figure.canvas.draw_idle()
+                return
+        point = self.nearest(px, py)
+        if point is not None:
+            self.pin(point)
+            self.ax.figure.canvas.draw_idle()
+
+    # ── tips ────────────────────────────────────────────────────
+
+    def pin(self, point) -> None:
+        """Leave a tip on the 3-D point ``(x, y, z)``."""
+        x, y, z = (float(v) for v in point)
+        marker, = self.ax.plot([x], [y], [z], linestyle="none", marker="s",
+                               markersize=6, markerfacecolor=self.look.danger,
+                               markeredgecolor=self.look.ink)
+        label = self.ax.text(x, y, z, f"X: {x:.4g}\nY: {y:.4g}\nZ: {z:.4g}",
+                             color=self.look.ink, fontsize=8, zorder=10,
+                             bbox={"facecolor": self.look.background,
+                                   "edgecolor": self.look.ink, "pad": 2})
+        self.pinned.append(((x, y, z), marker, label))
+
+    def _remove(self, tip) -> None:
+        tip[1].remove()
+        tip[2].remove()
+        self.pinned.remove(tip)
+
+    def clear(self) -> None:
+        for tip in list(self.pinned):
+            self._remove(tip)
+        self.ax.figure.canvas.draw_idle()

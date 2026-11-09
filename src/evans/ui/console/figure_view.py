@@ -100,6 +100,9 @@ class FigureView(QWidget):
         #: The data tips of each 2-D axes, and the matplotlib canvases.
         self.tips: list[DataTips] = []
         self.canvases: list = []
+        #: The data tips of each 3-D axes, and the look a canvas was drawn in.
+        self.tips3d: list = []
+        self._look = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
         self._overlay: _AnnotationOverlay | None = None
@@ -137,13 +140,23 @@ class FigureView(QWidget):
             self._overlay.deleteLater()
             self._overlay = None
         self.tips.clear()
+        self.tips3d = []
         self.canvases.clear()
         self._build()
 
     def _on_theme(self, _tokens) -> None:
-        # pyqtgraph plots re-theme themselves; a matplotlib canvas is redrawn.
-        if self.canvases:
-            self.rebuild()
+        # pyqtgraph plots re-theme themselves; a matplotlib canvas is
+        # recoloured where it stands, so the view and the tips stay.
+        if not self.canvases:
+            return
+        new = screen_look()
+        old, self._look = self._look or new, new
+        for canvas in self.canvases:
+            figure_mpl.retheme(canvas.figure, old, new)
+            if self.isVisible():        # a hidden one draws when shown
+                canvas.draw_idle()
+        for readout in self.findChildren(QLabel, "mplReadout"):
+            readout.setStyleSheet(f"color: {theme.tokens().ink_muted};")
 
     # ── export ──────────────────────────────────────────────────
 
@@ -258,9 +271,14 @@ class FigureView(QWidget):
 
         figure = Figure(figsize=(5, 4))
         canvas = FigureCanvasQTAgg(figure)
-        axes = figure_mpl.draw(figure, self.spec, screen_look())
+        self._look = screen_look()
+        axes = figure_mpl.draw(figure, self.spec, self._look)
         self.canvases.append(canvas)
+        if self.spec.kind == "xy":
+            self.tips3d = [figure_mpl.DataTips3D(ax, self.spec, self._look)
+                           for ax in axes if getattr(ax, "name", "") == "3d"]
         readout = QLabel(" ")
+        readout.setObjectName("mplReadout")
         readout.setFont(theme.data_font(8.5))
         readout.setStyleSheet(f"color: {theme.tokens().ink_muted};")
 

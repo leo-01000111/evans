@@ -406,11 +406,16 @@ Left over from this phase:
 - [ ] Handle graphics: `h = plot(...)` and `set(h, …)`/`h.Color = …`, `cb.Label.String`.
       Every plot function returns nothing; properties go in as name-value pairs. **L**
 - [ ] `figure(n)` going back to figure `n`, and `gcf` following the selected tab. **S–M**
-- [ ] Data tips on 3-D axes, and the live colour map of a mesh after a theme switch
-      without a redraw. **S each**
-- [ ] `histogram` and `stem` pages, and the rest of the plotting commands that still have
+- [x] Data tips on 3-D axes, and the live colour map of a mesh after a theme switch
+      without a redraw. **S each** *Done 2026-11-09:* `figure_mpl.DataTips3D`: a click
+      (not a drag) pins a tip on the nearest vertex, a click on a tip takes it off;
+      tips are artists in the axes, so they turn with the view.
+      `figure_mpl.retheme` recolours a drawn canvas in place on a theme switch, so
+      the camera, the tips and the colour map survive it.
+- [x] `histogram` and `stem` pages, and the rest of the plotting commands that still have
       none (`stairs`, `semilogy`, `loglog`, `saveas`, `print`, `sgtitle`, `close`,
-      `clf`, `gcf`). **S**
+      `clf`, `gcf`). **S** *Done 2026-11-09:* eleven pages, listed under Plotting
+      and Plot types.
 
 ## Phase 4 — Running other people's MATLAB code
 
