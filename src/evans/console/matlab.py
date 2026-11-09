@@ -74,10 +74,16 @@ class Chunk:
     function: bool = False
 
 
-def translate(source: str) -> list[Chunk]:
+def translate(source: str, allow_classdef: bool = False) -> list[Chunk]:
     """Translate a MATLAB script into executable chunks, functions first."""
-    tokens = _Lexer(_command_syntax(source)).tokens()
+    tokens = _Lexer(_command_syntax(source, is_class_file(source))).tokens()
     program = _Parser(tokens).program()
+    for stmt in program:
+        if isinstance(stmt, _ClassDef) and not allow_classdef:
+            raise MatlabSyntaxError(
+                "classdef can only be defined in a file named after the "
+                "class, on the path; call it by name from a script or the "
+                "prompt", stmt.line)
     source_lines = source.splitlines()
     chunks: list[Chunk] = []
     for group in _group(program):
@@ -93,6 +99,14 @@ def translate(source: str) -> list[Chunk]:
     # needs them defined first.
     chunks.sort(key=lambda c: not c.function)
     return chunks
+
+
+_CLASS_FILE = re.compile(r"\A(?:[ \t]*(?:[%#][^\n]*)?\n)*[ \t]*classdef\b")
+
+
+def is_class_file(source: str) -> bool:
+    """Whether a file's first statement is ``classdef``."""
+    return bool(_CLASS_FILE.match(source.lstrip(chr(0xfeff))))
 
 
 def to_python(source: str) -> str:
@@ -201,7 +215,7 @@ _KEYWORDS = {
     "if", "elseif", "else", "end", "for", "while", "switch", "case",
     "otherwise", "function", "return", "break", "continue", "try", "catch",
     "global", "persistent", "endif", "endfor", "endwhile", "endfunction",
-    "endswitch", "end_try_catch", "parfor",
+    "endswitch", "end_try_catch", "parfor", "classdef",
 }
 
 _COMMAND = re.compile(
@@ -210,7 +224,10 @@ _COMMAND = re.compile(
     r"\s*(?P<end>[;,]?)\s*(?P<comment>%.*)?$")
 
 
-def _command_syntax(source: str) -> str:
+_DECLARATION_BLOCK = re.compile(r"^\s*(properties|events|enumeration)\b")
+
+
+def _command_syntax(source: str, class_file: bool = False) -> str:
     """
     Rewrite MATLAB's command form into a call, line by line.
 
@@ -220,6 +237,7 @@ def _command_syntax(source: str) -> str:
     """
     out = []
     in_block_comment = False
+    declaring = False
     for line in source.splitlines():
         stripped = line.strip()
         if stripped in ("%{", "#{"):
@@ -229,6 +247,17 @@ def _command_syntax(source: str) -> str:
             if stripped in ("%}", "#}"):
                 in_block_comment = False
             continue
+        if class_file:
+            # ``Name double = 0`` in a properties block is a declaration, not
+            # the command ``Name('double')``.
+            if declaring:
+                declaring = not re.match(r"^\s*end\b", line)
+                out.append(line)
+                continue
+            if _DECLARATION_BLOCK.match(line):
+                declaring = True
+                out.append(line)
+                continue
         out.append("".join(_command_form(seg) for seg in _segments(line)))
     return "\n".join(out)
 
@@ -289,7 +318,7 @@ _NUMBER = re.compile(
 _IDENT = re.compile(r"[A-Za-z_]\w*")
 _OPS = (".^", ".*", "./", ".\\", ".'", "==", "~=", "!=", "<=", ">=", "&&",
         "||", "+", "-", "*", "/", "\\", "^", "<", ">", "&", "|", "~", "!",
-        "=", ":", "(", ")", "[", "]", "{", "}", ".", "@", ",", ";")
+        "=", ":", "(", ")", "[", "]", "{", "}", ".", "@", ",", ";", "?")
 _VALUE_END = {"num", "str", "id"}
 
 
@@ -580,6 +609,13 @@ class _Handle(_Node):
     name: str
 
 
+@dataclass
+class _SuperRef(_Node):
+    """``name@Super`` — a superclass's version of a method or constructor."""
+    name: str
+    superclass: str
+
+
 # statements ---------------------------------------------------------------
 
 @dataclass
@@ -651,6 +687,22 @@ class _Function(_Stmt):
     params: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)
     body: list[_Stmt] = field(default_factory=list)
+    #: A class's constructor: its output is the object being built.
+    ctor: bool = False
+
+
+@dataclass
+class _ClassDef(_Stmt):
+    name: str = ""
+    attrs: dict = field(default_factory=dict)
+    supers: list[str] = field(default_factory=list)
+    #: (attributes, [(name, default or None, line)]) per ``properties`` block
+    props: list = field(default_factory=list)
+    #: (attributes, [_Function]) per ``methods`` block
+    methods: list = field(default_factory=list)
+    #: (name, argument nodes) per ``enumeration`` entry
+    enums: list = field(default_factory=list)
+    events: list[str] = field(default_factory=list)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -751,6 +803,7 @@ class _Parser:
                 "if": self._if, "for": self._for, "parfor": self._for,
                 "while": self._while, "switch": self._switch,
                 "try": self._try, "function": self._function,
+                "classdef": self._classdef,
             }.get(t.text)
             if handler:
                 return handler()
@@ -924,6 +977,9 @@ class _Parser:
                 name = self._ident("a function name")
             else:
                 name = first
+        while self._is_op(".") and self._peek().kind == "id":
+            self._advance()                    # get.Prop, set.Prop
+            name += "." + self._advance().text
         params: list[str] = []
         if self._is_op("("):
             self._advance()
@@ -950,6 +1006,151 @@ class _Parser:
         if not self._is("id"):
             self._error(f"expected {what}")
         return self._advance().text
+
+    # classdef ---------------------------------------------------------
+
+    def _dotted(self, what: str) -> str:
+        name = self._ident(what)
+        while self._is_op(".") and self._peek().kind == "id":
+            self._advance()
+            name += "." + self._advance().text
+        return name
+
+    def _attrs(self) -> dict:
+        """``(Access = private, Static)`` — attribute names and their values."""
+        attrs: dict = {}
+        self._expect_op("(")
+        while not self._is_op(")"):
+            if self._is_op(","):
+                self._advance()
+                continue
+            negate = False
+            if self._is_op("~", "!"):
+                self._advance()
+                negate = True
+            name = self._ident("an attribute name")
+            value: object = not negate
+            if self._is_op("="):
+                self._advance()
+                value = self._attr_value()
+            attrs[name] = value
+        self._advance()
+        return attrs
+
+    def _attr_value(self):
+        """An attribute's value: a word, true/false, or a list of classes."""
+        if self._is_op("{"):
+            self._advance()
+            names = []
+            while not self._is_op("}"):
+                if self._is_op(",", "?"):
+                    self._advance()
+                    continue
+                names.append(self._dotted("a class name"))
+            self._advance()
+            return names
+        if self._is_op("?"):
+            self._advance()
+            return [self._dotted("a class name")]
+        if self._is_op("~", "!"):
+            self._advance()
+            return not self._attr_value()
+        if self._is("num"):
+            return self._advance().text != "0"
+        word = self._dotted("an attribute value")
+        return {"true": True, "false": False}.get(word, word)
+
+    def _classdef(self) -> _ClassDef:
+        start = self._advance().line
+        attrs = self._attrs() if self._is_op("(") else {}
+        node = _ClassDef(start, name=self._ident("a class name"), attrs=attrs)
+        if self._is_op("<"):
+            self._advance()
+            node.supers.append(self._dotted("a superclass name"))
+            while self._is_op("&"):
+                self._advance()
+                node.supers.append(self._dotted("a superclass name"))
+        while True:
+            self._skip_seps()
+            t = self.tok
+            if t.kind == "kw" and t.text in _BLOCK_END:
+                break
+            if t.kind == "id" and t.text in ("properties", "methods",
+                                             "events", "enumeration"):
+                self._advance()
+                block_attrs = self._attrs() if self._is_op("(") else {}
+                getattr(self, "_class_" + t.text)(node, block_attrs)
+                continue
+            self._error("expected 'properties', 'methods', 'events', "
+                        "'enumeration' or 'end' in a class definition")
+        node.end_line = self._close_block("classdef", start)
+        return node
+
+    def _class_properties(self, node: _ClassDef, attrs: dict) -> None:
+        decls = []
+        while True:
+            self._skip_seps()
+            if self._is("kw") and self.tok.text in _BLOCK_END:
+                break
+            if not self._is("id"):
+                self._error("expected a property name")
+            line = self.tok.line
+            name = self._advance().text
+            depth = 0
+            # Size, class and validators come before any default: skip them.
+            while not (depth == 0 and (self._is_op("=") or self._is("sep")
+                                       or self._is("eof"))):
+                if self._is_op("(", "[", "{"):
+                    depth += 1
+                elif self._is_op(")", "]", "}"):
+                    depth -= 1
+                self._advance()
+            default = None
+            if self._is_op("="):
+                self._advance()
+                default = self._expr()
+            decls.append((name, default, line))
+            if not self._is("eof"):
+                self._end_statement()
+        self._close_block("properties", node.line)
+        node.props.append((attrs, decls))
+
+    def _class_methods(self, node: _ClassDef, attrs: dict) -> None:
+        funcs = []
+        while True:
+            self._skip_seps()
+            if self._is("kw", "function"):
+                funcs.append(self._function())
+            elif self._is("kw") and self.tok.text in _BLOCK_END:
+                break
+            elif self._is("eof"):
+                self._error("'methods' is never closed with 'end'")
+            else:                    # a signature with no body (abstract)
+                while not self._is("sep") and not self._is("eof"):
+                    self._advance()
+        self._close_block("methods", node.line)
+        node.methods.append((attrs, funcs))
+
+    def _class_events(self, node: _ClassDef, attrs: dict) -> None:
+        while True:
+            self._skip_seps()
+            if self._is("kw") and self.tok.text in _BLOCK_END:
+                break
+            node.events.append(self._ident("an event name"))
+        self._close_block("events", node.line)
+
+    def _class_enumeration(self, node: _ClassDef, attrs: dict) -> None:
+        while True:
+            self._skip_seps()
+            if self._is("kw") and self.tok.text in _BLOCK_END:
+                break
+            name = self._ident("an enumeration member name")
+            args: list[_Node] = []
+            if self._is_op("("):
+                self._advance()
+                args = self._args(")")
+            node.enums.append((name, args))
+        self._close_block("enumeration", node.line)
 
     # expressions — lowest precedence first ----------------------------
 
@@ -1084,6 +1285,10 @@ class _Parser:
             return _Str(t.line, t.text)
         if t.kind == "id":
             self._advance()
+            if self._is_op("@") and not self.tok.space_before \
+                    and self._peek().kind == "id":
+                self._advance()
+                return _SuperRef(t.line, t.text, self._dotted("a class name"))
             return _Name(t.line, t.text)
         if t.kind == "kw" and t.text == "end":
             self._advance()
@@ -1177,6 +1382,18 @@ def _names_in(node) -> set[str]:
     return found
 
 
+def _walk(node):
+    """Every syntax node under a node or list of nodes."""
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if isinstance(n, _Node):
+            yield n
+            stack.extend(vars(n).values())
+        elif isinstance(n, (list, tuple)):
+            stack.extend(n)
+
+
 def _py_name(name: str) -> str:
     """A MATLAB name that is a Python keyword or builtin gets a suffix."""
     return f"{name}_" if name in _PY_RESERVED or name == _RT else name
@@ -1244,6 +1461,8 @@ class _Emitter:
         self.lines: list[tuple[int, str, int]] = []   # indent, text, mline
         self._switch_count = 0
         self._outputs: list[str] | None = None        # inside a function
+        #: The class whose method is being translated, for ``name@Super``.
+        self.klass: str | None = None
         #: Names declared ``global`` or ``persistent``: read from, and
         #: written back to, the store that outlives this call.
         self.linked: dict[str, str] = {}
@@ -1323,6 +1542,8 @@ class _Emitter:
                 self._put(i, s.word, s.line)
         elif isinstance(s, _Function):
             self._function(s, i)
+        elif isinstance(s, _ClassDef):
+            self._classdef(s, i)
         else:                                            # pragma: no cover
             raise MatlabSyntaxError("unsupported statement", s.line)
 
@@ -1338,11 +1559,14 @@ class _Emitter:
         inner = _Emitter(_assigned_names(f.body) | set(f.params)
                          | set(f.outputs) | {f.name})
         inner._outputs = f.outputs
+        inner.klass = self.klass
         params = [p for p in f.params if p != "varargin"]
         sig = [f"{_py_name(p)}=None" for p in params]
         if "varargin" in f.params:
             sig.append("*varargin")
         sig.append("nargout=1")
+        if f.ctor:
+            sig.append("_self=None")
         if _declares(f.body, "persistent"):
             # A default dict lives as long as the function: that is
             # exactly a persistent variable's lifetime.
@@ -1366,7 +1590,8 @@ class _Emitter:
                       + ")", f.line)
         for out in f.outputs:
             if out not in f.params:
-                self._put(body_indent, f"{_py_name(out)} = None", f.line)
+                start = "_self" if f.ctor and out == f.outputs[0] else "None"
+                self._put(body_indent, f"{_py_name(out)} = {start}", f.line)
         for stmt in f.body:
             inner.statement(stmt, body_indent)
         if not f.body:
@@ -1374,6 +1599,43 @@ class _Emitter:
         inner._put(body_indent, inner._return_text(), f.end_line or f.line)
         self.lines.extend(inner.lines)
         self.vars.add(f.name)
+
+    def _classdef(self, c: _ClassDef, i: int) -> None:
+        """The class's methods as functions, then one call that builds it."""
+        methods = []
+        for attrs, funcs in c.methods:
+            for f in funcs:
+                kind = ("ctor" if f.name == c.name
+                        else f.name.split(".")[0] if f.name[:4] in
+                        ("get.", "set.") else "method")
+                py = f"{c.name}__{f.name.replace('.', '_')}"
+                clone = _Function(f.line, end_line=f.end_line, name=py,
+                                  params=f.params, outputs=f.outputs,
+                                  body=f.body, ctor=kind == "ctor")
+                self.klass = c.name
+                self._function(clone, i)
+                explicit = sorted({n.superclass for n in _walk(f.body)
+                                   if isinstance(n, _SuperRef)})
+                methods.append(f"({f.name!r}, {py}, {kind!r}, {attrs!r}, "
+                               f"{explicit!r})")
+        props = []
+        for attrs, decls in c.props:
+            for name, default, _line in decls:
+                fn = "None"
+                if default is not None:
+                    inner = _Emitter(set())
+                    inner.klass = c.name
+                    fn = f"lambda: {inner.expr(default)}"
+                props.append(f"({name!r}, {fn}, {attrs!r})")
+        enums = []
+        for name, args in c.enums:
+            inner = _Emitter(set())
+            inner.klass = c.name
+            enums.append(f"({name!r}, lambda: ({inner._arglist(args)}))")
+        self._put(i, f"__ml_class__ = {_RT}.make_class({c.name!r}, "
+                     f"{c.supers!r}, {c.attrs!r}, [{', '.join(props)}], "
+                     f"[{', '.join(methods)}], [{', '.join(enums)}], "
+                     f"{c.events!r})", c.line)
 
     def _assign(self, s: _Assign, i: int) -> None:
         if s.multi:
@@ -1554,6 +1816,15 @@ class _Emitter:
             if self._is_map_class(target):
                 return (f"{_RT}.containers_map(globals(), locals(), "
                         f"({args}))")
+            if isinstance(target, _SuperRef):
+                held = (_py_name(target.name) if target.name in self.vars
+                        else "None")
+                return (f"{_RT}.super_call({self.klass!r}, "
+                        f"{target.superclass!r}, {target.name!r}, ({args}), "
+                        f"nargout={nargout}, obj={held})")
+            if isinstance(target, _Field) and isinstance(target.name, str):
+                return (f"{_RT}.call({self._field(target, False)}, "
+                        f"({args}), nargout={nargout})")
             if isinstance(target, _Name):
                 # A plot names its curves after the variables passed, the way
                 # MATLAB's legend does, and a table its columns after them —
@@ -1574,9 +1845,7 @@ class _Emitter:
             if self._is_map_class(node):
                 return (f"{_RT}.containers_map(globals(), locals(), (), "
                         f"True)")
-            key = (repr(node.name) if isinstance(node.name, str)
-                   else e(node.name))
-            return f"{_RT}.field({e(node.target)}, {key})"
+            return self._field(node, True)
         if isinstance(node, _Matrix):
             rows = ", ".join("[" + ", ".join(self._spread(x, end_dim)
                                              for x in row) + "]"
@@ -1585,6 +1854,7 @@ class _Emitter:
             return f"{_RT}.{fn}([{rows}])"
         if isinstance(node, _Lambda):
             inner = _Emitter(self.vars | set(node.params))
+            inner.klass = self.klass
             params = ", ".join(_py_name(p) for p in node.params)
             if node.params and node.params[-1] == "varargin":
                 fixed = ", ".join(_py_name(p) for p in node.params[:-1])
@@ -1607,6 +1877,20 @@ class _Emitter:
         if isinstance(node, _Handle):
             return self._callee(node.name)
         raise MatlabSyntaxError("unsupported expression", node.line)
+
+    def _field(self, node: _Field, call: bool) -> str:
+        """``a.b``. ``call`` is False when it is about to be called with
+        arguments, so that ``obj.method(x)`` is not run without ``x``."""
+        key = (repr(node.name) if isinstance(node.name, str)
+               else self.expr(node.name))
+        target = node.target
+        if isinstance(target, _Name) and target.name not in self.vars \
+                and isinstance(node.name, str):
+            # ``Counter.Max``, ``Shape.create(3)``: a class may be named.
+            base = f"{_RT}.class_ref({target.name!r}, globals(), locals())"
+        else:
+            base = self.expr(target)
+        return f"{_RT}.field({base}, {key}{'' if call else ', False'})"
 
     def _is_map_class(self, node) -> bool:
         """``containers.Map``, the class, unless ``containers`` is a variable."""

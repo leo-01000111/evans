@@ -393,7 +393,13 @@ the cheap items are done; the large types are not.
       from `char`. **M**
 - [ ] N-D arrays (`zeros(2,2,2)`, `cat(3,…)`, `permute`, `squeeze`). The 2-D
       assumption runs through the runtime, so this is a large change. **L**
-- [ ] `classdef` (properties, methods, constructors, handle classes). **L**
+- [x] `classdef` (properties, methods, constructors, handle classes). **L** *Done
+      2026-11-09, `console/classes.py` and the parser in `matlab.py`. Value and
+      handle classes, attributes (`Access`, `Constant`, `Dependent`, `Static`),
+      `get.`/`set.` methods, inheritance with `obj@Super(...)` and
+      `method@Super(obj)`, operator overloading, `disp`/`display`, events and
+      enumerations. Not done: arrays of objects, `subsref`/`subsasgn`,
+      property validation, `dynamicprops`, `@Class` and `+pkg` folders.*
 - [ ] `sparse`, `speye`, `nnz` and the iterative solvers, on `scipy.sparse`. **M**
 - [ ] `.mat` v7.3 (HDF5) through h5py, a new dependency. **M**
 - [ ] Save live scripts back to `.mlx`, not only to plain live `.m`. **M**
