@@ -17,8 +17,9 @@ from PySide6.QtWidgets import QApplication
 
 from evans.examples import EXAMPLES, examples
 from evans.sim import SimModel, simulate
-from evans.sim.edit import group_into_subsystem
+from evans.sim.edit import group_into_subsystem, ungroup_subsystem
 from evans.sim.export import export_signals, mat_name
+from evans.sim.model import ModelError, PortRef
 from evans.ui.sim.canvas import SimCanvas
 from evans.ui.sim.items import AnnotationItem, BlockItem, WireItem, route
 from evans.ui.sim.scope import ScopeWidget
@@ -127,6 +128,88 @@ def test_create_subsystem_on_the_canvas_is_one_undo_step(canvas):
     canvas.undo_stack.undo()
     assert {"K", "G"} <= set(canvas.model.blocks)
     assert "plant" not in canvas.model.blocks
+
+
+# ──────────────────────────────────────────────────────────────
+#  Ungroup / expand subsystem
+# ──────────────────────────────────────────────────────────────
+
+def test_group_then_ungroup_gives_the_same_simulation():
+    before = simulate(loop(), t_end=5.0, n_points=50).trace("G.out")
+    m = loop()
+    sub = group_into_subsystem(m, ["K", "G"], "plant")
+    ids = ungroup_subsystem(m, sub)
+    assert sorted(ids) == ["G", "K"] and sub not in m.blocks
+    assert {str(c) for c in m.connections} == {
+        str(c) for c in loop().connections}
+    assert (m.placement("K").x, m.placement("G").x) == (400, 600)
+    after = simulate(m, t_end=5.0, n_points=50).trace("G.out")
+    assert np.allclose(after, before)
+
+
+def test_ungroup_renames_clashes_and_leaves_nested_subsystems_alone():
+    m = loop()
+    inner = group_into_subsystem(m, ["K"], "k")
+    outer = group_into_subsystem(m, [inner, "G"], "outer")
+    ids = ungroup_subsystem(m, outer)
+    assert sorted(ids) == ["G", "k"] and m.block("k").type_name == "Subsystem"
+    assert m.block("k").inner_model().blocks.keys() >= {"K"}
+    after = simulate(m, t_end=5.0, n_points=50).trace("G.out")
+    assert after[-1] == pytest.approx(0.8 * (1 - math.exp(-25)), rel=1e-5)
+
+
+def test_ungroup_suffixes_a_clashing_name():
+    m = loop()
+    sub = group_into_subsystem(m, ["K", "G"], "plant")
+    m.add("Gain", "K", gain=1.0)
+    ids = ungroup_subsystem(m, sub)
+    assert sorted(ids) == ["G", "K2"] and m.block("K").params["gain"] == 1.0
+
+
+def test_ungroup_joins_a_pass_through_and_keeps_a_signal_name():
+    m = SimModel("p")
+    m.add("Step", "r", step_time=0.0)
+    m.add("Gain", "g", gain=2.0)
+    m.add("Scope", "sc0")
+    m.connect("r", "g")
+    m.connect("g", "sc0")
+    sub = group_into_subsystem(m, ["g"], "s")
+    inner = m.block(sub).inner_model()
+    inner.add("Outport", "Out2", port_name="out2", order=2)
+    inner.connect("In1", "Out2")                    # in1 straight to out2
+    m.block(sub).set_inner(inner)
+    m.add("Scope", "sc")
+    m.connect(f"{sub}.out2", "sc")
+    m.signal_names[f"{sub}.out1"] = "y"
+    ungroup_subsystem(m, sub)
+    assert str(m.connection_into(PortRef("sc", "in1")).src) == "r.out"
+    assert m.signal_names == {"g.out": "y"}
+
+
+def test_ungroup_refuses_a_conditional_subsystem():
+    m = SimModel("c")
+    m.add("Step", "r", step_time=0.0)
+    m.add("Gain", "g", gain=2.0)
+    m.connect("r", "g")
+    sub = group_into_subsystem(m, ["g"], "s")
+    inner = m.block(sub).inner_model()
+    inner.add("Enable", "En")
+    m.block(sub).set_inner(inner)
+    before = m.to_dict()
+    with pytest.raises(ModelError, match="conditional"):
+        ungroup_subsystem(m, sub)
+    assert m.to_dict() == before
+
+
+def test_expand_subsystem_on_the_canvas_is_one_undo_step(canvas):
+    select(canvas, "K", "G")
+    sub = canvas.create_subsystem("plant")
+    canvas.undo_stack.clear()
+    assert canvas.ungroup_subsystem(sub)
+    assert {"K", "G"} <= set(canvas.model.blocks)
+    assert sub not in canvas.model.blocks
+    canvas.undo_stack.undo()
+    assert sub in canvas.model.blocks and "K" not in canvas.model.blocks
 
 
 # ──────────────────────────────────────────────────────────────

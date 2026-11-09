@@ -284,6 +284,28 @@ class SimCanvas(QGraphicsView):
             self.status.emit(f"Grouped {len(ids)} block(s) into {made[0]}")
         return made[0] if made else None
 
+    def ungroup_subsystem(self, block_id: str | None = None) -> bool:
+        """Expand a subsystem back into its parent; False if it is refused."""
+        from ...sim.edit import check_ungroup, ungroup_subsystem
+        from ...sim.model import ModelError
+
+        if block_id is None:
+            subs = [b.block_id for b in self.selected_blocks()
+                    if b.type_name == "Subsystem"]
+            if len(subs) != 1:
+                self.status.emit("Select one subsystem to expand")
+                return False
+            block_id = subs[0]
+        try:
+            check_ungroup(self.model, block_id)
+        except ModelError as exc:
+            self.status.emit(str(exc))
+            return False
+        self._edit(f"expand subsystem {block_id}",
+                   lambda model: ungroup_subsystem(model, block_id))
+        self.status.emit(f"Expanded {block_id}")
+        return True
+
     def name_signal(self, conn, name: str | None = None) -> None:
         """Label the signal a wire carries; an empty name removes the label."""
         key = str(conn.src)
@@ -764,6 +786,8 @@ class SimCanvas(QGraphicsView):
             if item.block.type_name == "Subsystem":
                 menu.addAction("Open subsystem",
                                lambda: self.descend(item.block_id))
+                menu.addAction("Expand subsystem",
+                               lambda: self.ungroup_subsystem(item.block_id))
             else:
                 menu.addAction("Parameters…",
                                lambda: self._edit_params(item.block_id))
