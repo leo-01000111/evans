@@ -269,7 +269,7 @@ The engine was ahead of the editor and of its links to the console. Tests:
         a block inside it keeps the wire names; wire names already pass through
         flattening since 2026-11-09). **S**
 
-- [ ] **Snap blocks by port alignment.** Dragging a block snaps to other blocks' edges
+- [x] **Snap blocks by port alignment.** Dragging a block snaps to other blocks' edges
       and centres today (`guides_changed` in `ui/sim/items.py`, drawn by the canvas's
       guides). Add snapping of a port to the port it will be wired to: while
       dragging, line up a block's output or input with the matching input or
@@ -277,6 +277,10 @@ The engine was ahead of the editor and of its links to the console. Tests:
       them is one straight run, and show a guide through the two ports. Handle
       rotated and flipped blocks and several ports on one block, prefer ports
       that are already wired, and let a modifier key turn it off. **S–M**
+      *Done:* `port_snap` in `ui/sim/items.py` is a pure function over
+      `PortCandidate`s (wired pair, then ports of connected blocks, then any
+      opposite port); it overrides edge/centre snapping per axis and draws a guide
+      through the two ports. Rotated blocks align in x, Alt turns it off.
 - [ ] **Better block shapes.** Every block is a rectangle today (`BlockItem` in
       `ui/sim/items.py`). Some should look like what they are, as in Simulink's
       library: a triangle for Gain, a circle or rounded Sum with its signs at the

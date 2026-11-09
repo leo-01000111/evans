@@ -21,7 +21,18 @@ from evans.sim.linearize import LinearizationError, plant_seen_by
 from evans.sim.model import SimModel
 from evans.sim.solver import simulate
 from evans.ui.sim.canvas import SimCanvas
-from evans.ui.sim.items import ALIGN_THRESHOLD, BLOCK_W, align_snap
+from evans.ui.sim.items import (
+    ALIGN_THRESHOLD,
+    BLOCK_W,
+    TIER_CONNECTED,
+    TIER_OTHER,
+    TIER_WIRED,
+    PortCandidate,
+    SnapResult,
+    align_snap,
+    merge_snaps,
+    port_snap,
+)
 from evans.ui.sim.palette import STRIP_WIDTH
 from evans.ui.sim.scope import ScopeWidget
 from evans.ui.sim.sim_tab import SimTab, course_loop
@@ -85,6 +96,143 @@ def test_align_snap_guides_span_both_blocks():
 def test_align_snap_with_nothing_to_align_to_is_a_no_op():
     r = align_snap(12.0, 34.0, HALF_W, 30.0, [])
     assert (r.x, r.y, r.guides) == (12.0, 34.0, [])
+
+
+# ──────────────────────────────────────────────────────────────
+#  Port alignment: the arithmetic
+# ──────────────────────────────────────────────────────────────
+
+def test_port_snap_lines_a_port_up_with_its_target():
+    # Port sits 10 below the centre; the target is at y = 100.
+    c = PortCandidate(-55.0, 10.0, 0.0, 100.0)
+    r = port_snap(200.0, 95.0, [c])
+    assert r.aligned_y and r.y == pytest.approx(90.0)
+    assert not r.aligned_x and r.x == 200.0
+    (g,) = r.guides
+    assert (g.orientation, g.coord) == ("h", 100.0)
+    assert g.lo <= 0.0 and g.hi >= 200.0 - 55.0
+    far = port_snap(200.0, 100.0 + ALIGN_THRESHOLD + 2, [c])
+    assert not far.guides and not far.aligned_y
+
+
+def test_port_snap_prefers_the_wired_port_over_a_nearer_one():
+    near = PortCandidate(0.0, 0.0, 0.0, 100.0, tier=TIER_OTHER)
+    wired = PortCandidate(0.0, 0.0, 0.0, 106.0, tier=TIER_WIRED)
+    assert port_snap(50.0, 101.0, [near, wired]).y == 106.0
+    assert port_snap(50.0, 101.0, [near]).y == 100.0
+
+
+def test_port_snap_ranks_connected_blocks_between_wired_and_rest():
+    other = PortCandidate(0.0, 0.0, 0.0, 100.0, tier=TIER_OTHER)
+    conn = PortCandidate(0.0, 0.0, 0.0, 105.0, tier=TIER_CONNECTED)
+    assert port_snap(0.0, 102.0, [other, conn]).y == 105.0
+    near, far = (PortCandidate(0.0, 0.0, 0.0, 100.0),
+                 PortCandidate(0.0, 0.0, 0.0, 107.0))
+    assert port_snap(0.0, 105.0, [near, far]).y == 107.0   # same tier: nearest
+
+
+def test_port_snap_aligns_x_for_vertical_ports():
+    # A block turned a quarter: its ports face up and down, so x must match.
+    c = PortCandidate(0.0, -35.0, 300.0, 0.0, horizontal=False)
+    r = port_snap(296.0, 80.0, [c])
+    assert r.aligned_x and r.x == 300.0 and not r.aligned_y
+    assert [(g.orientation, g.coord) for g in r.guides] == [("v", 300.0)]
+
+
+def test_port_snap_handles_both_axes_and_several_ports():
+    cs = [PortCandidate(-55.0, -10.0, 0.0, 0.0),
+          PortCandidate(-55.0, 10.0, 0.0, 20.0),
+          PortCandidate(0.0, -35.0, 200.0, 0.0, horizontal=False)]
+    r = port_snap(203.0, 11.0, cs)
+    assert r.aligned_x and r.aligned_y
+    assert (r.x, r.y) == (200.0, 10.0)
+    assert len(r.guides) == 2
+
+
+def test_merge_snaps_lets_ports_override_edges_per_axis():
+    edge = align_snap(200.0, 6.0, HALF_W, 30.0, [(0.0, 0.0, HALF_W, 30.0)])
+    port = SnapResult(200.0, 9.0, aligned_y=True)
+    m = merge_snaps(edge, port)
+    assert m.y == 9.0 and m.aligned_y
+    assert not m.guides                 # the edge's "h" guide was replaced
+
+
+# ──────────────────────────────────────────────────────────────
+#  Port alignment: a real drag
+# ──────────────────────────────────────────────────────────────
+
+def _port_y(view, block_id, name, is_input):
+    return view._blocks[block_id].ports[(name, is_input)].scene_pos().y()
+
+
+def test_dragging_snaps_a_port_to_its_wired_port(app):
+    view = SimCanvas(SimModel("ports"))
+    view.resize(900, 600)
+    view.show()
+    view.add_block("Step", QPointF(-150, 0))
+    view.add_block("Sum", QPointF(150, 100))
+    for _ in range(10):
+        app.processEvents()
+    sum_item = view._blocks["Sum1"]
+    step_out = next(p for (n, i), p in view._blocks["Step1"].ports.items()
+                    if not i)
+    inp = next(p for (n, i), p in sum_item.ports.items() if i)
+    # No wire yet: a plain drag still lines up the nearest compatible ports.
+    end, start = _drag(view, "Sum1", -(100 + inp.pos().y()) + 4, release=False)
+    assert view._guides
+    assert inp.scene_pos().y() == pytest.approx(step_out.scene_pos().y())
+    _finish(sum_item, end, start)
+    view.hide()
+    view.deleteLater()
+
+
+def test_a_rotated_block_aligns_its_ports_in_x(app):
+    view = SimCanvas(SimModel("ports"))
+    view.resize(900, 600)
+    view.show()
+    view.add_block("Step", QPointF(-150, 0))
+    view.add_block("Gain", QPointF(150, 100))
+    for _ in range(10):
+        app.processEvents()
+    gain = view._blocks["Gain1"]
+    gain.rotation = 90
+    gain.refresh()
+    out = gain.ports[next(k for k in gain.ports if not k[1])]
+    assert abs(out.direction.y()) > 0.5          # now faces up or down
+    cands = gain._port_candidates([view._blocks["Step1"]])
+    assert any(not c.horizontal for c in cands)
+    assert any(c.horizontal is False and c.tier == TIER_OTHER for c in cands)
+    view.hide()
+    view.deleteLater()
+
+
+def test_wired_ports_beat_nearer_unwired_ones_in_a_drag(app):
+    view = SimCanvas(SimModel("ports"))
+    view.show()
+    view.add_block("Step", QPointF(-150, 0))
+    view.add_block("Gain", QPointF(150, 100))
+    view.model.connect("Step1", "Gain1")
+    view.rebuild()
+    gain = view._blocks["Gain1"]
+    cands = gain._port_candidates([view._blocks["Step1"]])
+    assert cands and all(c.tier == TIER_WIRED for c in cands)
+    view.hide()
+    view.deleteLater()
+
+
+def test_alt_turns_port_alignment_off(app):
+    view = SimCanvas(SimModel("ports"))
+    view.resize(900, 600)
+    view.show()
+    view.add_block("Step", QPointF(-150, 0))
+    view.add_block("Sum", QPointF(150, 100))
+    for _ in range(10):
+        app.processEvents()
+    _drag(view, "Sum1", -94, modifiers=Qt.AltModifier)
+    assert view._guides == []
+    assert view.model.placement("Sum1").y == 10.0
+    view.hide()
+    view.deleteLater()
 
 
 # ──────────────────────────────────────────────────────────────
