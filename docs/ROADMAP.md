@@ -109,8 +109,7 @@ command has had a help page since 2026-11-03 (`interp`, which only refuses, asid
 - [x] `var`, `mode`, `cov`, `corrcoef`, `prctile`, `quantile`, `skewness`,
       `kurtosis`, `movmean`, `movmedian`, `smoothdata`, `detrend`.
 - [x] `normpdf`, `normcdf`, `norminv`, `ttest`, `regress`. `fitlm` with its summary
-      table is **M**. *`fitlm` left out:* its summary table waits for
-      Phase 4's `table`.
+      table is **M**. *`fitlm` done with Phase 4's `table`.*
 - [x] `svd`, `qr`, `lu`, `chol`, `pinv`, `null`, `orth`, `expm`, `logm`, `sqrtm`,
       `cross`, `dot`, `cond`, `trace`, `triu`, `tril`, `circshift`, `sub2ind`,
       `ind2sub`. *`trace` existed already.* `rng` seeds the generator `rand`
@@ -387,8 +386,23 @@ the cheap items are done; the large types are not.
       `copy` and `Map` arrays are not done. The translator turns
       `containers.Map(...)` into a runtime call that yields to a user variable
       called `containers`.*
-- [ ] A real `table`: constructor, `T.col`, row filtering, `height`, `width`,
+- [x] A real `table`: constructor, `T.col`, row filtering, `height`, `width`,
       `sortrows`, `join`; then `datetime`, `duration`, `timetable`. **L**
+      *Done 2026-11-09.* `table` with `'VariableNames'`, `'RowNames'`,
+      `'Size'`; `T{rows, cols}`; assignment (`T.col = …`, `T.x(i) = …`,
+      `T(i, :) = {…}`, growing past the end, `T{…} = …`, `T.Properties.*`);
+      `T(rows, :) = []`; `addvars`, `removevars`, `renamevars`, `movevars`;
+      masks; `head`, `tail`, `summary`, `sortrows` (matrices, cell text and
+      tables), `unique`, `[T1; T2]`, `[T1, T2]`, `join`, `innerjoin`,
+      `outerjoin`, `groupsummary`, `varfun`, `rowfun`, `findgroups`,
+      `splitapply`, `table2cell`, `cell2table`, `table2struct`. `datetime`
+      (parts, text, formats, `ConvertFrom`), `duration` and the unit
+      functions, `calmonths` and friends, `between`, `dateshift`, `weekday`,
+      `timetable` indexed by number, mask, exact time or `timerange`, and
+      `fitlm` with its coefficient table and summary (linear terms only) with
+      `predict`. *Left out:* time zones, categorical, `stack`/`unstack`,
+      `retime`/`synchronize`, matrix-valued variables, `fitlm` interactions,
+      a datetime's two-line display, `plot` of a datetime axis.
 - [ ] String arrays as their own type (`numel("abc") == 1`, `["a" "b"]`), distinct
       from `char`. **M**
 - [ ] N-D arrays (`zeros(2,2,2)`, `cat(3,…)`, `permute`, `squeeze`). The 2-D

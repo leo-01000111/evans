@@ -8,7 +8,7 @@ Typing one of these names gives the usual error with a sentence added saying so.
 
 ## Arrays and indexing
 
-`accumarray`, `bsxfun`, `cat`, `colon`, `cummax`, `cummin`, `histc`, `idivide`, `mat2cell`, `mink`, `maxk`, `ndgrid`, `nnz`, `nonzeros`, `permute`, `rot90`, `squeeze`, `sortrows`, `issorted`, `bounds`, `normalize`, `rescale`, `histcounts2`, `histogram2`, `vander`, `hilb`, `invhilb`, `toeplitz`, `hankel`, `pascal`, `rosser`, `wilkinson`, `gallery`, `hadamard`, `compan`, `blkdiag`, `shiftdim`, `swapbytes`
+`accumarray`, `bsxfun`, `cat`, `colon`, `cummax`, `cummin`, `histc`, `idivide`, `mat2cell`, `mink`, `maxk`, `ndgrid`, `nnz`, `nonzeros`, `permute`, `rot90`, `squeeze`, `issorted`, `bounds`, `normalize`, `rescale`, `histcounts2`, `histogram2`, `vander`, `hilb`, `invhilb`, `toeplitz`, `hankel`, `pascal`, `rosser`, `wilkinson`, `gallery`, `hadamard`, `compan`, `blkdiag`, `shiftdim`, `swapbytes`
 
 ## Sets
 
@@ -40,7 +40,7 @@ Typing one of these names gives the usual error with a sentence added saying so.
 
 ## Tables, dates and categories
 
-`datetime`, `duration`, `seconds`, `minutes`, `hours`, `days`, `years`, `calendar`, `weekday`, `eomday`, `addtodate`, `timetable`, `categorical`, `cell2table`, `table2struct`, `table2cell`, `innerjoin`, `outerjoin`, `stack`, `unstack`, `groupsummary`, `grouptransform`, `rowfun`, `varfun`, `splitapply`, `findgroups`, `retime`, `synchronize`, `isbetween`, `timeit`, `cputime`, `etime`, `weeknum`, `milliseconds`, `isdatetime`, `isduration`, `iscategorical`, `istimetable`, `summary`, `head`, `tail`, `removevars`, `addvars`, `movevars`, `renamevars`, `splitvars`, `mergevars`, `rmmissing`, `fillmissing`, `standardizeMissing`, `ismissing`, `isoutlier`, `rmoutliers`, `filloutliers`
+`calendar`, `eomday`, `categorical`, `stack`, `unstack`, `grouptransform`, `retime`, `synchronize`, `timeit`, `cputime`, `etime`, `weeknum`, `iscategorical`, `splitvars`, `mergevars`, `rmmissing`, `fillmissing`, `standardizeMissing`, `ismissing`, `isoutlier`, `rmoutliers`, `filloutliers`
 
 ## Language and functions
 
@@ -60,7 +60,7 @@ Typing one of these names gives the usual error with a sentence added saying so.
 
 ## Statistics and distributions
 
-`mad`, `range`, `iqr`, `zscore`, `histfit`, `normfit`, `normrnd`, `unifrnd`, `unifpdf`, `unifcdf`, `exprnd`, `exppdf`, `expcdf`, `poissrnd`, `binornd`, `binopdf`, `binocdf`, `chi2pdf`, `chi2cdf`, `tpdf`, `tcdf`, `fpdf`, `fcdf`, `gampdf`, `gamcdf`, `betapdf`, `betacdf`, `wblpdf`, `wblcdf`, `lognpdf`, `logncdf`, `ksdensity`, `ecdf`, `anova1`, `anovan`, `ttest2`, `kstest`, `lillietest`, `chi2gof`, `ranksum`, `signrank`, `fitlm`, `fitglm`, `stepwiselm`, `fitnlm`, `fitctree`, `fitcsvm`, `fitcknn`, `predict`, `crossval`, `pca`, `factoran`, `mvnrnd`, `mvnpdf`, `mvncdf`, `movsum`, `movstd`, `movvar`, `movmin`, `movmax`, `movmad`, `movprod`, `movfun`
+`mad`, `range`, `iqr`, `zscore`, `histfit`, `normfit`, `normrnd`, `unifrnd`, `unifpdf`, `unifcdf`, `exprnd`, `exppdf`, `expcdf`, `poissrnd`, `binornd`, `binopdf`, `binocdf`, `chi2pdf`, `chi2cdf`, `tpdf`, `tcdf`, `fpdf`, `fcdf`, `gampdf`, `gamcdf`, `betapdf`, `betacdf`, `wblpdf`, `wblcdf`, `lognpdf`, `logncdf`, `ksdensity`, `ecdf`, `anova1`, `anovan`, `ttest2`, `kstest`, `lillietest`, `chi2gof`, `ranksum`, `signrank`, `fitglm`, `stepwiselm`, `fitnlm`, `fitctree`, `fitcsvm`, `fitcknn`, `crossval`, `pca`, `factoran`, `mvnrnd`, `mvnpdf`, `mvncdf`, `movsum`, `movstd`, `movvar`, `movmin`, `movmax`, `movmad`, `movprod`, `movfun`
 
 ## Signal processing
 

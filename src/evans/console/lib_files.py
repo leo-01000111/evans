@@ -38,7 +38,6 @@ import numpy as np
 
 from . import matlab_runtime as _mr  # noqa: F401
 from .matlab_runtime import (
-    TABLE_WIDTH,
     Cell,
     MatlabError,
     Struct,
@@ -52,8 +51,8 @@ from .matlab_runtime import (
     _nargout,
     _normalise,
     _scalar,
-    _shape,
 )
+from .tables import ColumnTable  # noqa: E402
 
 # ──────────────────────────────────────────────────────────────
 #  Small helpers
@@ -454,224 +453,6 @@ def _limit(size_arg) -> float:
         return s[0] * s[1]
     raise MatlabError("sizeA must be a scalar or a two-element vector "
                       "[m n].")
-
-
-# ──────────────────────────────────────────────────────────────
-#  Tables
-# ──────────────────────────────────────────────────────────────
-
-class _Rows:
-    """``Table.rows`` for a column table: rows as mappings, built lazily."""
-
-    def __init__(self, table: ColumnTable) -> None:
-        self.table = table
-
-    def __len__(self) -> int:
-        return self.table.height
-
-    def __getitem__(self, i):
-        if isinstance(i, slice):
-            return [self[k] for k in range(*i.indices(len(self)))]
-        return {n: (c[i].item() if isinstance(c, np.ndarray) else c[i])
-                for n, c in zip(self.table.columns, self.table._data)}
-
-    def __iter__(self):
-        return (self[i] for i in range(len(self)))
-
-
-def _positions(arg, n: int) -> list[int]:
-    """A MATLAB subscript as 0-based positions; a call's ``:`` is None."""
-    arg = _mr.COLON if arg is None else arg
-    return np.atleast_1d(_mr.Runtime._indices(None, arg, n)).tolist()
-
-
-class ColumnTable(Table):
-    """
-    A MATLAB table: named variables of equal height, one column each.
-    A numeric variable is a 1-D numpy array (double or logical); a text
-    variable is a list of char vectors.
-    """
-
-    def __init__(self, names, data, descriptions=None, height=None) -> None:
-        names = [str(n) for n in names]
-        if "Properties" in names:
-            raise MatlabError("'Properties' is a reserved name and cannot be "
-                              "used as a table variable name.")
-        if len(set(names)) != len(names):
-            dup = next(n for n in names if names.count(n) > 1)
-            raise MatlabError(f"Duplicate table variable name: '{dup}'.")
-        heights = {len(c) for c in data}
-        if len(heights) > 1:
-            raise MatlabError("All table variables must have the same number "
-                              "of rows.")
-        self.columns = names
-        self._data = list(data)
-        self._height = heights.pop() if heights else (height or 0)
-        self._descriptions = list(descriptions) if descriptions else []
-
-    @property
-    def rows(self):
-        return _Rows(self)
-
-    @property
-    def height(self) -> int:
-        return self._height
-
-    # T.Name and T.Properties
-    def __getattr__(self, name: str):
-        if name.startswith("_"):
-            raise AttributeError(name)
-        if name == "Properties":
-            return Struct(
-                Description="",
-                VariableNames=Cell(self.columns, rows=1),
-                VariableDescriptions=Cell(self._descriptions, rows=1),
-                RowNames=Cell())
-        cols = self.__dict__.get("columns", [])
-        if name in cols:
-            return self.variable(cols.index(name))
-        raise AttributeError(f"Unrecognized table variable name '{name}'.")
-
-    def variable(self, k: int):
-        col = self._data[k]
-        if isinstance(col, np.ndarray):
-            return _normalise(col.reshape(-1, 1))
-        return Cell(col, rows=len(col))
-
-    def is_text(self, k: int) -> bool:
-        return not isinstance(self._data[k], np.ndarray)
-
-    def _var_indices(self, arg) -> list[int]:
-        if arg is None:
-            return list(range(len(self.columns)))
-        if isinstance(arg, str):
-            arg = [arg]
-        if isinstance(arg, (Cell, list)):
-            out = []
-            for name in arg:
-                if name not in self.columns:
-                    raise MatlabError(
-                        f"Unrecognized table variable name '{name}'.")
-                out.append(self.columns.index(name))
-            return out
-        return _positions(arg, len(self.columns))
-
-    # T(rows, vars)
-    def __call__(self, *args, **_):
-        if len(args) == 1:
-            raise MatlabError("Subscripting into a table using one subscript "
-                              "(as in t(i)) is not supported. Specify a row "
-                              "subscript and a variable subscript, as in "
-                              "t(rows,vars).")
-        if len(args) != 2:
-            raise MatlabError("Tables are two-dimensional: index as "
-                              "t(rows, vars).")
-        rows = _positions(args[0], self.height)
-        ks = self._var_indices(args[1])
-        data = []
-        for k in ks:
-            col = self._data[k]
-            data.append(col[rows] if isinstance(col, np.ndarray)
-                        else [col[i] for i in rows])
-        desc = ([self._descriptions[k] for k in ks]
-                if self._descriptions else [])
-        return ColumnTable([self.columns[k] for k in ks], data, desc,
-                           height=len(rows))
-
-    def __repr__(self) -> str:
-        n, w = self.height, len(self.columns)
-        if n == 0 or w == 0:
-            return f"{n}×{w} empty table"
-        cells, widths, right = [], [], []
-        for k, name in enumerate(self.columns):
-            col = self._data[k]
-            if not isinstance(col, np.ndarray):
-                texts = ["{" + _mr._brief(v) + "}" if isinstance(v, str)
-                         and v else "{0×0 char}" if v == "" else
-                         _mr._brief(v) for v in col]
-                right.append(False)
-            elif col.dtype == bool:
-                texts = ["true" if v else "false" for v in col]
-                right.append(False)
-            else:
-                texts = [_short_g(v) for v in col]
-                right.append(True)
-            cells.append(texts)
-            widths.append(max(len(name), *(len(t) for t in texts)))
-        blocks, current, used = [], [], 0
-        for k, wd in enumerate(widths):
-            if current and used + wd + 4 > TABLE_WIDTH:
-                blocks.append(current)
-                current, used = [], 0
-            current.append(k)
-            used += wd + 4
-        blocks.append(current)
-        out = [f"{n}×{w} table", ""]
-        for b, block in enumerate(blocks):
-            if b:
-                out.append("")
-            out.append("    " + "    ".join(
-                self.columns[k].center(widths[k]) for k in block).rstrip())
-            out.append("    " + "    ".join("_" * widths[k] for k in block))
-            out.append("")
-            for i in range(n):
-                out.append("    " + "    ".join(
-                    cells[k][i].rjust(widths[k]) if right[k]
-                    else cells[k][i].ljust(widths[k])
-                    for k in block).rstrip())
-        return "\n".join(out)
-
-
-def _short_g(v) -> str:
-    """How a table shows a number: ``format short g``."""
-    if isinstance(v, (complex, np.complexfloating)):
-        return _mr._number(complex(v))
-    v = float(v)
-    if math.isnan(v):
-        return "NaN"
-    if math.isinf(v):
-        return "Inf" if v > 0 else "-Inf"
-    if v.is_integer() and abs(v) < 1e10:
-        return str(int(v))
-    return f"{v:.5g}"
-
-
-def _as_column(value, k: int):
-    """A ``table(...)`` argument → one variable's column."""
-    if isinstance(value, Cell):
-        r, c = value.dims
-        if c != 1 and len(value):
-            if r == 1 and c >= 1:
-                raise MatlabError(
-                    f"Argument {k} is a 1×{c} cell; a table variable must "
-                    f"be a column, such as {{'a'; 'b'}}.")
-        return list(value)
-    if isinstance(value, str):
-        raise MatlabError("A char vector as a table variable is not "
-                          "supported in Evans; put the text in a cell, such "
-                          "as {'abc'}.")
-    if isinstance(value, (Struct, StructArray, Table)) or callable(value):
-        raise MatlabError(f"Evans's tables hold numbers, logicals and text; "
-                          f"argument {k} is none of these.")
-    a = _as_array(value)
-    if a.ndim == 0:
-        a = a.reshape(1)
-    if a.ndim == 1 and a.size > 1:
-        raise MatlabError(
-            f"Argument {k} is a row vector; a table variable must be a "
-            f"column. Transpose it with ' first.")
-    if a.ndim == 2:
-        if a.shape[1] != 1 and a.size:
-            raise MatlabError(
-                f"Argument {k} is a {a.shape[0]}×{a.shape[1]} matrix; Evans's "
-                f"tables hold one column per variable. Use array2table to "
-                f"split a matrix into variables.")
-        a = a.reshape(-1)
-    if a.dtype == bool:
-        return a.copy()
-    if np.iscomplexobj(a):
-        return a.astype(complex)
-    return a.astype(float)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1370,6 +1151,7 @@ class FileLibrary:
             filename = f"{name}.txt" if name else "table.txt"
         path = self.rt.resolve(filename)
         _refuse_spreadsheet(path, "writetable")
+        data = [c.texts() if hasattr(c, "texts") else c for c in T._data]
         if _is_xlsx(path, opts):
             mode = str(opts.get("WriteMode", "inplace"))
             grid = []
@@ -1380,7 +1162,7 @@ class FileLibrary:
                 grid.append([_xl_value(col[i]) if isinstance(col, np.ndarray)
                              else col[i] if isinstance(col[i], str)
                              else _xl_value(col[i]) if _is_number(col[i])
-                             else None for col in T._data])
+                             else None for col in data])
             _write_sheet(path, grid, opts.get("Sheet"), opts.get("Range"),
                          mode, "writetable")
             return None
@@ -1403,7 +1185,7 @@ class FileLibrary:
             lines.append(delim.join(quote(n) for n in T.columns))
         for i in range(T.height):
             fields = []
-            for col in T._data:
+            for col in data:
                 v = col[i]
                 fields.append(_g15(v) if isinstance(col, np.ndarray)
                               else quote(v) if isinstance(v, str)
@@ -1496,101 +1278,6 @@ class FileLibrary:
         finally:
             wb.close()
         return Cell(names, rows=len(names))
-
-    @_named
-    def f_table(self, *args, names=None):
-        names = list(names or [])
-        values, opts = [], []
-        for k, a in enumerate(args):
-            if isinstance(a, str) and a.lower() in ("variablenames",
-                                                    "rownames", "size",
-                                                    "variabletypes"):
-                opts = list(args[k:])
-                break
-            values.append(a)
-        given = _options(opts, {"variablenames": "VariableNames",
-                                "rownames": "RowNames"}, "table")
-        if "RowNames" in given:
-            raise MatlabError("table: 'RowNames' is not supported in Evans.")
-        if "VariableNames" in given:
-            var_names = _name_list(given["VariableNames"], len(values))
-        else:
-            var_names = [names[k] if k < len(names) and names[k]
-                         else f"Var{k + 1}" for k in range(len(values))]
-        data = [_as_column(v, k + 1) for k, v in enumerate(values)]
-        return ColumnTable(var_names, data)
-
-    def f_array2table(self, A, *args):
-        given = _options(args, {"variablenames": "VariableNames",
-                                "rownames": "RowNames"}, "array2table")
-        if "RowNames" in given:
-            raise MatlabError("array2table: 'RowNames' is not supported in "
-                              "Evans.")
-        if isinstance(A, Cell):
-            r, c = A.dims
-            grid = A.grid()
-            data = []
-            for j in range(c):
-                col = [grid[i][j] for i in range(r)]
-                if all(isinstance(v, str) for v in col):
-                    data.append(col)
-                elif all(_is_number(v) for v in col):
-                    data.append(np.array(col, dtype=float))
-                else:
-                    raise MatlabError("array2table: Evans needs each cell "
-                                      "column to be all text or all "
-                                      "numbers.")
-            height = r
-        else:
-            if isinstance(A, (str, Struct, StructArray, Table)):
-                raise MatlabError("array2table needs a numeric, logical or "
-                                  "cell matrix.")
-            a = _as2d(_as_array(A))
-            if a.dtype != bool:
-                a = a.astype(complex if np.iscomplexobj(a) else float)
-            data = [a[:, j].copy() for j in range(a.shape[1])]
-            height = a.shape[0]
-        n = len(data)
-        var_names = (_name_list(given["VariableNames"], n)
-                     if "VariableNames" in given
-                     else [f"Var{k + 1}" for k in range(n)])
-        return ColumnTable(var_names, data, height=height)
-
-    def f_table2array(self, T):
-        if not isinstance(T, ColumnTable):
-            raise MatlabError("table2array needs a table.")
-        if not T.columns:
-            return np.zeros((T.height, 0))
-        text = [T.is_text(k) for k in range(len(T.columns))]
-        if all(text):
-            return Cell((v for col in T._data for v in col), rows=T.height)
-        if any(text):
-            k = text.index(True)
-            j = text.index(False)
-            a, b = sorted((j, k))
-            ta = "cell" if text[a] else "double"
-            tb = "cell" if text[b] else "double"
-            raise MatlabError(
-                f"Unable to concatenate the table variables "
-                f"'{T.columns[a]}' and '{T.columns[b]}', because their types "
-                f"are {ta} and {tb}.")
-        cols = T._data
-        if all(c.dtype == bool for c in cols):
-            m = np.column_stack(cols) if T.height else np.zeros((0, len(cols)),
-                                                                 bool)
-        else:
-            m = np.column_stack([c.astype(complex if np.iscomplexobj(c)
-                                          else float) for c in cols])
-        return _normalise(m)
-
-    def f_height(self, T):
-        return _shape(T)[0]
-
-    def f_width(self, T):
-        return _shape(T)[1]
-
-    def f_istable(self, x):
-        return isinstance(x, Table)
 
     # ── fopen and friends ──────────────────────────────────────
 
@@ -2028,18 +1715,6 @@ def _looks_like_header(rows: list[list[str]]) -> bool:
     # Every column is text: a header unless the first line looks like data
     # in the same shape — MATLAB treats it as names too.
     return True
-
-
-def _name_list(value, n: int) -> list[str]:
-    names = [value] if isinstance(value, str) else list(value) \
-        if isinstance(value, (Cell, list)) else None
-    if names is None or not all(isinstance(x, str) for x in names):
-        raise MatlabError("'VariableNames' must be a cell array of char "
-                          "vectors.")
-    if len(names) != n:
-        raise MatlabError(f"The VariableNames property must contain one name "
-                          f"for each variable in the table ({n}).")
-    return names
 
 
 def _collect(out: list, kinds: list[str]) -> list:
