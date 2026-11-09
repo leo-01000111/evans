@@ -272,6 +272,16 @@ The engine was ahead of the editor and of its links to the console. Tests:
       them is one straight run, and show a guide through the two ports. Handle
       rotated and flipped blocks and several ports on one block, prefer ports
       that are already wired, and let a modifier key turn it off. **S–M**
+- [ ] **Better block shapes.** Every block is a rectangle today (`BlockItem` in
+      `ui/sim/items.py`). Some should look like what they are, as in Simulink's
+      library: a triangle for Gain, a circle or rounded Sum with its signs at the
+      ports, a round Product, a rounded Integrator box with 1/s, a Saturation and
+      a Switch drawn with their characteristic, a Step, Ramp and Sine showing the
+      waveform, a narrow bar for Mux/Demux, a flag shape for Goto/From and port
+      blocks, and a distinct outline for Subsystem. The ports must stay where the
+      router expects them and the hit area must follow the shape. Rotate and flip
+      must work, and the shapes must read in both themes and in exports. Keep the
+      rectangle as a fallback and add a "classic boxes" setting. **M**
 - [ ] **Scope and graph overhaul in the Model tab** (`ui/sim/scope.py`). It is a basic
       pyqtgraph plot with a channel list and a CSV/`.mat` export today. Wanted:
       - **Copy straight from the plot:** Ctrl+C or a right-click menu entry copies

@@ -13,10 +13,33 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.16.2">0.16.2</a><a href="#v0.16.1">0.16.1</a><a href="#v0.16.0">0.16.0</a><a href="#v0.15.1">0.15.1</a><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.17.0">0.17.0</a><a href="#v0.16.2">0.16.2</a><a href="#v0.16.1">0.16.1</a><a href="#v0.16.0">0.16.0</a><a href="#v0.15.1">0.15.1</a><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="issues.html#bugs">known issues</a><a href="issues.html#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.17.0">
+      <div class="card prose notes">
+        <h2>0.17.0 &middot; 9 November 2026</h2>
+        <p>The rest of the language work for running other people's MATLAB code: real types, tables, classes, more than two dimensions, and errors that point at the right line.</p>
+        <h3>Added</h3>
+        <ul>
+          <li><strong>Integer and single types.</strong> <code>int8</code> to <code>uint64</code> and <code>single</code>, with saturation and MATLAB's mixing rules, plus <code>cast</code>, <code>intmax</code>, <code>intmin</code>, <code>idivide</code>, the <code>bit*</code> functions and <code>zeros(..., 'int8')</code>.</li>
+          <li><strong>String arrays.</strong> <code>"abc"</code> is a string, separate from <code>'abc'</code>: <code>numel("abc")</code> is 1, <code>+</code> joins, and <code>strlength</code>, <code>string</code> and <code>isstring</code> exist.</li>
+          <li><strong>N-D arrays.</strong> <code>zeros(2,2,2)</code>, indexing with any number of subscripts, <code>cat</code>, <code>permute</code>, <code>squeeze</code>, <code>reshape</code>, <code>repmat</code>, <code>meshgrid</code> and <code>ndgrid</code> in 3-D, reductions along a dimension, and display as <code>ans(:,:,k)</code> pages.</li>
+          <li><strong>Tables, dates and times.</strong> <code>table</code> with brace indexing, assignment, <code>sortrows</code>, <code>join</code>, <code>groupsummary</code> and more; <code>datetime</code>, <code>duration</code>, <code>timetable</code>, and <code>fitlm</code> with its summary.</li>
+          <li><strong><code>classdef</code>.</strong> Value and handle classes, properties with attributes, <code>get.</code> and <code>set.</code> methods, inheritance, operator overloading, events and enumerations.</li>
+          <li><strong>Sparse matrices and iterative solvers</strong> (<code>sparse</code>, <code>pcg</code>, <code>gmres</code>, <code>eigs</code>), <strong>MAT-files in v7.3 format</strong>, saving live scripts back to <code>.mlx</code>, and the dialog functions (<code>uigetfile</code>, <code>inputdlg</code>, <code>questdlg</code>, <code>waitbar</code>, <code>ginput</code>, <code>input</code>).</li>
+          <li><strong><code>inputParser</code></strong> and <strong>nested functions</strong> that share their parent's variables.</li>
+        </ul>
+        <h3>Changed</h3>
+        <ul>
+          <li><strong>Errors in your own functions read like MATLAB's.</strong> <code>Error using f (line 2)</code>, then <code>Error in g (line 5)</code> with the source line, for every caller down to the script. Too many or too few arguments say so. A script named with dots, such as <code>C.3.2.m</code>, explains why it cannot be called by name.</li>
+        </ul>
+        <h3>Not yet</h3>
+        <p>Arrays of objects, <code>subsref</code> overloading, time zones, categorical arrays and datetime axes in plots.</p>
       </div>
     </section>
 
