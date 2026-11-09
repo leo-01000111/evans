@@ -9,6 +9,7 @@ its specs and draw them.
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 pytest.importorskip("PySide6")
@@ -172,3 +173,84 @@ def test_a_rebuild_keeps_the_view_and_its_number(app, spec_of):
     plot = view.plot_widgets()[0].getPlotItem()
     assert "amended" in plot.titleLabel.text
     view.close()
+
+
+# ── 3-D data tips and the theme ─────────────────────────────────
+
+def _centre_of(view, point):
+    """Pixel position of 3-D ``point`` on the first canvas."""
+    tips = view.tips3d[0]
+    return tuple(tips._screen(np.array([point], float))[0])
+
+
+def test_a_click_pins_a_data_tip_on_a_3d_axes(app, spec_of):
+    view = _view(app, spec_of("plot3([0 1 2], [0 1 4], [0 2 1])"))
+    tips = view.tips3d[0]
+    view.canvases[0].draw()
+    px, py = _centre_of(view, (1, 1, 2))
+    tips.click(px + 3, py - 2)
+    assert len(tips.pinned) == 1
+    assert tips.pinned[0][0] == (1.0, 1.0, 2.0)
+    assert "Z: 2" in tips.pinned[0][2].get_text()
+    tips.click(px, py)                       # a click on the tip takes it off
+    assert tips.pinned == []
+    tips.click(px + 200, py + 200)           # nowhere near the data
+    assert tips.pinned == []
+    view.close()
+
+
+def test_a_3d_tip_ignores_a_drag_and_reads_a_surface(app, spec_of):
+    from types import SimpleNamespace as NS
+
+    view = _view(app, spec_of("[X,Y] = meshgrid(1:4); surf(X, Y, X + Y)"))
+    tips = view.tips3d[0]
+    view.canvases[0].draw()
+    px, py = _centre_of(view, (2, 3, 5))
+    ax = tips.ax
+    tips._on_press(NS(x=px, y=py, button=1))
+    tips._on_release(NS(x=px + 40, y=py, button=1, inaxes=ax))
+    assert tips.pinned == []                 # that was a rotation
+    tips._on_press(NS(x=px, y=py, button=1))
+    tips._on_release(NS(x=px, y=py, button=1, inaxes=ax))
+    assert len(tips.pinned) == 1 and tips.pinned[0][0] == (2.0, 3.0, 5.0)
+    tips.clear()
+    assert tips.pinned == []
+    view.close()
+
+
+def _rows(colours):
+    """Colour rows in a fixed order (a 3-D collection sorts them by depth)."""
+    a = np.asarray(colours)
+    return a[np.lexsort(a.T)]
+
+
+def test_a_theme_switch_recolours_a_mesh_without_redrawing(app, spec_of):
+    from evans.ui import theme
+
+    assert not theme.tokens().is_night
+    try:
+        view = _view(app, spec_of("mesh(peaks(12)); view(20, 40)"))
+        canvas = view.canvases[0]
+        figure = canvas.figure
+        ax = figure.axes[0]
+        ax.view_init(elev=11, azim=-33)
+        edges = _rows(ax.collections[0].get_edgecolor())
+        before = figure.get_facecolor()
+        view.tips3d[0].pin((0.0, 0.0, 0.0))
+        theme.set_mode(theme.Mode.NIGHT, persist=False)
+        for _ in range(3):
+            app.processEvents()
+        assert view.canvases[0] is canvas and figure.axes[0] is ax
+        assert (ax.elev, ax.azim) == (11, -33)       # the camera stayed
+        assert figure.get_facecolor() != before
+        assert figure.get_facecolor()[:3] == pytest.approx(
+            tuple(int(theme.NIGHT.surface[i:i + 2], 16) / 255
+                  for i in (1, 3, 5)))
+        face = ax.collections[0].get_facecolor()      # the mesh's own faces
+        assert np.allclose(face[0][:3], figure.get_facecolor()[:3])
+        assert np.allclose(_rows(ax.collections[0].get_edgecolor()), edges)
+        assert len(view.tips3d[0].pinned) == 1       # and so did the tip
+        canvas.draw()
+        view.close()
+    finally:
+        theme.set_mode(theme.Mode.DAY, persist=False)
