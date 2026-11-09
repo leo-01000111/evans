@@ -245,7 +245,12 @@ The engine was ahead of the editor and of its links to the console. Tests:
 - [ ] **Subsystems, what is left.** Create Subsystem from Selection, descending into
       one, nested subsystems and conditional (enabled, triggered, action)
       subsystems exist (`sim/blocks/subsystem.py`, `compile.flatten`). Not done:
-      - **Ungroup / Expand Subsystem**, the inverse of Create Subsystem. **S**
+      - ~~**Ungroup / Expand Subsystem**, the inverse of Create Subsystem.~~ **S**
+        *Done: `sim/edit.ungroup_subsystem`, right-click > Expand subsystem, one
+        undo step. Inner blocks keep their place and names (suffixed on a clash);
+        nested subsystems stay intact. Conditional subsystems are refused with a
+        message, since the Enable/Trigger/Action condition has no home in the
+        parent.*
       - **Masks:** a parameter dialog for a subsystem, with its own variables
         (`gain`, `Ts`) used by the blocks inside, an icon or text on the block, and
         a documentation line. This is what makes a subsystem reusable. **M–L**
