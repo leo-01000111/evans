@@ -20,7 +20,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QEvent, QEventLoop, QObject, Qt, Signal
 from PySide6.QtGui import QKeyEvent, QKeySequence, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -137,6 +137,8 @@ class ConsoleWidget(QWidget):
         self.interpreter = interpreter or Interpreter()
         self._history_index = 0
         self._pending: list[str] = []
+        #: While ``input`` waits: its event loop and the line typed.
+        self._reader: tuple[QEventLoop, list[str]] | None = None
         #: Where ``.m`` files are completed from; the script's folder.
         self.folder: Path | None = None
 
@@ -252,7 +254,40 @@ class ConsoleWidget(QWidget):
         self.note(keys.label(
             "Busy — Stop (or Ctrl+C) interrupts what is running."))
 
+    def read_line(self, prompt: str) -> str | None:
+        """
+        ``input`` and ``keyboard``: show ``prompt`` and wait for a line.
+
+        The next Return is the answer, not a command. Stop abandons the wait
+        with the interrupt a run gets anywhere else.
+        """
+        from ...console.tracer import Interrupted
+        loop = QEventLoop()
+        self._reader = (loop, [])
+        old = self._prompt.text()
+        self._prompt.setText(prompt)
+        self._input.clear()
+        self._input.setFocus()
+        self.stop_requested.connect(loop.quit)
+        try:
+            loop.exec()
+        finally:
+            self.stop_requested.disconnect(loop.quit)
+            self._prompt.setText(old)
+            _, answer = self._reader
+            self._reader = None
+        if not answer:
+            raise Interrupted(None)
+        return answer[0]
+
     def _submit(self, text: str) -> None:
+        if self._reader is not None:
+            loop, answer = self._reader
+            answer.append(text)
+            self._echo(self._prompt.text() + text, "prompt")
+            self._input.clear()
+            loop.quit()
+            return
         if self.busy:
             self._busy_note()
             return

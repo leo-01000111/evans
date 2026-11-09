@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...console import tracer as dbg
+from ...console.dialogs import set_dialog_host
 from ...console.figures import FigureSpec, set_figure_sink
 from ...console.interpreter import Interpreter, Result
 from ...console.matlab import looks_like_matlab
@@ -46,6 +47,7 @@ from ..code import (
 )
 from ..design import TIGHT, EmptyState
 from .console_widget import ConsoleWidget
+from .dialog_host import QtDialogs
 from .figure_view import FigureView, export_figure
 from .history_widget import HistoryWidget
 from .live_editor import LiveScriptEditor, set_code_highlighter
@@ -654,6 +656,9 @@ class ConsolePanel(QWidget):
 
         # Plot commands draw into the figure dock from here on.
         set_figure_sink(self.figures.show_figure)
+        # ``uigetfile``, ``inputdlg``, ``input`` and the rest ask here.
+        set_dialog_host(QtDialogs(None, console=self.console,
+                                  figures=self.figures))
         # `close all` in a MATLAB script closes the figures drawn so far.
         self.interpreter.close_figures = self.figures.close_all
         # A line typed at the prompt amends the last figure while it is open.

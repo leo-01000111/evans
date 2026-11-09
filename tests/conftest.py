@@ -86,6 +86,7 @@ def _no_modal_dialogs():
     for owner, names in ((QMessageBox, ("warning", "information",
                                         "critical", "question", "exec")),
                          (QFileDialog, ("getSaveFileName", "getOpenFileName",
+                                        "getOpenFileNames",
                                         "getExistingDirectory"))):
         for name in names:
             saved[owner, name] = getattr(owner, name)
@@ -135,3 +136,17 @@ def pytest_unconfigure(config):
         kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
         kernel32.TerminateProcess(kernel32.GetCurrentProcess(), status)
     os._exit(status)
+
+
+@pytest.fixture(autouse=True)
+def _scripted_dialogs():
+    """
+    Every test starts with a scripted dialog host that answers Cancel.
+
+    The console window installs a Qt host for ``uigetfile`` and friends; one
+    left over from an earlier test would try to open a real window.
+    """
+    from evans.console.dialogs import scripted_host, set_dialog_host
+    previous = set_dialog_host(scripted_host())
+    yield
+    set_dialog_host(previous)
