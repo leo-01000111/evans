@@ -137,6 +137,10 @@ class Cell(list):
 
     #: Reachable from more than one place (see :func:`share`).
     _shared = False
+    #: The full shape of an N-D cell (3 or more dimensions); ``dims`` and
+    #: ``rows`` then describe the 2-D view with the trailing dimensions
+    #: folded into the columns, which is what 2-D code sees.
+    nd: tuple | None = None
 
     def __init__(self, items=(), rows: int = 1) -> None:
         super().__init__(items)
@@ -145,6 +149,8 @@ class Cell(list):
     @property
     def dims(self) -> tuple[int, int]:
         n = len(self)
+        if self.nd is not None and n and math.prod(self.nd) == n:
+            return (self.nd[0], n // self.nd[0])
         if not n:
             return (0, 0)
         # A list method (append, extend) that broke the shape leaves a row.
@@ -169,6 +175,8 @@ class Cell(list):
 
     def __repr__(self) -> str:
         r, c = self.dims
+        if self.nd is not None and len(self) == math.prod(self.nd):
+            return _nd_cell_text(self)
         lines = ("    {" + "    ".join(_brief(v) for v in row) + "}"
                  for row in self.grid())
         return f"{r}×{c} cell array\n" + "\n".join(lines)
@@ -211,6 +219,7 @@ class StructArray(list):
         super().__init__(items)
         self.rows = rows
 
+    nd = None
     dims = Cell.dims
     grid = Cell.grid
     from_grid = Cell.from_grid
@@ -748,6 +757,8 @@ def _as2d(x) -> np.ndarray:
         return a.reshape(1, 1)
     if a.ndim == 1:
         return a.reshape(1, -1)
+    if a.ndim > 2:                      # MATLAB's A(:,:) view of an N-D array
+        return a.reshape(a.shape[0], -1, order="F")
     return a
 
 
@@ -765,6 +776,43 @@ def _normalise(a):
     if a.ndim == 2 and a.shape[0] == 1:
         return a.reshape(-1)
     return a
+
+
+def _nd(a):
+    """
+    MATLAB-shaped result of an operation that may be N-D: trailing
+    singleton dimensions drop (``2×3×1`` is ``2×3``), then the 2-D rules of
+    :func:`_normalise` apply.
+    """
+    if isinstance(a, np.ndarray) and a.ndim > 2:
+        shape = list(a.shape)
+        while len(shape) > 2 and shape[-1] == 1:
+            shape.pop()
+        if len(shape) != a.ndim:
+            a = a.reshape(shape)
+    return _normalise(a)
+
+
+def _dims_of(x) -> tuple[int, ...]:
+    """The full MATLAB size of ``x``: two entries, or more for an N-D array."""
+    if isinstance(x, (Cell, StructArray)) and x.nd is not None \
+            and math.prod(x.nd) == len(x):
+        return tuple(x.nd)
+    if isinstance(x, np.ndarray) and x.ndim > 2:
+        return tuple(x.shape)
+    return tuple(_shape(x))
+
+
+def _padded(x, n: int) -> np.ndarray:
+    """``x`` as an array with ``n`` dimensions, padded with trailing 1s."""
+    a = x if isinstance(x, np.ndarray) and x.ndim > 2 else _as2d(x)
+    if a.ndim > n:
+        raise MatlabError("Array has more dimensions than requested.")
+    return a.reshape(a.shape + (1,) * (n - a.ndim))
+
+
+def _size_text(dims) -> str:
+    return "×".join(str(int(d)) for d in dims)
 
 
 def _shape(x) -> tuple[int, int]:
@@ -788,6 +836,8 @@ def _shape(x) -> tuple[int, int]:
         return (1, 1)
     if a.ndim == 1:
         return (1 if a.size else 0, a.size) if a.size else (0, 0)
+    if a.ndim > 2:                      # N-D: the trailing sizes fold in
+        return (a.shape[0], math.prod(a.shape[1:]))
     return (a.shape[0], a.shape[1])
 
 
@@ -857,6 +907,8 @@ def _brief(v) -> str:
     if v is None:
         return "[]"
     if isinstance(v, np.ndarray):
+        if v.ndim > 2:
+            return f"[{_size_text(v.shape)} double]"
         if v.size <= 6:
             return "[" + " ".join(_number(x) for x in v.ravel()) + "]"
         r, c = _shape(v)
@@ -871,8 +923,7 @@ def _brief(v) -> str:
     if isinstance(v, Struct):
         return "[1×1 struct]"
     if isinstance(v, Cell):
-        r, c = v.dims
-        return f"{{{r}×{c} cell}}"
+        return f"{{{_size_text(_dims_of(v))} cell}}"
     return type(v).__name__
 
 
@@ -883,6 +934,8 @@ def display(value) -> str:
     if _is_number(value):
         return _number(value)
     if isinstance(value, np.ndarray):
+        if value.ndim > 2:
+            return _nd_text(value)
         if value.size == 0:
             return "[]"
         return _matrix_text(value)
@@ -895,7 +948,61 @@ def display(value) -> str:
     return repr(value) if not _is_lti(value) else _system_text(value)
 
 
-def _matrix_text(a: np.ndarray, max_columns: int = 10) -> str:
+_ND_SHOWN = 2000            # elements of an N-D array printed before eliding
+
+
+def _nd_text(a: np.ndarray, name: str = "") -> str:
+    """
+    An N-D array as MATLAB prints it: one ``(:,:,k) =`` block per 2-D page,
+    all in one column width. ``name`` goes before each page label
+    (``ans(:,:,1) = …``); ``disp`` leaves it empty.
+    """
+    if a.size == 0:
+        return f"  {_size_text(a.shape)} empty {_class_name(a)} array"
+    if a.dtype == bool:
+        a = a.astype(int)
+    pages = math.prod(a.shape[2:])
+    per_page = a.shape[0] * a.shape[1]
+    shown = max(1, min(pages, _ND_SHOWN // max(per_page, 1)))
+    width = max(len(_number(v)) for v in a.reshape(-1, order="F")[
+        :shown * per_page]) + 3
+    lines: list[str] = []
+    for k in range(shown):
+        sub = np.unravel_index(k, a.shape[2:], order="F")
+        label = "(:,:," + ",".join(str(i + 1) for i in sub) + ")"
+        page = a[(slice(None), slice(None)) + tuple(int(i) for i in sub)]
+        text = _matrix_text(page, width=width)
+        indent = "    " if name else ""
+        lines += [f"{name}{label} =", ""]             + [indent + t for t in text.splitlines()] + [""]
+        if k < shown - 1 or shown < pages:
+            lines.append("")
+    if shown < pages:
+        lines.append(f"  … {pages - shown} more pages not shown "
+                     f"({_size_text(a.shape)})")
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
+
+
+def _class_name(a: np.ndarray) -> str:
+    return "logical" if a.dtype == bool else "double"
+
+
+def _nd_cell_text(c: Cell) -> str:
+    """An N-D cell array: a header, then each 2-D page as a cell table."""
+    dims = c.nd
+    r, cols = dims[0], dims[1]
+    lines = [f"{_size_text(dims)} cell array"]
+    for k in range(math.prod(dims[2:])):
+        sub = np.unravel_index(k, dims[2:], order="F")
+        lines.append("(:,:," + ",".join(str(i + 1) for i in sub) + ")")
+        for i in range(r):
+            row = [c[i + j * r + k * r * cols] for j in range(cols)]
+            lines.append("    {" + "    ".join(_brief(v) for v in row) + "}")
+    return "\n".join(lines)
+
+
+def _matrix_text(a: np.ndarray, max_columns: int = 10, width: int = 0) -> str:
     """
     Columns of right-aligned numbers, the way MATLAB lays out a matrix.
 
@@ -933,7 +1040,7 @@ def _matrix_text(a: np.ndarray, max_columns: int = 10) -> str:
                 col_gap = full_cols - 10
                 shown_cols = list(range(m.shape[1]))
     cells = [[_number(m[r, c]) for c in shown_cols] for r in range(rows)]
-    width = max(len(x) for row in cells for x in row) + 3
+    width = max(width, max(len(x) for row in cells for x in row) + 3)
     lines = []
     if rows == 1 and elided:
         head = "".join(x.rjust(width) for x in cells[0][:5])
@@ -1690,8 +1797,8 @@ class Runtime:
             arg = args[0]
             if arg is COLON:
                 return _normalise(a.reshape(-1, 1, order="F")) \
-                    if a.ndim == 2 else a.reshape(-1, 1)
-            flat = a.reshape(-1, order="F") if a.ndim == 2 else a
+                    if a.ndim >= 2 else a.reshape(-1, 1)
+            flat = a.reshape(-1, order="F") if a.ndim >= 2 else a
             idx = self._indices(arg, flat.size)
             out = flat[idx]
             if np.isscalar(idx) or np.ndim(idx) == 0:
@@ -1699,15 +1806,21 @@ class Runtime:
             if a.ndim == 2 and a.shape[1] == 1 and a.shape[0] > 1:
                 return out.reshape(-1, 1)
             return out
+        if len(args) > 2 or a.ndim > 2:
+            return self._index_nd(a, args)
         a2 = _as2d(a)
-        if len(args) > 2:
-            extra = args[2:]
-            if any(_resolve(e, 1) not in (1, COLON) for e in extra):
-                raise MatlabError("Index exceeds the array dimensions.")
         rows = self._indices(args[0], a2.shape[0])
         cols = self._indices(args[1], a2.shape[1])
         out = a2[np.ix_(np.atleast_1d(rows), np.atleast_1d(cols))]
         return _normalise(out)
+
+    def _index_nd(self, a: np.ndarray, args: tuple):
+        """``A(i, j, k, …)``: one subscript per dimension, the last one
+        standing for all the dimensions beyond it."""
+        base = _fold(a, len(args))
+        idx = [np.atleast_1d(self._indices(arg, n))
+               for arg, n in zip(args, base.shape)]
+        return _nd(base[np.ix_(*idx)])
 
     def _pick_list(self, items: list, args: tuple):
         idx = self._indices(args[-1], len(items))
@@ -1731,6 +1844,18 @@ class Runtime:
         """
         r, n = c.dims
         kind = type(c)
+        if len(args) > 2:
+            dims = _fold_dims(_dims_of(c), len(args))
+            idx = [np.atleast_1d(self._indices(arg, d)).tolist()
+                   for arg, d in zip(args, dims)]
+            picked = [c[k] for k in _linear_positions(dims, idx)]
+            out = kind(picked, rows=len(idx[0]))
+            shape = tuple(len(i) for i in idx)
+            while len(shape) > 2 and shape[-1] == 1:
+                shape = shape[:-1]
+            if len(shape) > 2:
+                out.nd = shape
+            return out
         if len(args) == 1:
             if args[0] is COLON:
                 return kind(c, rows=len(c))
@@ -1906,8 +2031,8 @@ class Runtime:
                 cell.extend(empty() for _ in range(k + 1 - len(cell)))
                 cell.rows = len(cell) if column else 1
             return k
-        if any(_resolve(a, 1) not in (1, COLON) for a in key[2:]):
-            raise MatlabError("Evans supports matrices (2-D) only.")
+        if len(key) > 2 or cell.nd is not None:
+            return self._cell_slot_nd(cell, key, empty)
         i = self._grow_index(key[0], r)
         j = self._grow_index(key[1], n)
         if i >= r or j >= n:
@@ -1921,6 +2046,34 @@ class Runtime:
             cell.rows = grown.rows
             r = rows
         return i + j * r
+
+    def _cell_slot_nd(self, cell: Cell, key: tuple, empty) -> int:
+        """``c{i, j, k} = v`` on or into an N-D cell, growing it as needed."""
+        k = len(key)
+        old = _dims_of(cell)
+        if k < len(old):
+            raise MatlabError("Use one subscript per dimension to assign "
+                              "into an N-D cell array.")
+        old = old + (1,) * (k - len(old))
+        want = tuple(self._grow_index(a, d) for a, d in zip(key, old))
+        new = tuple(max(d, w + 1) for d, w in zip(old, want))
+        if new != old:
+            grid = np.empty(new, dtype=object)
+            for pos in range(grid.size):
+                grid.reshape(-1, order="F")[pos] = empty()
+            if len(cell):
+                old_grid = np.empty(old, dtype=object)
+                for pos, v in enumerate(cell):
+                    old_grid.reshape(-1, order="F")[pos] = v
+                grid[tuple(slice(0, d) for d in old)] = old_grid
+            cell[:] = [grid[np.unravel_index(pos, new, order="F")]
+                       for pos in range(grid.size)]
+        shape = new
+        while len(shape) > 2 and shape[-1] == 1:
+            shape = shape[:-1]
+        cell.nd = shape if len(shape) > 2 else None
+        cell.rows = shape[0]
+        return int(np.ravel_multi_index(want, new, order="F"))
 
     def _grow_index(self, arg, n: int) -> int:
         k = _resolve(arg, n)
@@ -1949,9 +2102,11 @@ class Runtime:
                 a = a.astype(float)
             elif a.dtype.kind in "iu":
                 a = a.astype(float)
+        if len(key) > 2 or (len(key) == 2 and a.ndim > 2):
+            return self._assign_nd(a, key, v, delete)
         if len(key) == 1:
             arg = key[0]
-            if a.ndim == 2 and min(a.shape) > 1:
+            if a.ndim > 2 or (a.ndim == 2 and min(a.shape) > 1):
                 flat = a.reshape(-1, order="F")
                 idx = self._indices(arg, flat.size) if not delete else \
                     self._indices(arg, flat.size)
@@ -2019,6 +2174,63 @@ class Runtime:
         a2[np.ix_(rows, cols)] = block
         return _normalise_row(a2, was_row)
 
+    def _assign_nd(self, a: np.ndarray, key: tuple, v, delete: bool):
+        """``A(i, j, k, …) = v``, growing ``A`` with zeros; ``= []`` deletes."""
+        k = len(key)
+        base = a if a.ndim > 2 else (
+            _as2d(a) if a.size else np.zeros((0, 0), dtype=a.dtype))
+        original = base.shape
+        folded = k < base.ndim
+        if folded:
+            base = _fold(base, k)
+        elif k > base.ndim:
+            base = base.reshape(base.shape + (1,) * (k - base.ndim))
+        dims = base.shape
+        if delete:
+            keep = [i for i, arg in enumerate(key) if arg is not COLON]
+            if len(keep) != 1:
+                raise MatlabError("A null assignment can have only one "
+                                  "non-colon index.")
+            axis = keep[0]
+            idx = np.atleast_1d(self._indices(key[axis], dims[axis]))
+            return _nd(np.delete(base, idx, axis=axis))
+        vdims = _dims_of(v)
+        vdims = vdims + (1,) * (k - len(vdims))
+        idxs = []
+        for i, (arg, n) in enumerate(zip(key, dims)):
+            if arg is COLON:
+                idxs.append(np.arange(n if n else vdims[i]))
+                continue
+            raw = np.asarray(_resolve(arg, n))
+            if raw.dtype == bool:
+                idxs.append(np.nonzero(raw.reshape(-1, order="F"))[0])
+                continue
+            if raw.size and (np.any(raw < 1) or np.any(raw != np.round(raw))):
+                raise MatlabError("Array indices must be positive integers.")
+            idxs.append(np.atleast_1d(raw.astype(int).reshape(-1) - 1))
+        need = tuple(max(n, int(ix.max()) + 1 if ix.size else 0)
+                     for n, ix in zip(dims, idxs))
+        if need != dims:
+            if folded:
+                raise MatlabError("Attempt to grow array along ambiguous "
+                                  "dimension.")
+            grown = np.zeros(need, dtype=base.dtype)
+            grown[tuple(slice(0, n) for n in dims)] = base
+            base = grown
+        lens = tuple(len(ix) for ix in idxs)
+        if v.size == 1:
+            base[np.ix_(*idxs)] = v.reshape(-1)[0]
+        elif v.size == math.prod(lens):
+            base[np.ix_(*idxs)] = v.reshape(-1, order="F").reshape(
+                lens, order="F")
+        else:
+            raise MatlabError("Unable to perform assignment because the "
+                              "indices on the left side are not compatible "
+                              "with the size of the right side.")
+        if folded:
+            base = base.reshape(original, order="F")
+        return _nd(base)
+
     # ── construction ────────────────────────────────────────────
 
     def concat(self, rows: list[list]):
@@ -2067,6 +2279,9 @@ class Runtime:
         if any(isinstance(x, str) for x in flat):
             texts = ["".join(_as_text(x) for x in row) for row in rows if row]
             return texts[0] if len(texts) == 1 else Cell(texts)
+        if any(_is_nd(x) for x in flat):
+            return self.cat_arrays(1, [self.cat_arrays(2, row)
+                                       for row in rows if row])
         blocks = []
         for row in rows:
             parts = [_as2d(x) for x in row if _numel(x) > 0]
@@ -2089,6 +2304,20 @@ class Runtime:
             return out.reshape(-1)
         return out
 
+    def cat_arrays(self, dim: int, parts):
+        """``cat(dim, parts…)`` for numeric and logical values."""
+        arrs = [x for x in parts if _numel(x) > 0]
+        if not arrs:
+            return np.zeros((0, 0))
+        n = max(dim, *(len(_dims_of(x)) for x in arrs))
+        try:
+            out = np.concatenate([_padded(x, n) for x in arrs],
+                                 axis=dim - 1)
+        except ValueError:
+            raise MatlabError("Dimensions of arrays being concatenated are "
+                              "not consistent.") from None
+        return _nd(_float_array(out))
+
     @staticmethod
     def cell(rows: list[list]) -> Cell:
         return Cell.from_grid(rows)
@@ -2107,6 +2336,9 @@ class Runtime:
     # ── statements ──────────────────────────────────────────────
 
     def show(self, name: str, value) -> None:
+        if isinstance(value, np.ndarray) and value.ndim > 2 and value.size:
+            print(_nd_text(value, name) + "\n")
+            return
         text = display(value)
         if "\n" in text or (isinstance(value, np.ndarray) and value.size > 1) \
                 or _is_lti(value) or _is_sym(value):
@@ -2164,6 +2396,8 @@ class Runtime:
         if _is_sym(x):
             return _symbolic.columns(x)
         if isinstance(x, np.ndarray):
+            if x.ndim > 2:                     # columns of A(:,:)
+                x = _as2d(x)
             if x.ndim <= 1:
                 return [_scalar(v) for v in x]
             if x.shape[0] == 1:
@@ -2240,6 +2474,10 @@ class Runtime:
         a, b = _coerce(a, b)
         if isinstance(a, np.ndarray) and isinstance(b, np.ndarray) \
                 and a.size > 1 and b.size > 1:
+            if _is_nd(a) or _is_nd(b):
+                raise MatlabError("Arguments must be 2-D, or at least one "
+                                  "argument must be scalar. Use .* for "
+                                  "elementwise multiplication.")
             A, B = _as2d(a), _as2d(b)
             if A.shape[1] != B.shape[0]:
                 raise MatlabError(
@@ -2299,6 +2537,8 @@ class Runtime:
         if _any_deferred(a, b):
             return _defer(lambda x, y: op(x, y), a, b)
         a, b = _coerce(a, b)
+        if _is_nd(a) or _is_nd(b):
+            return _broadcast_nd(a, b, op)
         if isinstance(a, np.ndarray) and isinstance(b, np.ndarray) \
                 and a.size > 1 and b.size > 1 and _shape(a) != _shape(b):
             sa, sb = _shape(a), _shape(b)
@@ -2319,7 +2559,8 @@ class Runtime:
                 raise MatlabError("Arrays have incompatible sizes; use "
                                   "strcmp to compare text.")
             a, b = np.array([ord(c) for c in a]), np.array([ord(c) for c in b])
-        out = op(a, b)
+        out = _broadcast_nd(a, b, op) if _is_nd(a) or _is_nd(b) \
+            else op(a, b)
         return bool(out) if isinstance(out, (bool, np.bool_)) else out
 
     @_symbolic_aware("eq")
@@ -2375,6 +2616,9 @@ class Runtime:
         if _is_sym(a):
             return _symbolic.transpose(a, conjugate=False)
         if isinstance(a, np.ndarray):
+            if a.ndim > 2:
+                raise MatlabError("Transpose on ND array is not defined. "
+                                  "Use PERMUTE instead.")
             if a.ndim == 1:
                 return a.reshape(-1, 1)
             if a.ndim == 2 and a.shape[1] == 1:
@@ -2487,6 +2731,70 @@ class Runtime:
             and (value is None or _is_number(value) or isinstance(
                 value, (str, np.ndarray, Struct, StructArray, Cell)))
         }
+
+
+def _cat_cells(dim: int, parts) -> Cell:
+    """``cat(dim, c1, c2, …)`` for cells, along a dimension from the third."""
+    cells = [p for p in parts if not (isinstance(p, np.ndarray)
+                                      and p.size == 0)]
+    if not all(isinstance(c, Cell) for c in cells):
+        raise MatlabError("Concatenation of a cell array with another "
+                          "type is not supported.")
+    sizes = [_dims_of(c) + (1,) * (dim - len(_dims_of(c))) for c in cells]
+    if any(len(d) > dim for d in sizes) or \
+            len({d[:dim - 1] for d in sizes}) > 1:
+        raise MatlabError("Dimensions of arrays being concatenated are "
+                          "not consistent.")
+    # Joining along the last dimension just appends, column-major.
+    out = Cell((v for c in cells for v in c), rows=sizes[0][0])
+    shape = sizes[0][:dim - 1] + (sum(d[dim - 1] for d in sizes),)
+    while len(shape) > 2 and shape[-1] == 1:
+        shape = shape[:-1]
+    out.nd = shape if len(shape) > 2 else None
+    return out
+
+
+def _is_nd(x) -> bool:
+    return isinstance(x, np.ndarray) and x.ndim > 2
+
+
+def _fold_dims(dims: tuple, k: int) -> tuple:
+    """``dims`` as seen by ``k`` subscripts: the last stands for the rest."""
+    if k >= len(dims):
+        return tuple(dims) + (1,) * (k - len(dims))
+    return tuple(dims[:k - 1]) + (math.prod(dims[k - 1:]),)
+
+
+def _fold(a: np.ndarray, k: int) -> np.ndarray:
+    """``a`` reshaped for ``k`` subscripts (column-major, as MATLAB does)."""
+    base = a if a.ndim > 2 else _as2d(a)
+    dims = _fold_dims(base.shape, k)
+    return base if dims == base.shape else base.reshape(dims, order="F")
+
+
+def _linear_positions(dims: tuple, idx: list) -> list[int]:
+    """Column-major offsets of the elements at ``idx[i]`` along ``dims[i]``."""
+    out = [0]
+    stride = 1
+    for ids, d in zip(idx, dims):
+        out = [o + int(i) * stride for i in ids for o in out]
+        stride *= d
+    return out
+
+
+def _broadcast_nd(a, b, op):
+    """``op(a, b)`` with MATLAB's implicit expansion, for N-D operands."""
+    if not (isinstance(a, np.ndarray) and isinstance(b, np.ndarray)):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return _nd(np.asarray(op(a, b)))
+    n = max(a.ndim, b.ndim, 2)
+    A, B = _padded(a, n), _padded(b, n)
+    if not all(x == y or x == 1 or y == 1 for x, y in zip(A.shape, B.shape)):
+        raise MatlabError(
+            f"Arrays have incompatible sizes for this operation: "
+            f"{_size_text(_dims_of(a))} and {_size_text(_dims_of(b))}.")
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return _nd(np.asarray(op(A, B)))
 
 
 def _normalise_row(a: np.ndarray, was_row: bool):
@@ -2901,13 +3209,15 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         return Table(rows)
 
     def f_cell(self, *dims):
-        sizes = [int(d) for d in np.concatenate(
-            [np.atleast_1d(d).ravel() for d in dims])] if dims else [0]
-        if len(sizes) == 1:
-            sizes *= 2                                   # cell(3) is 3×3
-        if any(d != 1 for d in sizes[2:]):
-            raise MatlabError("Evans supports matrices (2-D) only.")
-        r, c = max(sizes[0], 0), max(sizes[1], 0)
+        if not dims:
+            return Cell()
+        sizes = self._sizes(dims)
+        if len(sizes) > 2:
+            out = Cell((np.zeros((0, 0)) for _ in range(math.prod(sizes))),
+                       rows=sizes[0])
+            out.nd = tuple(sizes)
+            return out
+        r, c = sizes
         return Cell((np.zeros((0, 0)) for _ in range(r * c)), rows=r)
 
     def f_num2cell(self, x):
@@ -2919,22 +3229,26 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
 
     @_nargout
     def f_size(self, x, dim=None, nargout=1):
-        r, c = _shape(x)
+        dims = _dims_of(x)
         if dim is not None:
-            return (r, c, 1)[int(dim) - 1] if int(dim) <= 3 else 1
+            picked = [dims[int(d) - 1] if int(d) <= len(dims) else 1
+                      for d in np.atleast_1d(dim)]
+            return picked[0] if len(picked) == 1 else np.array(
+                picked, dtype=float)
         if nargout >= 2:
-            return (r, c) + (1,) * (nargout - 2)
-        return np.array([r, c], dtype=float)
+            # The last output stands for every dimension from there on.
+            return _fold_dims(dims, nargout)
+        return np.array(dims, dtype=float)
 
     def f_length(self, x):
-        r, c = _shape(x)
-        return 0 if r == 0 or c == 0 else max(r, c)
+        dims = _dims_of(x)
+        return 0 if 0 in dims else max(dims)
 
     def f_numel(self, x):
         return _numel(x)
 
     def f_ndims(self, x):
-        return 2
+        return len(_dims_of(x))
 
     def f_isempty(self, x):
         return _numel(x) == 0
@@ -2943,36 +3257,52 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         return _numel(x) == 1
 
     def f_isvector(self, x):
-        r, c = _shape(x)
-        return (r == 1 or c == 1) and r * c >= 1
+        dims = _dims_of(x)
+        return len(dims) == 2 and (dims[0] == 1 or dims[1] == 1) \
+            and dims[0] * dims[1] >= 1
 
     def f_isrow(self, x):
-        return _shape(x)[0] == 1
+        dims = _dims_of(x)
+        return len(dims) == 2 and dims[0] == 1
 
     def f_iscolumn(self, x):
-        return _shape(x)[1] == 1
+        dims = _dims_of(x)
+        return len(dims) == 2 and dims[1] == 1
 
     # ── construction ────────────────────────────────────────────
 
     @staticmethod
-    def _dims(dims) -> tuple[int, int]:
+    def _sizes(dims) -> list[int]:
+        """
+        The size arguments of ``zeros(2, 3, 4)`` or ``zeros([2 3 4])`` as a
+        list of at least two non-negative ints, trailing 1s dropped; a
+        single size ``n`` means ``n×n``. Class names are skipped.
+        """
+        dims = [d for d in dims if not isinstance(d, str)]
         if not dims:
-            return (1, 1)
+            return [1, 1]
         sizes = (np.atleast_1d(dims[0]).astype(int).tolist()
-                 if len(dims) == 1 else [int(d) for d in dims])
+                 if len(dims) == 1 else [int(_scalar_of(d)) for d in dims])
         if len(sizes) == 1:
-            return (sizes[0], sizes[0])
-        if any(d != 1 for d in sizes[2:]):
-            # Quietly keeping the first two sizes gave a 2-D answer to a
-            # 3-D question.
-            shape = "×".join(map(str, sizes))
-            raise MatlabError(f"{shape}: Evans supports matrices (2-D) "
-                              f"only; N-D arrays are not supported yet.")
+            sizes = sizes * 2
+        sizes = [max(d, 0) for d in sizes]
+        while len(sizes) > 2 and sizes[-1] == 1:
+            sizes.pop()
+        return sizes
+
+    @classmethod
+    def _dims(cls, dims) -> tuple[int, int]:
+        sizes = cls._sizes(dims)
+        if len(sizes) > 2:
+            raise MatlabError(f"{_size_text(sizes)}: this function takes "
+                              f"matrix (2-D) sizes only.")
         return (sizes[0], sizes[1])
 
     def _filled(self, fill, dims):
-        dims = tuple(d for d in dims if not isinstance(d, str))
-        r, c = self._dims(dims)
+        sizes = self._sizes(dims)
+        if len(sizes) > 2:
+            return fill(tuple(sizes))
+        r, c = sizes
         return _normalise_row(fill((r, c)), True) if r == 1 else fill((r, c))
 
     def f_zeros(self, *dims):
@@ -3004,9 +3334,14 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         end = math.log10(math.pi) if float(b) == math.pi else float(b)
         return np.logspace(float(a), end, int(n))
 
-    def f_repmat(self, x, m, n=None):
-        if n is None:
-            m, n = self._dims((m,))
+    def f_repmat(self, x, m, *more):
+        sizes = self._sizes((m,) + more)
+        if len(sizes) > 2 or _is_nd(x):
+            n_dims = max(len(sizes), len(_dims_of(x)))
+            base = _padded(x, n_dims)
+            reps = sizes + [1] * (n_dims - len(sizes))
+            return _nd(np.tile(base, reps))
+        m, n = sizes
         if isinstance(x, str):
             if int(m) != 1:
                 raise MatlabError("repmat: Evans has no multi-row text "
@@ -3016,10 +3351,98 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         return _normalise_row(np.tile(_as2d(x), (int(m), int(n))), True)
 
     def f_reshape(self, x, *dims):
-        dims = [int(d) for d in (np.atleast_1d(dims[0]) if len(dims) == 1
-                                 else dims)]
+        free = None
+        if len(dims) == 1:
+            dims = [int(d) for d in np.atleast_1d(dims[0])]
+        else:
+            sizes = []
+            for i, d in enumerate(dims):
+                if isinstance(d, np.ndarray) and d.size == 0:
+                    free = i                       # reshape(A, [], n)
+                    sizes.append(1)
+                else:
+                    sizes.append(int(_scalar_of(d)))
+            dims = sizes
+        total = _numel(x)
+        if free is not None:
+            known = math.prod(dims[:free] + dims[free + 1:])
+            if known == 0 or total % known:
+                raise MatlabError("Product of known dimensions, "
+                                  f"{known}, must divide the number of "
+                                  "elements.")
+            dims[free] = total // known
+        if math.prod(dims) != total:
+            raise MatlabError("Number of elements must not change. Use [] "
+                              "as one of the size inputs to automatically "
+                              "calculate the appropriate size for that "
+                              "dimension.")
+        while len(dims) > 2 and dims[-1] == 1:
+            dims.pop()
+        if isinstance(x, Cell):
+            out = Cell(x, rows=dims[0])
+            out.nd = tuple(dims) if len(dims) > 2 else None
+            return out
         out = _as2d(x).reshape(-1, order="F").reshape(dims, order="F")
+        if len(dims) > 2:
+            return out
         return _normalise_row(out, True)
+
+    def f_cat(self, dim, *xs):
+        d = int(_scalar_of(dim))
+        if d < 1:
+            raise MatlabError("Dimension argument must be a positive "
+                              "integer scalar.")
+        if d == 1:
+            return self.rt.concat([[x] for x in xs])
+        if d == 2:
+            return self.rt.concat([list(xs)])
+        if any(isinstance(x, Cell) for x in xs):
+            return _cat_cells(d, xs)
+        if any(not (_is_number(x) or isinstance(x, np.ndarray))
+               for x in xs):
+            raise MatlabError("cat: along dimension 3 and up, Evans joins "
+                              "numeric, logical and cell arrays.")
+        return self.rt.cat_arrays(d, xs)
+
+    def f_permute(self, x, order):
+        perm = [int(v) - 1 for v in np.atleast_1d(order)]
+        n = len(perm)
+        if sorted(perm) != list(range(n)):
+            raise MatlabError("Permutation vector must contain all "
+                              "dimension indices exactly once.")
+        dims = _dims_of(x)
+        if n < len(dims):
+            raise MatlabError("ORDER must have at least N elements for an "
+                              "N-D array.")
+        if isinstance(x, Cell):
+            dims = dims + (1,) * (n - len(dims))
+            grid = np.empty(dims, dtype=object)
+            for pos, v in enumerate(x):
+                grid.reshape(-1, order="F")[pos] = v
+            moved = np.transpose(grid, perm)
+            shape = moved.shape
+            out = Cell((moved[np.unravel_index(k, shape, order="F")]
+                        for k in range(moved.size)), rows=shape[0])
+            while len(shape) > 2 and shape[-1] == 1:
+                shape = shape[:-1]
+            out.nd = shape if len(shape) > 2 else None
+            return out
+        return _nd(np.transpose(_padded(x, n), perm))
+
+    def f_squeeze(self, x):
+        dims = _dims_of(x)
+        if len(dims) <= 2:
+            return x
+        kept = [d for d in dims if d != 1]
+        if len(kept) == 1:
+            kept = [kept[0], 1]                 # 1×1×n squeezes to a column
+        elif not kept:
+            kept = [1, 1]
+        if isinstance(x, Cell):
+            out = Cell(x, rows=kept[0])
+            out.nd = tuple(kept) if len(kept) > 2 else None
+            return out
+        return _nd(x.reshape(kept))
 
     def f_diag(self, x, k=0):
         a = np.asarray(x)
@@ -3041,8 +3464,12 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         a = np.asarray(x)
         return a if a.ndim == 1 else a[::-1, :]
 
-    def f_flip(self, x):
+    def f_flip(self, x, dim=None):
         a = np.asarray(x)
+        if dim is not None or a.ndim > 2:
+            axis = self._nd_axis(a if a.ndim > 2 else _as2d(a), dim)
+            b = a if a.ndim > 2 else _as2d(a)
+            return b if axis >= b.ndim else _nd(np.flip(b, axis))
         return a[::-1] if a.ndim == 1 or a.shape[0] == 1 else a[::-1, :]
 
     # ── elementwise maths ───────────────────────────────────────
@@ -3110,10 +3537,30 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
             return None
         return 0
 
+    @staticmethod
+    def _nd_axis(a: np.ndarray, dim) -> int:
+        """The axis an N-D reduction runs along: ``dim``, else the first
+        dimension of size other than 1."""
+        if dim is not None:
+            axis = int(_scalar_of(dim)) - 1
+            if axis < 0:
+                raise MatlabError("Dimension argument must be a positive "
+                                  "integer scalar.")
+            return axis
+        return next((i for i, n in enumerate(a.shape) if n != 1), 0)
+
+    def _reduce_nd(self, fn, a: np.ndarray, dim):
+        axis = self._nd_axis(a, dim)
+        if axis >= a.ndim:                       # size 1 there
+            a = a.reshape(a.shape + (1,) * (axis + 1 - a.ndim))
+        return _nd(np.expand_dims(fn(a, axis=axis), axis))
+
     def _reduce(self, fn, x, dim=None):
         a = np.asarray(x)
         if a.size == 0:
             return fn(np.zeros(0))
+        if a.ndim > 2:
+            return self._reduce_nd(fn, a, dim)
         if dim is not None:
             return _normalise(self._reduce_along(fn, a, dim))
         out = fn(a if a.ndim > 1 and dim is not None or a.ndim > 1 and
@@ -3154,8 +3601,14 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
                                                         ddof=0 if w else 1),
                             x, dim)
 
+    def _cumulative_nd(self, fn, a: np.ndarray, dim):
+        axis = self._nd_axis(a, dim)
+        return a.copy() if axis >= a.ndim else fn(a, axis=axis)
+
     def f_cumsum(self, x, dim=None):
         a = np.asarray(x)
+        if a.ndim > 2:
+            return self._cumulative_nd(np.cumsum, a, dim)
         if dim is not None:
             return _normalise_row(self._cumulative(np.cumsum, a, dim), True)
         return np.cumsum(a, axis=self._axis(a, dim) or 0) if a.ndim > 1 \
@@ -3163,6 +3616,8 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
 
     def f_cumprod(self, x, dim=None):
         a = np.asarray(x)
+        if a.ndim > 2:
+            return self._cumulative_nd(np.cumprod, a, dim)
         if dim is not None:
             return _normalise_row(self._cumulative(np.cumprod, a, dim), True)
         return np.cumprod(a, axis=self._axis(a, dim) or 0) if a.ndim > 1 \
@@ -3180,12 +3635,14 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
                        and np.shape(x)[0] > 1 else -1)
 
     def f_any(self, x, dim=None):
-        return bool(np.any(x)) if dim is None else self._reduce(np.any, x,
-                                                               dim)
+        if dim is None and np.ndim(x) <= 2:
+            return bool(np.any(x))
+        return self._reduce(np.any, x, dim)
 
     def f_all(self, x, dim=None):
-        return bool(np.all(x)) if dim is None else self._reduce(np.all, x,
-                                                               dim)
+        if dim is None and np.ndim(x) <= 2:
+            return bool(np.all(x))
+        return self._reduce(np.all, x, dim)
 
     def _extreme(self, pick, arg, x, other, dim, nargout):
         if other is not None and _numel(other) > 0:
@@ -3198,6 +3655,13 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
             key = np.abs(a)
         else:
             key = a
+        if a.ndim > 2:
+            axis = self._nd_axis(a, dim)
+            if axis >= a.ndim:                     # size 1 there: a itself
+                return (a, np.ones(a.shape)) if nargout >= 2 else a
+            idx = np.expand_dims(arg(key, axis=axis), axis)
+            values = _nd(np.take_along_axis(a, idx, axis))
+            return (values, _nd(idx + 1.0)) if nargout >= 2 else values
         if dim is not None:
             a, key = _as2d(a), _as2d(key)
             if int(dim) > 2:                       # size 1 there: a itself
@@ -3238,11 +3702,13 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         modes = [m for m in args if isinstance(m, str)]
         was_row = False
         if dims:
-            if int(_scalar_of(dims[0])) > 2:     # size 1 there: nothing moves
+            if int(_scalar_of(dims[0])) > max(2, a.ndim):
                 return (a, np.ones(a.shape)) if nargout >= 2 else a
             was_row = a.ndim == 1
-            a = _as2d(a)
+            a = _as2d(a) if a.ndim <= 2 else a
             axis = int(_scalar_of(dims[0])) - 1
+        elif a.ndim > 2:
+            axis = self._nd_axis(a, None)
         else:
             axis = -1 if a.ndim == 1 or a.shape[0] == 1 else 0
         if np.iscomplexobj(a):
@@ -3270,7 +3736,7 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         idx = np.nonzero(a.reshape(-1, order="F"))[0] + 1.0
         if n is not None:
             idx = idx[:int(n)]
-        if a.ndim == 2 and a.shape[0] > 1:
+        if a.ndim > 2 or (a.ndim == 2 and a.shape[0] > 1):
             idx = idx.reshape(-1, 1)
         return idx
 
@@ -3448,9 +3914,31 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
     def f_meshgrid(self, x, y=None, z=None, nargout=1):
         xv = np.asarray(x).reshape(-1)
         yv = xv if y is None else np.asarray(y).reshape(-1)
+        if z is not None or nargout >= 3:
+            zv = xv if z is None else np.asarray(z).reshape(-1)
+            if z is None and y is not None:
+                zv = yv
+            grids = np.meshgrid(xv, yv, zv)             # ny × nx × nz
+            return tuple(_nd(g) for g in grids[:nargout]) \
+                if nargout >= 2 else _nd(grids[0])
         X, Y = np.meshgrid(xv, yv)
         out = (_normalise(X), _normalise(Y))
         return out[:nargout] if nargout >= 2 else out[0]
+
+    @_nargout
+    def f_ndgrid(self, *xs, nargout=1):
+        """``[X1, …, Xn] = ndgrid(x1, …, xn)``: grids with x1 down the rows."""
+        if not xs:
+            raise MatlabError("Not enough input arguments.")
+        vectors = [np.asarray(v, float).reshape(-1) for v in xs]
+        n = max(len(vectors), nargout)
+        if len(vectors) == 1:
+            vectors = vectors * max(n, 2)
+        if nargout <= 1 and len(xs) == 1:
+            return vectors[0].reshape(-1, 1)
+        grids = np.meshgrid(*vectors, indexing="ij")
+        out = tuple(_nd(g) for g in grids[:max(nargout, 1)])
+        return out if nargout >= 2 else out[0]
 
     # ── signal processing ───────────────────────────────────────
 

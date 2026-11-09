@@ -14,9 +14,9 @@ from __future__ import annotations
 #: group → names, as MATLAB spells them.
 NOT_IN_EVANS: dict[str, tuple[str, ...]] = {
     "Arrays and indexing": (
-        "accumarray", "bsxfun", "cat", "colon", "cummax", "cummin", "histc",
-        "idivide", "mat2cell", "mink", "maxk", "ndgrid", "nnz", "nonzeros",
-        "permute", "rot90", "squeeze", "sortrows", "issorted", "bounds",
+        "accumarray", "bsxfun", "colon", "cummax", "cummin", "histc",
+        "idivide", "mat2cell", "mink", "maxk", "nnz", "nonzeros",
+        "rot90", "sortrows", "issorted", "bounds",
         "normalize", "rescale", "histcounts2", "histogram2", "vander", "hilb", "invhilb",
         "toeplitz", "hankel", "pascal", "rosser", "wilkinson", "gallery",
         "hadamard", "compan", "blkdiag", "shiftdim",

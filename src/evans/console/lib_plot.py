@@ -338,11 +338,13 @@ def _image_matrix(C, who: str) -> np.ndarray:
     a = np.asarray(C)
     if a.dtype == bool:
         a = a.astype(float)
-    if a.ndim > 2:
-        raise MatlabError(f"{who}: true-colour (m×n×3) images need N-D "
-                          f"arrays, which Evans does not have yet.")
     if np.iscomplexobj(a):
         a = a.real
+    if a.ndim > 2:
+        if a.ndim != 3 or a.shape[2] != 3:
+            raise MatlabError(f"{who}: a true-colour image is m×n×3 "
+                              f"(red, green, blue).")
+        return a.astype(float)
     return _as2d(a.astype(float))
 
 
@@ -1137,7 +1139,7 @@ class PlotLibrary:
             x = y = None
             C, rest = numbers[0], numbers[1:]
         C = _image_matrix(C, who)
-        rows, cols = C.shape
+        rows, cols = C.shape[:2]
         xr = [1.0, float(cols)] if x is None else _vector(x)[[0, -1]]
         yr = [1.0, float(rows)] if y is None else _vector(y)[[0, -1]]
         spec = FigureSpec("xy")

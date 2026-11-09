@@ -26,6 +26,7 @@ from .matlab_runtime import (
     StructArray,
     _as2d,
     _as_array,
+    _dims_of,
     _is_function,
     _is_lti,
     _is_number,
@@ -118,7 +119,7 @@ def _equal(a, b, nan_equal: bool) -> bool:
         b = b[0]
     if isinstance(a, Cell) or isinstance(b, Cell):
         return (isinstance(a, Cell) and isinstance(b, Cell)
-                and a.dims == b.dims
+                and _dims_of(a) == _dims_of(b)
                 and all(_equal(x, y, nan_equal) for x, y in zip(a, b)))
     if isinstance(a, StructArray) or isinstance(b, StructArray):
         return (isinstance(a, StructArray) and isinstance(b, StructArray)
@@ -147,7 +148,7 @@ def _equal(a, b, nan_equal: bool) -> bool:
     if x is None or y is None:
         raise MatlabError(f"isequal cannot compare a "
                           f"{type(a if x is None else b).__name__} in Evans.")
-    if _shape(a) != _shape(b):
+    if _dims_of(a) != _dims_of(b):
         return False
     return bool(np.array_equal(x, y, equal_nan=nan_equal))
 

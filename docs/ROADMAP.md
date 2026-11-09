@@ -369,11 +369,11 @@ paths the frozen build would otherwise only reach on first use.
       drag to turn, right-drag to zoom; `[az, el] = view` does not read the
       mouse's angle back. Contours are traced by contourpy (matplotlib's) and drawn
       by pyqtgraph, so they overlay plots and read out on hover. `C = contour(...)`
-      returns MATLAB's contour matrix. `meshgrid(x, y, z)` waits for N-D arrays.*
+      returns MATLAB's contour matrix. `meshgrid(x, y, z)` is done (Phase 4).*
 - [x] Images: `imagesc`, `image`, `imshow`, `colormap`, `colorbar`, `caxis`. **M**
       *Also `clim` and the colour-map functions (`jet(n)`, `gray(n)`, …). `parula`
-      is MathWorks' own, so it is viridis. True-colour images and `imread` wait for
-      N-D arrays (Phase 4); `imshow` of doubles is black at 0 and white at 1, as in
+      is MathWorks' own, so it is viridis. True-colour (m×n×3, 0–1) images work now;
+      `imread` is still to do; `imshow` of doubles is black at 0 and white at 1, as in
       MATLAB, so 0–255 data needs `imshow(I, [])` until there is `uint8`.*
 - [x] A data cursor and a hover readout in `ui/console/figure_view.py`. **M**
       *Every 2-D curve, marker, bar, contour and reference line reads out on hover
@@ -477,8 +477,16 @@ the cheap items are done; the large types are not.
       `sortrows`, `join`; then `datetime`, `duration`, `timetable`. **L**
 - [ ] String arrays as their own type (`numel("abc") == 1`, `["a" "b"]`), distinct
       from `char`. **M**
-- [ ] N-D arrays (`zeros(2,2,2)`, `cat(3,…)`, `permute`, `squeeze`). The 2-D
+- [x] N-D arrays (`zeros(2,2,2)`, `cat(3,…)`, `permute`, `squeeze`). The 2-D
       assumption runs through the runtime, so this is a large change. **L**
+      *Numeric and logical arrays and cells of any rank: `zeros`/`ones`/`rand`/
+      `randn`/`cell`, `size`/`ndims`/`numel`, indexing and assignment with any
+      number of subscripts (growing, deleting a page) and column-major linear
+      indexing, `cat`, `permute`, `squeeze`, `reshape` (with `[]`), `repmat`,
+      `meshgrid(x,y,z)`, `ndgrid`, reductions, `max`/`min`, `cumsum`, `sort`,
+      `any`/`all` along a dimension, broadcasting, and display as `ans(:,:,k)`
+      pages. `A'` and `A*B` refuse N-D arrays, as MATLAB does; most
+      other functions see the `A(:,:)` view.*
 - [ ] `classdef` (properties, methods, constructors, handle classes). **L**
 - [ ] `sparse`, `speye`, `nnz` and the iterative solvers, on `scipy.sparse`. **M**
 - [ ] `.mat` v7.3 (HDF5) through h5py, a new dependency. **M**

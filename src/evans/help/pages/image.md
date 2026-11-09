@@ -11,7 +11,7 @@ Show a matrix as an image, its values used as colour map indices.
 
 `image(C)` draws each element of `C` in the [colormap](colormap)'s colour of that number: 1 is the first colour, 2 the second, values are rounded down, and anything outside the map takes its first or last colour. Use [imagesc](imagesc) to scale arbitrary data to the map instead.
 
-Images in true colour, an m-by-n-by-3 array, need N-D arrays, which Evans does not have yet.
+A true-colour image is an m-by-n-by-3 array of red, green and blue values between 0 and 1; it is drawn as it is, with no colour map.
 
 ## Example
 

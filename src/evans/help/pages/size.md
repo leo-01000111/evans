@@ -19,6 +19,7 @@ For a [tf](tf), [zpk](zpk) or [ss](ss) model, `size` counts outputs and inputs, 
 
 Evans arrays are two-dimensional, so `size` never reports a third dimension above 1.
 
+For an N-D array `size(A)` lists every dimension, `size(A, 3)` asks for one, and `[r, c] = size(A)` gives the rows and all the remaining columns folded together, as MATLAB does.
 ## Example
 
 ```matlab

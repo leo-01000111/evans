@@ -15,7 +15,7 @@ Show a grayscale image.
 
 `imshow(I, [low high])` shows `low` as black and `high` as white. `imshow(I, [])` stretches the range of `I` itself from black to white, which is what you want for data that is not already in [0, 1], pixel counts from 0 to 255 for example. `imshow(X, map)` shows an indexed image in the colours of `map`, as [image](image) does.
 
-Colour (m-by-n-by-3) images and reading image files with `imread` need N-D arrays, which Evans does not have yet.
+A true-colour image is an m-by-n-by-3 array of red, green and blue values between 0 and 1. Reading image files with `imread` is not in Evans yet.
 
 ## Example
 
