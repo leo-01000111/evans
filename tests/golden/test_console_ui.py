@@ -676,3 +676,79 @@ def test_the_save_button_saves_svg_too(app, win, tmp_path, monkeypatch):
     win._figures.save_current()
     assert (tmp_path / "saved.csv").is_file()
     assert view.saved
+
+
+# ── figure(n), gcf, close(n), clf in the figure area ─────────────
+
+def _gcf(win, app) -> int:
+    win._console.execute("n_ = gcf;")
+    _settle(app)
+    return int(win._console.interpreter.namespace["n_"])
+
+
+def _numbers(win) -> list[int]:
+    return [v.number for v in win._figures.figures]
+
+
+def test_figure_n_raises_that_tab_and_plots_into_it(app, win):
+    for command in ("plot(1:3)", "plot(1:4)", "plot(1:5)"):
+        win._console.execute(command)
+        _settle(app)
+    assert _numbers(win) == [1, 2, 3]
+    win._console.execute("figure(2)")
+    _settle(app)
+    assert win._figures.current_figure().number == 2
+    assert _gcf(win, app) == 2
+    win._console.execute("plot([7 8])")
+    _settle(app)
+    assert win._figures.figure_count == 3
+    view = win._figures.current_figure()
+    assert view.number == 2 and view.spec.traces[0].y.tolist() == [7, 8]
+
+
+def test_figure_n_opens_a_tab_with_that_number(app, win):
+    win._console.execute("figure(4); plot(1:3)")
+    _settle(app)
+    assert _numbers(win) == [4]
+    assert win._figures.current_figure().number == 4
+
+
+def test_gcf_follows_the_tab_the_user_selects(app, win):
+    for command in ("plot(1:3)", "plot(1:4)"):
+        win._console.execute(command)
+        _settle(app)
+    assert _gcf(win, app) == 2
+    first = win._figures.figures[0]
+    win._figures._tabs.setCurrentWidget(first)
+    _settle(app)
+    assert _gcf(win, app) == 1
+    win._console.execute("title('picked')")
+    _settle(app)
+    assert first.spec.title == "picked"
+
+
+def test_close_n_closes_that_tab(app, win):
+    for command in ("plot(1:3)", "plot(1:4)", "plot(1:5)"):
+        win._console.execute(command)
+        _settle(app)
+    win._console.execute("close(2)")
+    _settle(app)
+    assert _numbers(win) == [1, 3]
+    win._console.execute("close")           # the current one: figure 3
+    _settle(app)
+    assert _numbers(win) == [1]
+
+
+def test_clf_empties_the_tab_in_place(app, win):
+    win._console.execute("plot(1:3)")
+    _settle(app)
+    view = win._figures.current_figure()
+    win._console.execute("clf")
+    _settle(app)
+    assert win._figures.figure_count == 1
+    assert win._figures.current_figure() is view
+    assert not view.spec.traces
+    win._console.execute("plot(1:2)")
+    _settle(app)
+    assert win._figures.figure_count == 1
+    assert len(view.spec.traces) == 1 and view.number == 1

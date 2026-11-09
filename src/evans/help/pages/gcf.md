@@ -1,23 +1,26 @@
 # gcf
 
-Get the current figure.
+The number of the current figure.
 
 ## Syntax
 
-    f = gcf
+    n = gcf
 
 ## Description
 
-`gcf` returns the number of the current figure, the one the next plot command draws on. If no figure exists, it returns the number the first one will get. Pass the result to [saveas](saveas), [exportgraphics](exportgraphics) or [print](print) to name the figure to write.
+`gcf` returns the number of the current figure: the one [figure](figure)`(n)` last selected, the one the last plot drew into, or the tab you selected in the figure area. When no figure is open it returns the number the next one would get.
+
+Evans has no graphics handles, so `gcf` is a plain number, which is what [exportgraphics](exportgraphics) and `saveas` take.
 
 ## Example
 
 ```matlab
-plot(1:5)
-f = gcf
-saveas(f, 'ramp.png')
+plot(1:3)
+plot(1:4)
+figure(1)
+n = gcf
 ```
 
 ## See also
 
-[figure](figure) · [saveas](saveas) · [clf](clf) · [close](close)
+[figure](figure) · [close](close) · [clf](clf)

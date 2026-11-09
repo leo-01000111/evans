@@ -1190,6 +1190,17 @@ class Figures:
         self._current: FigureSpec | None = None
         self.hold = False
         self.close_requested = False
+        #: Figures ``close(n)`` shut that the figure area may still show;
+        #: the interpreter hands them over at the end of the run.
+        self.closed: list[FigureSpec] = []
+        #: The number the next new figure gets, once ``figure(n)`` named one
+        #: that is not open (else it takes the lowest free number).
+        self.pending: int | None = None
+        #: A figure ``figure(n)`` or ``clf`` made current: the next plot
+        #: replaces what is in it rather than opening another.
+        self._reuse: FigureSpec | None = None
+        #: The figure the figure area had selected when the last run ended.
+        self.seen: FigureSpec | None = None
         self.grid: FigureSpec | None = None
         self.pane: dict | None = None
         #: ``colororder`` and ``colormap`` as set for the figure, handed to
@@ -1252,11 +1263,92 @@ class Figures:
         if self.pane is not None:
             # A new plot in a subplot replaces what that axes showed.
             self.pane["spec"] = spec
+        elif (not self.hold and self._reuse is not None
+                and cur is self._reuse and self.grid is None):
+            # The figure ``figure(n)`` went back to: plot over it.
+            cur.kind, cur.title = spec.kind, spec.title
+            cur.xlabel, cur.ylabel = spec.xlabel, spec.ylabel
+            cur.traces, cur.extra = spec.traces, spec.extra
+            self.touch()
+            return cur
         else:
-            self.specs.append(spec)
+            self._add(spec)
         self._current = spec
         self.touch()
         return spec
+
+    # ── numbers ─────────────────────────────────────────────────
+
+    def free_number(self) -> int:
+        """The lowest figure number nothing open has."""
+        taken = {s.number for s in self.specs}
+        return next(n for n in range(1, len(taken) + 2) if n not in taken)
+
+    def next_number(self) -> int:
+        """The number the next new figure will get."""
+        if self.pending is not None:
+            return self.pending
+        return self.free_number()
+
+    def _add(self, spec: FigureSpec) -> None:
+        spec.number = self.next_number()
+        self.pending = None
+        self.specs.append(spec)
+
+    def number_of(self, spec: FigureSpec | None) -> int:
+        """A figure's number; for none yet, the one it would get."""
+        if spec is not None and spec.number:
+            return spec.number
+        return self.next_number()
+
+    def has(self, spec: FigureSpec) -> bool:
+        """Whether this figure is open (by identity: specs hold arrays)."""
+        return any(s is spec for s in self.specs)
+
+    def find(self, number: int) -> FigureSpec | None:
+        """The open figure with this number, if any."""
+        return next((s for s in self.specs if s.number == number), None)
+
+    def go_to(self, number: int) -> None:
+        """
+        ``figure(n)``: make figure ``n`` current, or if it is not open,
+        arrange for the next plot to open it with that number.
+        """
+        spec = self.find(number)
+        if spec is None:
+            self.new()
+            self.pending = number
+        else:
+            self.select_spec(spec)
+
+    def select_spec(self, spec: FigureSpec, touch: bool = True) -> None:
+        """Make an open figure current (``touch`` redraws it, raising it)."""
+        self.new()
+        panes = spec.extra.get("panes")
+        if spec.kind == "subplot" and panes:
+            self.grid = spec
+            self._select(panes[-1])
+            if not touch:
+                self._touched.discard(id(spec))
+            return
+        self._current = spec
+        self._reuse = spec
+        if touch:
+            self.touch(spec)
+
+    def close_spec(self, spec: FigureSpec) -> None:
+        """``close(n)``: drop a figure, and tell the figure area."""
+        self.forget(spec)
+        self.closed.append(spec)
+
+    def clear_current(self) -> None:
+        """``clf``: empty the current figure, keeping its number and tab."""
+        spec = self.figure()
+        if spec is None or not self.has(spec):
+            return
+        spec.kind, spec.title, spec.xlabel, spec.ylabel = "xy", "", "", ""
+        spec.traces, spec.extra = [], {}
+        self.select_spec(spec)
 
     @staticmethod
     def _merge_extra(cur: FigureSpec, spec: FigureSpec) -> None:
@@ -1278,6 +1370,8 @@ class Figures:
         self.pane = None
         self.colororder = None
         self.colormap = None
+        self.pending = None
+        self._reuse = None
 
     def subplot(self, rows: int, cols: int, cells: tuple[int, ...]) -> None:
         """Select (or add) the axes at ``cells`` of a rows × cols grid."""
@@ -1298,9 +1392,10 @@ class Figures:
         if self.pane is not None:
             self.pane["hold"] = self.hold
         if self.grid is None:
+            self._reuse = None
             self.grid = FigureSpec("subplot")
             self.grid.extra["panes"] = []
-            self.specs.append(self.grid)
+            self._add(self.grid)
             self._touched.add(id(self.grid))
 
     def _select(self, pane: dict) -> None:
@@ -1429,16 +1524,18 @@ class Figures:
         not had yet, and those it has that this run touched — which it
         redraws in place. Resets the marks for the next run.
         """
-        out = [s for s in self.drawable()
-               if id(s) not in self._shown or id(s) in self._touched]
+        # A figure that is open but now empty (``clf``) is drawn again too.
+        drawn = {id(s) for s in self.drawable()}
+        out = [s for s in self.specs
+               if (id(s) in self._shown and id(s) in self._touched)
+               or (id(s) not in self._shown and id(s) in drawn)]
         self._shown.update(id(s) for s in out)
         self._touched.clear()
         return out
 
     def forget(self, spec: FigureSpec) -> None:
         """A figure closed in the window: plots after this start afresh."""
-        if spec in self.specs:
-            self.specs.remove(spec)
+        self.specs[:] = [s for s in self.specs if s is not spec]
         self._shown.discard(id(spec))
         if spec is self.grid or spec is self._current:
             self.new()

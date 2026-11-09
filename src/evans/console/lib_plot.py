@@ -375,14 +375,31 @@ class PlotLibrary:
         return args, self.rt.figures.ensure()
 
     def f_close(self, *args):
-        self.rt.figures = Figures()
-        self.rt.figures.close_requested = True
+        """
+        ``close`` shuts the current figure, ``close(n)`` figure ``n`` (or
+        each of a vector), ``close all`` every one.
+        """
+        figs = self.rt.figures
+        if args and isinstance(args[0], str):
+            if args[0].lower() != "all":
+                raise MatlabError(f"close: unknown option '{args[0]}'.")
+            self.rt.figures = Figures()
+            self.rt.figures.close_requested = True
+            return
+        if not args:
+            spec = figs.figure()
+            if spec is not None and figs.has(spec):
+                figs.close_spec(spec)
+            return
+        numbers = [int(n) for n in np.asarray(args[0], dtype=float).ravel()]
+        for n in numbers:
+            spec = figs.find(n)
+            if spec is None:
+                raise MatlabError("Invalid figure handle.")
+            figs.close_spec(spec)
 
     def f_clf(self, *_):
-        figs = self.rt.figures
-        if figs.figure() in figs.specs:
-            figs.specs.remove(figs.figure())
-        figs.new()
+        self.rt.figures.clear_current()
 
     def f_cla(self, *args):
         figs = self.rt.figures
@@ -394,18 +411,28 @@ class PlotLibrary:
             spec.title = spec.xlabel = spec.ylabel = ""
 
     @_nargout
-    def f_figure(self, *_, nargout=0):
+    def f_figure(self, *args, nargout=0):
+        """
+        ``figure`` opens a new figure with the next free number;
+        ``figure(n)`` goes back to figure ``n``, opening it if it is not
+        there. Name-value pairs are accepted and ignored.
+        """
         figs = self.rt.figures
-        figs.new()
+        if args and not isinstance(args[0], (str, Graphic)):
+            value = np.asarray(args[0], dtype=float).ravel()
+            if value.size != 1 or value[0] < 1 or value[0] != int(value[0]):
+                raise MatlabError("figure: the number must be a positive "
+                                  "integer.")
+            figs.go_to(int(value[0]))
+        else:
+            figs.new()
         # A handle is the figure's number: the one its next plot will get.
-        return len(figs.specs) + 1 if nargout else None
+        return figs.number_of(figs.figure()) if nargout else None
 
     @_nargout
     def f_gcf(self, nargout=1):
         figs = self.rt.figures
-        current = figs.figure()
-        return (figs.specs.index(current) + 1 if current in figs.specs
-                else len(figs.specs) + 1)
+        return figs.number_of(figs.figure())
 
     @_nargout
     def f_gca(self, nargout=1):

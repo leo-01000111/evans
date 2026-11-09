@@ -8,16 +8,16 @@ Clear the current figure.
 
 ## Description
 
-`clf` removes everything from the current figure: its curves, titles and labels, so the next plot starts on empty axes. The figure itself stays. Use [close](close) to remove the figure altogether.
+`clf` empties the current figure: its plots, labels and any [subplot](subplot) grid. The figure keeps its number and its tab, and the next plot draws into it. Use [close](close) to remove the figure itself.
 
 ## Example
 
 ```matlab
-plot(1:5); title('first')
+plot(1:3)
 clf
-plot(5:-1:1); title('second')
+plot([3 2 1])
 ```
 
 ## See also
 
-[close](close) · [figure](figure) · [hold](hold) · [gcf](gcf)
+[figure](figure) · [close](close) · [gcf](gcf) · [hold](hold)

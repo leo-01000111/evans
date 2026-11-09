@@ -565,3 +565,104 @@ def test_ngrid_new_holds_for_the_plot_that_follows(it, sink):
 def test_a_plain_nyquist_has_no_m_circles(it, sink):
     run(it, "nyquist(tf(4, [1 3 3 1]))")
     assert not _drawn(last(sink)).texts
+
+
+# ── figure(n), gcf, close(n), clf ────────────────────────────────
+
+def test_figure_numbers_count_up_from_one(it, sink):
+    run(it, "plot(1:3)\nn1 = gcf;\nplot(1:4)\nn2 = gcf;")
+    assert (int(it.namespace["n1"]), int(it.namespace["n2"])) == (1, 2)
+    assert [s.number for s in sink.figures] == [1, 2]
+
+
+def test_figure_returns_the_number_its_plot_will_get(it):
+    run(it, "a = figure; plot(1:3); b = figure; plot(1:3);")
+    assert (int(it.namespace["a"]), int(it.namespace["b"])) == (1, 2)
+
+
+def test_figure_n_goes_back_and_the_next_plot_replaces_it(it, sink):
+    run(it, "plot(1:3)\nplot(1:4)\nfigure(1)\nn = gcf;\nplot([5 6 7])")
+    assert it.namespace["n"] == 1
+    assert len(set(map(id, sink.figures))) == 2     # nothing new was opened
+    first = sink.figures[0]
+    assert first.number == 1 and first.traces[0].y.tolist() == [5, 6, 7]
+
+
+def test_figure_n_opens_a_figure_that_is_not_there(it, sink):
+    run(it, "figure(5)\nn = gcf;\nplot(1:3)")
+    assert it.namespace["n"] == 5
+    assert last(sink).number == 5
+    run(it, "figure\nplot(1:2)")
+    assert last(sink).number == 1          # the lowest free number
+
+
+def test_figure_n_must_be_a_positive_integer(it):
+    assert "positive integer" in fails(it, "figure(0)")
+    assert "positive integer" in fails(it, "figure(1.5)")
+
+
+def test_figure_n_ignores_name_value_pairs(it):
+    run(it, "figure(2, 'Name', 'Bode')\nn = gcf;")
+    assert it.namespace["n"] == 2
+
+
+def test_figure_n_can_hold_on_the_figure_it_went_back_to(it, sink):
+    run(it, "plot(1:3)\nhold on\nplot(3:-1:1)\nfigure(2)\nplot(1:2)\n"
+            "figure(1)\nhold on\nplot([2 2 2])")
+    first = sink.figures[0]
+    assert first.number == 1 and len(first.traces) == 3
+
+
+def test_figure_n_returns_to_a_subplot_grid(it, sink):
+    run(it, "subplot(2,1,1); plot(1:3); subplot(2,1,2); plot(3:-1:1)\n"
+            "figure(2); plot(1:2)\nfigure(1)\nn = gcf;")
+    assert it.namespace["n"] == 1
+    assert sink.figures[0].kind == "subplot"
+
+
+def test_gcf_follows_the_prompt_between_lines(it):
+    it.command("plot(1:3)")
+    it.command("plot(1:4)")
+    it.command("figure(1)")
+    assert it.command("n = gcf;").ok and it.namespace["n"] == 1
+
+
+def test_close_n_leaves_the_others_and_frees_the_number(it):
+    it.command("plot(1:3)")
+    it.command("plot(1:4)")
+    it.command("plot(1:5)")
+    it.command("close(2)")
+    runtime = it._matlab_runtime()
+    assert sorted(s.number for s in runtime.figures.specs) == [1, 3]
+    it.command("figure(1)")
+    assert it.command("n = gcf;").ok and it.namespace["n"] == 1
+    it.command("figure")            # the freed number comes round again
+    assert it.command("n = gcf;").ok and it.namespace["n"] == 2
+
+
+def test_close_with_no_argument_closes_the_current_figure(it):
+    it.command("plot(1:3)")
+    it.command("plot(1:4)")
+    it.command("close")
+    runtime = it._matlab_runtime()
+    assert [s.number for s in runtime.figures.specs] == [1]
+
+
+def test_close_all_and_a_missing_figure(it):
+    it.command("plot(1:3)")
+    it.command("close all")
+    assert "Invalid figure handle" in fails(it, "close(7)")
+
+
+def test_clf_empties_the_figure_but_keeps_its_number(it, sink):
+    run(it, "plot(1:3)\nn1 = gcf;\nclf\nn2 = gcf;\nplot([4 5 6])")
+    assert it.namespace["n1"] == it.namespace["n2"] == 1
+    assert len(set(map(id, sink.figures))) == 1
+    assert sink.figures[0].traces[0].y.tolist() == [4, 5, 6]
+
+
+def test_clf_on_a_subplot_grid_leaves_a_plain_figure(it):
+    it.command("subplot(2,1,1); plot(1:3)")
+    it.command("clf")
+    spec = it._matlab_runtime().figures.specs[0]
+    assert spec.kind == "xy" and not spec.traces and spec.number == 1

@@ -72,6 +72,9 @@ class FigureSpec:
     ylabel:  str = ""
     traces:  list[Trace] = field(default_factory=list)
     extra:   dict[str, Any] = field(default_factory=dict)
+    #: The figure's number, as ``figure(n)``, ``gcf`` and ``close(n)`` name
+    #: it. Given when the figure is first drawn; 0 until then.
+    number:  int = 0
 
     def add(self, x, y, label: str = "", style: str = "line", z=None,
             **props) -> FigureSpec:
