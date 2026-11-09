@@ -154,6 +154,80 @@ def align_snap(x: float, y: float, half_w: float, half_h: float,
                       list(guides.values()))
 
 
+#: Tiers for :class:`PortCandidate`: lower is preferred.
+TIER_WIRED, TIER_CONNECTED, TIER_OTHER = 0, 1, 2
+
+
+@dataclass
+class PortCandidate:
+    """
+    One pairing of a dragged block's port with a port it could be wired to.
+
+    ``(dx, dy)`` is the dragged port's offset from its block's centre and
+    ``(tx, ty)`` the other port's scene position. ``horizontal`` says the wire
+    leaves sideways, so what must match is the y coordinate (otherwise x).
+    ``tier`` ranks the pairing: an existing wire first, then any port of a
+    block already wired to this one, then the rest.
+    """
+    dx: float
+    dy: float
+    tx: float
+    ty: float
+    horizontal: bool = True
+    tier: int = TIER_OTHER
+
+
+def port_snap(x: float, y: float, candidates: list[PortCandidate],
+              threshold: float = ALIGN_THRESHOLD) -> SnapResult:
+    """
+    Pull a block so one of its ports lines up with the port it connects to.
+
+    ``(x, y)`` is the dragged block's centre. Each axis is decided on its own:
+    among the candidates within ``threshold`` the best tier wins, then the
+    nearest. The result reuses :class:`SnapResult`, with a guide through the
+    two ports for each axis that snapped.
+    """
+    def best(horizontal: bool):
+        chosen = None
+        for c in candidates:
+            if c.horizontal != horizontal:
+                continue
+            delta = ((c.ty - (y + c.dy)) if horizontal
+                     else (c.tx - (x + c.dx)))
+            if abs(delta) > threshold:
+                continue
+            key = (c.tier, abs(delta))
+            if chosen is None or key < chosen[0]:
+                chosen = (key, delta, c)
+        return chosen
+
+    hit_y, hit_x = best(True), best(False)
+    nx = x + (hit_x[1] if hit_x else 0.0)
+    ny = y + (hit_y[1] if hit_y else 0.0)
+    guides: list[Guide] = []
+    if hit_y:
+        c = hit_y[2]
+        a, b = nx + c.dx, c.tx
+        guides.append(Guide("h", c.ty, min(a, b), max(a, b)))
+    if hit_x:
+        c = hit_x[2]
+        a, b = ny + c.dy, c.ty
+        guides.append(Guide("v", c.tx, min(a, b), max(a, b)))
+    return SnapResult(nx, ny, hit_x is not None, hit_y is not None, guides)
+
+
+def merge_snaps(edge: SnapResult, port: SnapResult) -> SnapResult:
+    """Port alignment overrides edge/centre alignment on the axes it took."""
+    guides = [g for g in edge.guides
+              if not (g.orientation == "h" and port.aligned_y)
+              and not (g.orientation == "v" and port.aligned_x)]
+    return SnapResult(port.x if port.aligned_x else edge.x,
+                      port.y if port.aligned_y else edge.y,
+                      edge.aligned_x or port.aligned_x,
+                      edge.aligned_y or port.aligned_y,
+                      guides + port.guides)
+
+
 # ──────────────────────────────────────────────────────────────
 #  Port
 # ──────────────────────────────────────────────────────────────
@@ -426,21 +500,51 @@ class BlockItem(QGraphicsObject):
         self.double_clicked.emit(self.block_id)
         event.accept()
 
+    def _port_candidates(self, blocks: list[BlockItem]) -> list[PortCandidate]:
+        """Every port of this block paired with each port it could be wired to."""
+        wired: set[tuple[str, str, str, str]] = set()
+        neighbours: set[str] = set()
+        for item in self.scene().items():
+            if isinstance(item, WireItem) and item.touches(self.block_id):
+                s, d = item.src_port, item.dst_port
+                wired.add((s.block_id, s.port, d.block_id, d.port))
+                neighbours.update((s.block_id, d.block_id))
+        out: list[PortCandidate] = []
+        for mine in self.ports.values():
+            horizontal = abs(mine.direction.x()) > 0.5
+            for other in blocks:
+                for theirs in other.ports.values():
+                    if theirs.is_input == mine.is_input:
+                        continue
+                    src, dst = (theirs, mine) if mine.is_input else (mine, theirs)
+                    if (src.block_id, src.port, dst.block_id, dst.port) in wired:
+                        tier = TIER_WIRED
+                    elif other.block_id in neighbours:
+                        tier = TIER_CONNECTED
+                    else:
+                        tier = TIER_OTHER
+                    t = theirs.scene_pos()
+                    out.append(PortCandidate(mine.pos().x(), mine.pos().y(),
+                                             t.x(), t.y(), horizontal, tier))
+        return out
+
     def _aligned_position(self, wanted: QPointF) -> QPointF:
         """Snap the drag's next position onto other blocks' lines."""
         if not self._snap_on:
             self._aligned = (False, False)
             self.guides_changed.emit([])
             return wanted
-        others = [(o.pos().x(), o.pos().y(), o.size()[0] / 2,
-                   o.size()[1] / 2)
-                  for o in self.scene().items()
-                  # Selected blocks travel with this one, so they are not
-                  # landmarks: aligning to something that is moving is noise.
+        # Selected blocks travel with this one, so they are not landmarks:
+        # aligning to something that is moving is noise.
+        blocks = [o for o in self.scene().items()
                   if isinstance(o, BlockItem) and o is not self
                   and not o.isSelected()]
+        others = [(o.pos().x(), o.pos().y(), o.size()[0] / 2,
+                   o.size()[1] / 2) for o in blocks]
         w, h = self.size()
         result = align_snap(wanted.x(), wanted.y(), w / 2, h / 2, others)
+        result = merge_snaps(result, port_snap(
+            wanted.x(), wanted.y(), self._port_candidates(blocks)))
         self._aligned = (result.aligned_x, result.aligned_y)
         self.guides_changed.emit(result.guides)
         return QPointF(result.x, result.y)
