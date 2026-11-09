@@ -118,6 +118,10 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 [eval](eval) · [evalin](evalin) · [feval](feval) · [str2func](str2func) · [func2str](func2str) · [nargin](nargin) · [validateattributes](validateattributes)
 
+## Input parsing
+
+[inputParser](inputParser) · [addRequired](addRequired) · [addOptional](addOptional) · [addParameter](addParameter) · [parse](parse)
+
 ## Maps
 
 [containers](containers) · [isKey](isKey) · [keys](keys) · [values](values) · [remove](remove)

@@ -651,6 +651,10 @@ class _Function(_Stmt):
     params: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)
     body: list[_Stmt] = field(default_factory=list)
+    #: Functions defined inside this one (each closed with ``end``): they
+    #: share the variables the two of them use.
+    nested: list[_Function] = field(default_factory=list)
+    closed: bool = False
 
 
 # ──────────────────────────────────────────────────────────────
@@ -665,6 +669,10 @@ class _Parser:
     def __init__(self, tokens: list[_Tok]) -> None:
         self.toks = tokens
         self.p = 0
+        #: ``function`` at token p -> (node, token after it): trying a
+        #: function as a nested one and then as a sibling must not parse
+        #: the rest of the file twice over.
+        self._functions: dict[int, tuple] = {}
 
     # token helpers ----------------------------------------------------
 
@@ -901,6 +909,15 @@ class _Parser:
         return node
 
     def _function(self) -> _Function:
+        at = self.p
+        if at in self._functions:
+            node, self.p = self._functions[at]
+            return node
+        node = self._function_at()
+        self._functions[at] = (node, self.p)
+        return node
+
+    def _function_at(self) -> _Function:
         start = self._advance().line
         outputs: list[str] = []
         # function [a, b] = name(...)   function a = name(...)   function name
@@ -937,11 +954,29 @@ class _Parser:
                     continue
                 params.append(self._ident("a parameter name"))
             self._advance()
-        body = self._block({"function"} | _BLOCK_END)
+        body: list[_Stmt] = []
+        nested: list[_Function] = []
+        while True:
+            body.extend(self._block({"function"} | _BLOCK_END))
+            if not self._is("kw", "function"):
+                break
+            # A function met before this one's own 'end' is nested in it
+            # if it is closed with 'end' too; otherwise the file is the
+            # kind where every function runs to the next 'function'.
+            here = self.p
+            try:
+                child = self._function()
+            except MatlabSyntaxError:
+                child = None
+            if child is None or not child.closed:
+                self.p = here
+                break
+            nested.append(child)
         node = _Function(start, name=name, params=params, outputs=outputs,
-                         body=body)
+                         body=body, nested=nested)
         if self.tok.kind == "kw" and self.tok.text in _BLOCK_END:
             node.end_line = self._close_block("function", start)
+            node.closed = True
         else:      # file-terminated function: runs to the next 'function'
             node.end_line = self.toks[self.p - 1].line
         return node
@@ -1334,14 +1369,19 @@ class _Emitter:
         names = ", ".join(_py_name(o) for o in self._outputs)
         return f"return {_RT}.outputs(({names},), nargout)"
 
-    def _function(self, f: _Function, i: int) -> None:
-        inner = _Emitter(_assigned_names(f.body) | set(f.params)
-                         | set(f.outputs) | {f.name})
+    def _function(self, f: _Function, i: int,
+                  shared: frozenset[str] = frozenset(),
+                  outer: frozenset[str] = frozenset()) -> None:
+        mine = (_assigned_names(f.body) | set(f.params) | set(f.outputs)
+                | {c.name for c in f.nested})
+        inner = _Emitter(mine | {f.name} | set(outer))
         inner._outputs = f.outputs
         params = [p for p in f.params if p != "varargin"]
         sig = [f"{_py_name(p)}=None" for p in params]
         if "varargin" in f.params:
             sig.append("*varargin")
+        else:
+            sig.append("*_extra")      # caught below: too many inputs
         sig.append("nargout=1")
         if _declares(f.body, "persistent"):
             # A default dict lives as long as the function: that is
@@ -1350,6 +1390,13 @@ class _Emitter:
         self._put(i, f"@{_RT}.function", f.line)
         self._put(i, f"def {_py_name(f.name)}({', '.join(sig)}):", f.line)
         body_indent = i + 1
+        if shared:
+            # The parent's variables, written through to the parent.
+            self._put(body_indent, "nonlocal " + ", ".join(
+                _py_name(n) for n in sorted(shared)), f.line)
+        if "varargin" not in f.params:
+            self._put(body_indent, f"if _extra: raise {_RT}.too_many_inputs()",
+                      f.line)
         if params:
             count = " + ".join(f"({_py_name(p)} is not None)" for p in params)
             self._put(body_indent, f"nargin = int({count})", f.line)
@@ -1367,6 +1414,12 @@ class _Emitter:
         for out in f.outputs:
             if out not in f.params:
                 self._put(body_indent, f"{_py_name(out)} = None", f.line)
+        for child in f.nested:
+            # Defined up front, so the body may call it from any line.
+            written = (_assigned_names(child.body) & mine
+                       ) - set(child.params) - set(child.outputs)
+            inner._function(child, body_indent, frozenset(written),
+                            frozenset(mine | outer))
         for stmt in f.body:
             inner.statement(stmt, body_indent)
         if not f.body:

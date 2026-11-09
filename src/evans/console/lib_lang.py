@@ -21,6 +21,7 @@ import numpy as np
 from . import matlab_runtime as _mr  # noqa: F401
 from .matlab_runtime import (
     Cell,
+    InputParser,
     MapObject,
     MatlabError,
     _as_array,
@@ -461,6 +462,32 @@ class LanguageLibrary:
 
     def f_remove(self, m, k):
         return self._as_map(m, "remove").remove(k)
+
+    # ── inputParser ─────────────────────────────────────────────
+
+    def f_inputParser(self):                   # noqa: N802
+        return InputParser()
+
+    @staticmethod
+    def _as_parser(p, who: str) -> InputParser:
+        if not isinstance(p, InputParser):
+            raise MatlabError(f"{who}: the first input must be an "
+                              f"inputParser.")
+        return p
+
+    def f_addRequired(self, p, name, validator=None):      # noqa: N802
+        self._as_parser(p, "addRequired").addRequired(name, validator)
+
+    def f_addOptional(self, p, name, default, validator=None):   # noqa: N802
+        self._as_parser(p, "addOptional").addOptional(name, default,
+                                                      validator)
+
+    def f_addParameter(self, p, name, default, validator=None):  # noqa: N802
+        self._as_parser(p, "addParameter").addParameter(name, default,
+                                                        validator)
+
+    def f_parse(self, p, *args):
+        self._as_parser(p, "parse").parse(*args)
 
 
 def _operator(name: str):

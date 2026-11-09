@@ -135,6 +135,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
                "dec2base", "base2dec"),
     "Language": ("eval", "evalin", "feval", "str2func", "func2str", "nargin",
                  "validateattributes"),
+    "Input parsing": ("inputParser", "addRequired", "addOptional",
+                      "addParameter", "parse"),
     "Maps": ("containers", "isKey", "keys", "values", "remove"),
     "Special functions": ("factorial", "primes", "isprime", "gcd", "lcm",
                           "erf", "erfc", "erfinv", "erfcinv", "gamma",

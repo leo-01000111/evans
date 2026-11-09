@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import io
+import os
 import re
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
@@ -73,6 +74,9 @@ class Interpreter:
         self._presets = dict(self.namespace)
         self._commands = command_names()
         self.history: list[str] = []
+        #: Show the Python traceback under a MATLAB error (also switched
+        #: on by the ``EVANS_DEBUG`` environment variable).
+        self.debug_errors = bool(os.environ.get("EVANS_DEBUG"))
         #: Set by the UI: what ``close all`` in a MATLAB script calls.
         self.close_figures = None
         #: Set by the figure area: whether a figure drawn earlier is still
@@ -204,6 +208,9 @@ class Interpreter:
                 return self.run(source)
             self.history.append(source)
             multi = "\n" in source
+            dotted = self._dotted_name_message(source.strip())
+            if dotted:
+                return Result(source, error=dotted, line=exc.line)
             return Result(source, error="Error: " + (str(exc) if multi
                                                      else exc.message),
                           line=exc.line)
@@ -324,8 +331,10 @@ class Interpreter:
             lines = source.splitlines()
             text = lines[exc.line - 1].strip() if 0 < exc.line <= len(
                 lines) else ""
+            message = self._dotted_name_message(text)
             result = Result(text or source,
-                            error=f"Error: {exc.message} (line {exc.line})",
+                            error=message or
+                            f"Error: {exc.message} (line {exc.line})",
                             hint=f"  → line {exc.line}:  {text}" if text
                             else "", line=exc.line)
             if on_result is not None:
@@ -393,7 +402,9 @@ class Interpreter:
                 except BaseException as exc:            # noqa: BLE001
                     result.output = buffer.getvalue()
                     line = _matlab_line(exc, line_maps) or chunk.first
-                    result.error = where(line) + _matlab_message(exc)
+                    result.error = self._located_error(
+                        exc, line, line_maps, runtime, source, where,
+                        prompt)
                     result.line = line
                     if not _is_matlab_error(exc):
                         result.hint = _runtime_hint(exc, self.namespace)
@@ -414,6 +425,54 @@ class Interpreter:
             for spec in figures.to_draw():
                 previous(spec)
         return results
+
+    def _dotted_name_message(self, text: str) -> str:
+        """
+        What to say to ``C.3.2`` or ``C.3.2.m``: a script file whose name
+        has dots in it cannot be called by name, here or in MATLAB.
+        """
+        found = re.fullmatch(r"([A-Za-z_]\w*(?:\.\w+)+?)(\.m)?\s*;?", text)
+        if not found:
+            return ""
+        name = found.group(1)
+        runtime = self._matlab_runtime()
+        if runtime.find_file(name, refresh=True) is None and not any(
+                part[0].isdigit() for part in name.split(".")[1:]):
+            return ""
+        return (f"Error: '{name}' is not a valid MATLAB name, so the file "
+                f"{name}.m cannot be run by typing its name. MATLAB cannot "
+                f"either: a script's name must be a plain identifier "
+                f"(letters, digits and underscores, starting with a "
+                f"letter). Rename it, for example {name.replace('.', '_')}"
+                f".m, or open it in the editor and press Run.")
+
+    def _located_error(self, exc, line, line_maps, runtime, source, where,
+                       prompt) -> str:
+        """
+        The text of a failed line. A failure inside a function names it, as
+        MATLAB does: ``Error using f (line 2)``, the message, then an
+        ``Error in`` for each caller, with the line it ran.
+        """
+        nl = chr(10)
+        message = _matlab_message(exc)
+        frames = _matlab_frames(exc, line_maps, runtime,
+                                source.splitlines())
+        if prompt and nl not in source:
+            frames = [f for f in frames if f[0] is not None]
+        if not any(f[0] is not None for f in frames):
+            text = where(line) + message
+        else:
+            inner = frames[-1]
+            word = "using" if _is_matlab_error(exc) else "in"
+            parts = [f"Error {word} {_where(*inner[:2])}" + nl + message]
+            for label, mline, src in reversed(frames[:-1]):
+                parts.append(f"Error in {_where(label, mline)}"
+                             + (nl + "    " + src if src else ""))
+            text = (nl + nl).join(parts)
+        if self.debug_errors:
+            text += nl + nl + "".join(traceback.format_exception(
+                type(exc), exc, exc.__traceback__)).rstrip()
+        return text
 
     def _forget_closed_figures(self, figures) -> None:
         """
@@ -624,9 +683,47 @@ def _is_matlab_error(exc: BaseException) -> bool:
 
 
 def _matlab_message(exc: BaseException) -> str:
-    if _is_matlab_error(exc):
-        return str(exc)
+    from .matlab_runtime import friendly
+    message, identifier = friendly(exc)
+    if _is_matlab_error(exc) or identifier.startswith("MATLAB:"):
+        return message
     return _format_exception(exc)
+
+
+def _where(label: str | None, line: int) -> str:
+    return f"{label} (line {line})" if label else f"line {line}"
+
+
+def _matlab_frames(exc: BaseException, line_maps: dict[str, list[int]],
+                   runtime, lines: list[str]) -> list[tuple]:
+    """
+    The MATLAB frames of a traceback, outermost first: ``(function or file
+    name or None for the script itself, MATLAB line, that line's text)``.
+    """
+    from .matlab import _PY_RESERVED
+    frames = []
+    tb = exc.__traceback__
+    while tb is not None:
+        code = tb.tb_frame.f_code
+        filename = code.co_filename
+        label = None
+        if filename in line_maps:
+            mapping, text = line_maps[filename], lines
+        elif filename in runtime.frames:
+            label, mapping, text = runtime.frames[filename]
+        else:
+            tb = tb.tb_next
+            continue
+        if code.co_name != "<module>":
+            label = code.co_name
+            if label.endswith("_") and label[:-1] in _PY_RESERVED:
+                label = label[:-1]
+        if 0 < tb.tb_lineno <= len(mapping):
+            mline = mapping[tb.tb_lineno - 1]
+            source = text[mline - 1].strip() if 0 < mline <= len(text) else ""
+            frames.append((label, mline, source))
+        tb = tb.tb_next
+    return frames
 
 
 def _is_module(value: Any) -> bool:
