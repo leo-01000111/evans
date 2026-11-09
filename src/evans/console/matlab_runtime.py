@@ -596,6 +596,10 @@ def share(*values):
                 continue
             object.__setattr__(v, "_shared", True)
             stack.extend(v.values() if isinstance(v, Struct) else v)
+        elif isinstance(v, _cls.ClassObject):
+            if not v.cls.handle and not v._shared:     # a value: deep mark
+                v._shared = True
+                stack.extend(v.props.values())
         elif type(v) in (list, tuple):              # varargin, a capture
             stack.extend(v)
     return values[0] if values else None
@@ -867,6 +871,8 @@ def _shape(x) -> tuple[int, int]:
         return x.dims
     if isinstance(x, MapObject):
         return (len(x.data), 1)
+    if isinstance(x, _cls.ClassObject):
+        return (1, 1)
     if isinstance(x, (Struct, PlotOptions, Table)):
         return (len(x.rows), len(x.columns)) if isinstance(x, Table) \
             else (1, 1)
@@ -978,6 +984,8 @@ def _brief(v) -> str:
         return "[1×1 struct]"
     if isinstance(v, Cell):
         return f"{{{_size_text(_dims_of(v))} cell}}"
+    if isinstance(v, _cls.ClassObject):
+        return f"[1×1 {v.cls.name}]"
     return type(v).__name__
 
 
@@ -1474,6 +1482,9 @@ def _symbolic_aware(name: str):
         def operator(self, a, b):
             if _is_sym(a) or _is_sym(b):
                 return _symbolic.binary(name, a, b)
+            if isinstance(a, _cls.ClassObject) \
+                    or isinstance(b, _cls.ClassObject):
+                return _cls.overload_binary(name, a, b)
             return method(self, a, b)
         return operator
     return wrap
@@ -1540,11 +1551,17 @@ class Runtime:
         self.host = None
         #: Simulink models loaded with ``load_system`` and friends, by name.
         self.models: dict[str, Any] = {}
+        #: ``classdef`` support: the classes whose methods are running (for
+        #: access checks), the accessors being run, and every method name a
+        #: loaded class defines (see :class:`.classes.Dispatcher`).
+        self.class_ctx: list = []
+        self.class_busy: set = set()
+        self.method_index: set[str] = set()
         self.lib = _Library(self)
 
     # ── names ───────────────────────────────────────────────────
 
-    def lookup(self, name: str, glob: dict, loc: dict):
+    def lookup(self, name: str, glob: dict, loc: dict, dispatch: bool = True):
         """
         Resolve a name the script never assigns.
 
@@ -1555,6 +1572,10 @@ class Runtime:
         """
         if loc is not glob and name in loc:
             return loc[name]
+        if dispatch and name in self.method_index:
+            held = glob.get(name, glob)
+            if held is glob or held is self.base.get(name, object()):
+                return _cls.Dispatcher(self, name, glob, loc)
         if name in glob:
             value = glob[name]
             if not (name in self.lib.names
@@ -1705,13 +1726,22 @@ class Runtime:
         except UnicodeDecodeError:
             source = raw.decode("cp1252", errors="replace")
         try:
-            chunks = translate(source)
+            chunks = translate(source, allow_classdef=True)
         except MatlabSyntaxError as exc:
             raise MatlabError(f"{name}.m, line {exc.line}: "
                               f"{exc.message}") from None
         functions = [c for c in chunks if c.function]
         watched = []
-        if functions and min(c.first for c in functions) == min(
+        if "__ml_class__" in "".join(c.python for c in chunks):
+            scope = dict(self.base)
+            scope["__ml__"] = self
+            for chunk in chunks:
+                code = compile(chunk.python, self._frame_file(
+                    name, chunk, source), "exec")
+                watched.append((code, chunk.lines, True))
+                exec(code, scope)
+            fn = scope["__ml_class__"].constructor()
+        elif functions and min(c.first for c in functions) == min(
                 c.first for c in chunks):
             scope = dict(self.base)
             scope["__ml__"] = self
@@ -1774,6 +1804,30 @@ class Runtime:
                 return value
         return self.value(value)
 
+    def class_ref(self, name: str, glob: dict, loc: dict):
+        """``Name`` before a ``.``: a class if it is one, else as ever."""
+        cls = getattr(self.lookup(name, glob, loc), "_ml_class", None)
+        return cls if cls is not None else self.read(name, glob, loc)
+
+    def class_named(self, name: str):
+        """The :class:`.classes.ClassDef` of a class file on the path."""
+        path = self.find_file(name)
+        cls = None
+        if path is not None:
+            cls = getattr(self._file_function(name, path), "_ml_class", None)
+        if cls is None:
+            raise MatlabError(f"Undefined class '{name}'.")
+        return cls
+
+    def make_class(self, name, supers, attrs, props, methods, enums, events):
+        return _cls.build(self, name, supers, attrs, props, methods, enums,
+                          events)
+
+    def super_call(self, klass, superclass, method, args, nargout=1,
+                   obj=None):
+        return _cls.super_call(self, klass, superclass, method, args,
+                               nargout, obj)
+
     def containers_map(self, glob: dict, loc: dict, args: tuple,
                        bare: bool = False):
         """
@@ -1821,6 +1875,16 @@ class Runtime:
                     f, "ml_class", None):
                 raise MatlabError("'end' can only be used inside an index.")
             args = tuple(None if a is COLON else a for a in args)
+            if self.method_index and args:
+                # The callee was looked up before a class in the arguments
+                # was loaded: dispatch on the object now.
+                name = getattr(f, "__name__", "")
+                name = name[2:] if name.startswith("f_") else name
+                if name in self.method_index and not isinstance(
+                        f, (_cls.Dispatcher, _cls.BoundMethod))                         and any(isinstance(a, _cls.ClassObject)
+                                for a in args):
+                    return _cls.Dispatcher(self, name, self.ns, self.ns)(
+                        *args, nargout=nargout)
             kwargs = {}
             if getattr(f, "_ml_nargout", False):
                 kwargs["nargout"] = nargout
@@ -2016,7 +2080,17 @@ class Runtime:
         raise MatlabError("Brace indexing is only for cell arrays; use "
                           "() for this value.")
 
-    def field(self, obj, name):
+    def field(self, obj, name, call=True):
+        if isinstance(obj, _cls.ClassObject):
+            value = _cls.get_property(obj, name)
+            if call and isinstance(value, _cls.BoundMethod):
+                return value()
+            return value
+        if isinstance(obj, _cls.ClassDef):
+            value = obj.static_member(name)
+            if call and isinstance(value, _cls.BoundMethod):
+                return value()
+            return value
         if isinstance(obj, StructArray):
             if len(obj) == 1:
                 obj = obj[0]
@@ -2054,6 +2128,8 @@ class Runtime:
                                   value)
         if owned and len(path) == 1:
             share(value)                    # it now lives inside obj too
+        if isinstance(obj, _cls.ClassObject):
+            return _cls.assign_object(self, obj, path, value, owned)
         (kind, key), rest = path[0], path[1:]
         if isinstance(obj, (Mapping, Cell, StructArray)) and not (
                 owned and isinstance(obj, _CONTAINERS) and not obj._shared):
@@ -2478,6 +2554,8 @@ class Runtime:
     def show(self, name: str, value) -> None:
         if isinstance(value, np.ndarray) and value.ndim > 2 and value.size:
             print(_nd_text(value, name) + "\n")
+        if isinstance(value, _cls.ClassObject):
+            _cls.show_object(self, name, value)
             return
         text = display(value)
         if isinstance(value, StrArray):
@@ -2793,6 +2871,8 @@ class Runtime:
         return bool(out) if np.ndim(out) == 0 else out
 
     def uminus(self, a):
+        if isinstance(a, _cls.ClassObject):
+            return _cls.overload_unary("uminus", a)
         if isinstance(a, Deferred):
             return -a
         if _nt.is_typed(a):
@@ -2808,6 +2888,8 @@ class Runtime:
 
     @staticmethod
     def transpose(a):
+        if isinstance(a, _cls.ClassObject):
+            return _cls.overload_unary("transpose", a)
         if _is_sym(a):
             return _symbolic.transpose(a, conjugate=False)
         if isinstance(a, np.ndarray):
@@ -2826,6 +2908,8 @@ class Runtime:
         return a
 
     def ctranspose(self, a):
+        if isinstance(a, _cls.ClassObject):
+            return _cls.overload_unary("ctranspose", a)
         if _is_sym(a):
             return _symbolic.transpose(a, conjugate=True)
         out = self.transpose(a)
@@ -3147,7 +3231,9 @@ def _is_linespec(x) -> bool:
 
 # The everyday-data functions live in modules of their own, one mixin each;
 # a method defined here wins over a mixin's of the same name.
+from . import classes as _cls  # noqa: E402
 from .lib_cells import CellLibrary  # noqa: E402
+from .lib_classes import ClassLibrary  # noqa: E402
 from .lib_dates import DateLibrary  # noqa: E402
 from .lib_files import FileLibrary  # noqa: E402
 from .lib_lang import LanguageLibrary  # noqa: E402
@@ -3166,8 +3252,8 @@ from .lib_text import TextLibrary  # noqa: E402
 from .lib_types import TypesLibrary  # noqa: E402
 
 
-class _Library(FileLibrary, TableLibrary, DateLibrary, StatsLibrary,
-               TextLibrary, CellLibrary,
+class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
+               StatsLibrary, TextLibrary, CellLibrary,
                SignalLibrary, OptimLibrary, SystemLibrary, SimulinkLibrary,
                PlotLibrary, LanguageLibrary, TypesLibrary):
     """MATLAB's own functions, with MATLAB's shapes and argument rules."""
@@ -3312,7 +3398,9 @@ class _Library(FileLibrary, TableLibrary, DateLibrary, StatsLibrary,
     # ── text ────────────────────────────────────────────────────
 
     def f_disp(self, x):
-        if isinstance(x, str):
+        if isinstance(x, _cls.ClassObject):
+            _cls.disp_object(self, x)
+        elif isinstance(x, str):
             print(x)
         elif x is None or (isinstance(x, np.ndarray) and x.size == 0):
             return None
@@ -3379,6 +3467,8 @@ class _Library(FileLibrary, TableLibrary, DateLibrary, StatsLibrary,
     def f_class(self, x) -> str:
         if isinstance(x, (Str, StrArray)):
             return "string"
+        if isinstance(x, _cls.ClassObject):
+            return x.cls.name
         if isinstance(x, str):
             return "char"
         if _nt.is_typed(x):
@@ -3407,6 +3497,8 @@ class _Library(FileLibrary, TableLibrary, DateLibrary, StatsLibrary,
         return "double"
 
     def f_isa(self, x, name):
+        if isinstance(x, _cls.ClassObject):
+            return x.cls.isa(_as_text(name))
         cls = self.f_class(x)
         return cls == name or (name == "numeric" and cls in _NUMERIC_CLASSES) \
             or (name == "float" and cls in ("double", "single")) \

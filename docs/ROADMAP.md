@@ -518,7 +518,13 @@ the cheap items are done; the large types are not.
       `any`/`all` along a dimension, broadcasting, and display as `ans(:,:,k)`
       pages. `A'` and `A*B` refuse N-D arrays, as MATLAB does; most
       other functions see the `A(:,:)` view.*
-- [ ] `classdef` (properties, methods, constructors, handle classes). **L**
+- [x] `classdef` (properties, methods, constructors, handle classes). **L** *Done
+      2026-11-09, `console/classes.py` and the parser in `matlab.py`. Value and
+      handle classes, attributes (`Access`, `Constant`, `Dependent`, `Static`),
+      `get.`/`set.` methods, inheritance with `obj@Super(...)` and
+      `method@Super(obj)`, operator overloading, `disp`/`display`, events and
+      enumerations. Not done: arrays of objects, `subsref`/`subsasgn`,
+      property validation, `dynamicprops`, `@Class` and `+pkg` folders.*
 - [x] `sparse`, `speye`, `nnz` and the iterative solvers, on `scipy.sparse`. **M**
       *Done 2026-11-09:* `sparse` (all five forms), `speye`, `spalloc`, `spones`,
       `sprand`, `full`, `issparse`, `nnz`, `nonzeros`, `nzmax`, `spfun`, `spdiags`

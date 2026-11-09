@@ -58,8 +58,8 @@ NOT_IN_EVANS: dict[str, tuple[str, ...]] = {
         "evalc", "lasterr", "lastwarn", "onCleanup",
         "isvarname", "genvarname", "mfilename", "mlock", "munlock",
         "builtin", "run", "rehash", "pcode", "mex", "memoize", "isargout",
-        "nthargout", "ismethod", "isprop", "methods", "properties",
-        "metaclass", "isobject", "isjava", "javaObject", "pyrun", "pyenv",
+        "nthargout",
+        "metaclass", "isjava", "javaObject", "pyrun", "pyenv",
     ),
     "Files, dialogs and hardware": (
         "imread", "imwrite", "imfinfo", "importdata", "readcell", "writecell", "readvars", "readlines",

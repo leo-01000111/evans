@@ -55,7 +55,7 @@ PAGES = Path(__file__).parent / "pages"
 HOME = "index"
 
 #: Pages that explain rather than document one function.
-GUIDES: tuple[str, ...] = ("index", "s", "python", "not_in_evans")
+GUIDES: tuple[str, ...] = ("index", "s", "python", "not_in_evans", "classdef")
 
 #: The function pages, grouped as the index tree shows them. The control
 #: groups are the console's own (``api._GROUPS``), so a command added there
@@ -164,6 +164,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
                           "questdlg", "listdlg", "msgbox", "errordlg",
                           "warndlg", "helpdlg", "waitbar", "ginput", "input",
                           "keyboard"),
+    "Classes": ("properties", "methods", "ismethod", "isprop", "isvalid",
+                "isobject", "addlistener", "notify", "copy"),
     "Special functions": ("factorial", "primes", "isprime", "gcd", "lcm",
                           "erf", "erfc", "erfinv", "erfcinv", "gamma",
                           "gammaln", "beta", "betaln", "nthroot"),
