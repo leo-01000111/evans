@@ -845,10 +845,18 @@ class _Axes2D:
 
     def _image(self, target, trace: Trace) -> None:
         C = np.asarray(trace.z, float)
-        rows, cols = C.shape
+        rows, cols = C.shape[:2]
         (x0, x1), (y0, y1) = trace.x[:2], trace.y[:2]
         dx = (x1 - x0) / (cols - 1) if cols > 1 else 1.0
         dy = (y1 - y0) / (rows - 1) if rows > 1 else 1.0
+        if C.ndim == 3:                      # true colour: RGB in [0, 1]
+            image = pg.ImageItem(np.clip(np.nan_to_num(C), 0, 1)
+                                 .transpose(1, 0, 2), levels=(0.0, 1.0))
+            image.setRect(QRectF(x0 - dx / 2, y0 - dy / 2, (x1 - x0) + dx,
+                                 (y1 - y0) + dy))
+            target.addItem(image)
+            self.images.append((C, x0, dx, y0, dy))
+            return
         if trace.props.get("direct"):
             levels = (1.0, float(len(self.cmap) + 1))
         else:
@@ -993,8 +1001,11 @@ class DataTips(QObject):
             col = int(round((vx - x0) / dx)) if dx else 0
             row = int(round((vy - y0) / dy)) if dy else 0
             if 0 <= row < C.shape[0] and 0 <= col < C.shape[1]:
+                px = C[row, col]
+                value = (f"[{px[0]:.4g} {px[1]:.4g} {px[2]:.4g}]"
+                         if np.ndim(px) else f"{px:.4g}")
                 return HoverHit(
-                    f"X = {col + 1}, Y = {row + 1}\nValue = {C[row, col]:.4g}",
+                    f"X = {col + 1}, Y = {row + 1}\nValue = {value}",
                     x0 + col * dx, y0 + row * dy, "curve", None)
         return None
 

@@ -15,6 +15,7 @@ Rearrange the elements of an array into a new number of rows and columns.
 
 If the counts do not match, the error comes from the numerical library underneath, worded as `cannot reshape array of size 6 into shape (4,2)`.
 
+`reshape(A, 2, 3, 4)` makes an N-D array, and one size may be `[]`, which Evans works out: `reshape(A, [], 4)`. Elements are taken column by column, so the number of elements must not change.
 ## Example
 
 ```matlab

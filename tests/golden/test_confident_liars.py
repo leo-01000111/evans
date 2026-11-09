@@ -303,9 +303,10 @@ def test_sort_complex_by_magnitude_then_angle(it):
 
 
 @pytest.mark.parametrize("fn", ["zeros", "ones", "rand", "randn"])
-def test_three_sizes_refuse_instead_of_dropping_one(it, fn):
-    assert "N-D" in error_of(it, f"x = {fn}(2,3,4)")
-    assert "N-D" in error_of(it, f"x = {fn}([2 3 4])")
+def test_three_sizes_make_an_nd_array(it, fn):
+    run(it, f"x = {fn}(2,3,4); y = {fn}([2 3 4]);")
+    assert np.shape(val(it, "x")) == (2, 3, 4)
+    assert np.shape(val(it, "y")) == (2, 3, 4)
     run(it, f"x = {fn}(2,3,1);")                # a trailing 1 is still 2-D
     assert np.shape(val(it, "x")) == (2, 3)
 

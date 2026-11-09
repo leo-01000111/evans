@@ -16,6 +16,7 @@ With a scalar `A`, `repmat(7, 3)` is a 3-by-3 matrix of sevens, the same as `7*o
 
 Text is repeated across only: `repmat('ab', 1, 3)` is `'ababab'`. Evans has no text with several rows, so `repmat('ab', 2, 1)` stops with an error; use a cell array for a list of texts.
 
+`repmat(A, m, n, p)` and `repmat(A, [m n p])` tile into a third dimension as well.
 ## Example
 
 ```matlab

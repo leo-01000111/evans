@@ -405,11 +405,16 @@ class _Painter:
 
     def _image(self, ax, trace: Trace) -> None:
         C = np.asarray(trace.z, float)
-        rows, cols = C.shape
+        rows, cols = C.shape[:2]
         (x0, x1), (y0, y1) = trace.x[:2], trace.y[:2]
         dx = (x1 - x0) / (cols - 1) if cols > 1 else 1.0
         dy = (y1 - y0) / (rows - 1) if rows > 1 else 1.0
         extent = (x0 - dx / 2, x1 + dx / 2, y0 - dy / 2, y1 + dy / 2)
+        if C.ndim == 3:                      # true colour: RGB in [0, 1]
+            self.mappable = None
+            ax.imshow(np.clip(np.nan_to_num(C), 0, 1), extent=extent,
+                      origin="lower", aspect="auto", interpolation="nearest")
+            return
         if trace.props.get("direct"):
             from matplotlib.colors import Normalize
             norm = Normalize(1, self.cmap.N + 1)

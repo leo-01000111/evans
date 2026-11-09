@@ -15,6 +15,7 @@ Sum of the elements of a vector, or of each column of a matrix.
 
 A logical array counts its true elements, so `sum(x > 0)` is the number of positive entries. Evans does not support `sum(A, 'all')`; use `sum(A(:))` instead.
 
+For an N-D array `sum(A)` runs along the first dimension that is not 1, and `sum(A, 3)` along the third; `mean`, `prod`, `max`, `min`, `cumsum`, `any` and `all` do the same.
 ## Example
 
 ```matlab
