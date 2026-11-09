@@ -266,6 +266,54 @@ The engine was ahead of the editor and of its links to the console. Tests:
         a block inside it keeps the wire names; wire names already pass through
         flattening since 2026-11-09). **S**
 
+- [ ] **Snap blocks by port alignment.** Dragging a block snaps to other blocks' edges
+      and centres today (`guides_changed` in `ui/sim/items.py`, drawn by the canvas's
+      guides). Add snapping of a port to the port it will be wired to: while
+      dragging, line up a block's output or input with the matching input or
+      output of a neighbour (and of a connected block first) so the wire between
+      them is one straight run, and show a guide through the two ports. Handle
+      rotated and flipped blocks and several ports on one block, prefer ports
+      that are already wired, and let a modifier key turn it off. **S–M**
+- [ ] **Scope and graph overhaul in the Model tab** (`ui/sim/scope.py`). It is a basic
+      pyqtgraph plot with a channel list and a CSV/`.mat` export today. Wanted:
+      - **Copy straight from the plot:** Ctrl+C or a right-click menu entry copies
+        the plot as an image (and the visible data as tab-separated text) to the
+        clipboard, to paste into a report or a spreadsheet. **S**
+      - **Better exports:** PNG at a chosen size and DPI, SVG, and PDF/EPS through
+        the matplotlib path the console figures already use, with the theme either
+        as on screen or on a white page for papers; the same for XY graphs. **S–M**
+      - **Scaling:** manual and auto axis limits, a per-channel offset/scale,
+        log axes, linked time axes across scopes, zoom to a box, and a "fit" and
+        "reset" button. **M**
+      - **Undock:** pop a scope out into its own window (and several at once, one
+        per Scope block), keep it live over the next run, and dock it back. **M**
+      - **Look:** line width, colour and style per channel, markers, legend
+        position, grid, and a title, saved in the model like Simulink's scope
+        settings. Plain measurement readouts (cursors with a delta between two,
+        min/max/mean/peak-to-peak over a time range). **M**
+      - **Hand-off to the console:** send the plotted channels to the workspace as a
+        `timeseries` or struct, and "open as a figure" to continue editing it with
+        console plot commands. **S–M**
+- [ ] **Script pre-run for a model.** Link one or more `.m` files to an `.fmdl`, run
+      in order when the model opens and/or before each run, so a model's
+      parameters (`Kp`, `Ts`, plant matrices) are set up by the script that
+      defines them, as a Simulink model's PreLoadFcn/InitFcn do. Wanted:
+      - A "Model scripts" dialog on the Model tab: an ordered list of `.m` files
+        (relative to the `.fmdl` where possible), each ticked for *on open*,
+        *before every run*, or both, with move up/down and a Run now button. **M**
+      - The paths and flags saved in the `.fmdl`; a missing file is a warning that
+        names it, not a failed open. **S**
+      - Scripts run in the console workspace, so block parameters that name
+        workspace variables see them at compile time (`sim/workspace.py`); output
+        and errors go to the console with the script's name and line, and an error
+        in a pre-run script stops the run and says which one. **S–M**
+      - A guard against surprises: ask before running scripts from a model that was
+        just opened from a file the user did not create (like MATLAB's callback
+        warning), with a "trust this model" choice remembered per path. **S**
+      - MATLAB-side parity: the `set_param(model, 'PreLoadFcn', …)` and
+        `'InitFcn'` forms in `console/lib_sim.py`, and loading a `.slx`'s
+        callbacks once import exists (Phase 7). **S**
+
 Found while doing this phase, not fixed in it:
 
 - [x] A **PID block with "Limit output" on stalls the solver** once its output reaches
@@ -447,6 +495,17 @@ Professional users need this before Evans can be used for paid work.
       for the interval and for turning it off, delete the copy on a normal save or
       close, and keep the last few versions of a model. Test with a simulated kill
       mid-edit. **M**
+- [ ] **Rename the model file extension `.fmdl`** (FauxMatlab model, a leftover of the
+      old name). The new extension is `.evx`, chosen
+      2026-11-09 after a search found no common program using it (`.evm` was the
+      runner-up). Save new files with it,
+      keep reading `.fmdl` for good, offer "Save as new format" on an old file and
+      never rename on open, register the new type in the Windows installer and the
+      macOS bundle (file association and icon), update File > Open/Save filters,
+      the examples under `src/evans/examples/`, `tools/build_examples.py`, the help
+      pages, the site and the tests. The `"format"` tag inside the file stays
+      readable as it is (CLAUDE.md lists it as a naming exception) and gets a
+      version field instead. **S–M**
 - [ ] A Linux build (AppImage or a `.deb`). CI already tests on Ubuntu. **M**
 - [ ] macOS notarisation, and an Intel build if anyone asks. **M**
 - [ ] Windows code signing (deferred on purpose until there are more users; a Certum
