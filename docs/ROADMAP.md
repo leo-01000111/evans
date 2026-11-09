@@ -488,11 +488,44 @@ the cheap items are done; the large types are not.
       pages. `A'` and `A*B` refuse N-D arrays, as MATLAB does; most
       other functions see the `A(:,:)` view.*
 - [ ] `classdef` (properties, methods, constructors, handle classes). **L**
-- [ ] `sparse`, `speye`, `nnz` and the iterative solvers, on `scipy.sparse`. **M**
-- [ ] `.mat` v7.3 (HDF5) through h5py, a new dependency. **M**
-- [ ] Save live scripts back to `.mlx`, not only to plain live `.m`. **M**
-- [ ] `uigetfile`, `uiputfile`, `inputdlg`, `msgbox`, `questdlg`, `waitbar`, `ginput`,
+- [x] `sparse`, `speye`, `nnz` and the iterative solvers, on `scipy.sparse`. **M**
+      *Done 2026-11-09:* `sparse` (all five forms), `speye`, `spalloc`, `spones`,
+      `sprand`, `full`, `issparse`, `nnz`, `nonzeros`, `nzmax`, `spfun`, `spdiags`
+      (build, extract, replace); `pcg`, `gmres`, `bicgstab`, `bicg`, `minres`
+      (flag, relres, iter, resvec, `M1`/`M2`, `x0`); `eigs` (symmetric and
+      general, `'smallestabs'` and a shift) and `svds`. A sparse matrix is a
+      `Sparse` value (`lib_sparse.py`): `+ - .* * \ / ^ '`, comparisons,
+      indexing, `A(i,j) = v`, `A(:,k) = []` and `[A B; C D]` keep it sparse where
+      MATLAB does; `size`, `abs`, `sum`, `find`, `diag`, `norm`, `kron` work on
+      the sparse form and any other function is handed `full(A)`. A single
+      element `A(i,j)` is a plain number, and writing elements one by one is
+      slow (build with `sparse(i,j,v)`). Not done: function handles as `A` in
+      the solvers or `eigs`, `lsqr`, `ilu`, `ichol`; they stay on the not-in-Evans
+      list.
+- [x] `.mat` v7.3 (HDF5) through h5py, a new dependency. **M**
+      *Done 2026-11-09, h5py added* (`matfile73.py`): `save ... -v7.3` (and
+      `-append` onto a 7.3 file) and `load` of both numbers, text, logicals,
+      complex, empty, cells (through `#refs#`), structs, struct arrays and sparse
+      matrices. Tables, function handles and classes in a MATLAB-written file are
+      skipped with a warning. The writer follows MATLAB's layout from its
+      documentation; it has not been opened in MATLAB itself.
+- [x] Save live scripts back to `.mlx`, not only to plain live `.m`. **M**
+      *Found already done:* the editor's Save keeps an `.mlx` an `.mlx`, Save as
+      offers both, and it warns before dropping captions and templates (`.mlx`
+      has no place for them). Added a test that the three SiPro labs, saved by
+      MATLAB R2023a, read back the same after Evans writes them again. The writer
+      has still not been opened in MATLAB.
+- [x] `uigetfile`, `uiputfile`, `inputdlg`, `msgbox`, `questdlg`, `waitbar`, `ginput`,
       and `input` at the console prompt. **M**
+      *Done 2026-11-09:* also `uigetdir`, `listdlg`, `errordlg`, `warndlg`,
+      `helpdlg` and `keyboard`. The commands ask a *dialog host*
+      (`console/dialogs.py`), like the figure and app sinks: the window installs
+      Qt dialogs, and anything else (a test, a headless run) gets a scripted host
+      that records the question and answers Cancel. `input` and `keyboard` read a
+      line from the console's own prompt; `ginput` waits for clicks on the figure
+      on top. `waitbar(h)` is closed by `close(h)` or `delete(h)`. `input`
+      evaluates in the base workspace; `msgbox` waits until closed, unlike
+      MATLAB's.
 
 ## Phase 5 — Hardware, identification, symbolic leftovers
 

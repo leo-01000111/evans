@@ -15,8 +15,8 @@ from __future__ import annotations
 NOT_IN_EVANS: dict[str, tuple[str, ...]] = {
     "Arrays and indexing": (
         "accumarray", "bsxfun", "colon", "cummax", "cummin", "histc",
-        "idivide", "mat2cell", "mink", "maxk", "nnz", "nonzeros",
-        "rot90", "sortrows", "issorted", "bounds",
+        "idivide", "mat2cell", "mink", "maxk", "rot90", "sortrows",
+        "issorted", "bounds",
         "normalize", "rescale", "histcounts2", "histogram2", "vander", "hilb", "invhilb",
         "toeplitz", "hankel", "pascal", "rosser", "wilkinson", "gallery",
         "hadamard", "compan", "blkdiag", "shiftdim",
@@ -30,9 +30,7 @@ NOT_IN_EVANS: dict[str, tuple[str, ...]] = {
         "isinteger", "isfloat",
     ),
     "Sparse and iterative solvers": (
-        "sparse", "speye", "spones", "sprand", "full", "issparse", "spalloc",
-        "pcg", "gmres", "bicg", "bicgstab", "minres", "lsqr", "eigs", "svds",
-        "ilu", "ichol",
+        "lsqr", "ilu", "ichol",
     ),
     "Linear algebra": (
         "lsqminnorm", "linsolve", "normest", "givens", "hess", "schur", "qz",
@@ -80,9 +78,8 @@ NOT_IN_EVANS: dict[str, tuple[str, ...]] = {
         "imread", "imwrite", "imfinfo", "importdata", "readcell", "writecell", "readvars", "readlines",
         "writelines", "tempdir", "tempname",
         "websave", "webread", "urlread", "unzip", "zip", "gzip", "gunzip",
-        "tar", "untar", "matfile", "xmlread", "xmlwrite", "uigetfile",
-        "uiputfile", "uigetdir", "inputdlg", "msgbox", "errordlg", "warndlg",
-        "questdlg", "listdlg", "waitbar", "ginput", "uiwait", "uiresume",
+        "tar", "untar", "matfile", "xmlread", "xmlwrite",
+        "uiwait", "uiresume",
         "menu", "uifigure", "uicontrol", "uimenu",
         "uitable", "uipanel", "serialport", "serialportlist", "tcpclient",
         "udpport", "bluetooth", "i2c", "spi", "arduino",

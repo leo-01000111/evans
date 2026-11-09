@@ -30,6 +30,7 @@ from pyqtgraph.exporters import SVGExporter
 from PySide6.QtCore import (
     QBuffer,
     QByteArray,
+    QEventLoop,
     QIODevice,
     QObject,
     QPoint,
@@ -41,10 +42,12 @@ from PySide6.QtGui import (
     QAction,
     QColor,
     QImage,
+    QKeySequence,
     QPainter,
     QPainterPath,
     QPen,
     QPolygonF,
+    QShortcut,
 )
 from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import (
@@ -148,6 +151,44 @@ class FigureView(QWidget):
         """The figure's plots, top to bottom — two for a Bode diagram."""
         return sorted(self.findChildren(PlotWidget),
                       key=lambda w: w.mapTo(self, QPoint(0, 0)).y())
+
+    def collect_points(self, count: int | None) -> list[tuple[float, float, int]]:
+        """
+        ``ginput``: wait for clicks on the first plot, in data coordinates.
+
+        Stops after ``count`` clicks, or when Return is pressed. The button
+        is 1, 2 or 3 for the left, middle and right mouse button.
+        """
+        plots = self.plot_widgets()
+        if not plots:
+            return []
+        plot = plots[0]
+        points: list[tuple[float, float, int]] = []
+        loop = QEventLoop()
+        buttons = {Qt.LeftButton: 1, Qt.MiddleButton: 2, Qt.RightButton: 3}
+
+        def clicked(event) -> None:
+            at = plot.plotItem.vb.mapSceneToView(event.scenePos())
+            points.append((float(at.x()), float(at.y()),
+                           buttons.get(event.button(), 1)))
+            event.accept()
+            if count is not None and len(points) >= count:
+                loop.quit()
+
+        plot.scene().sigMouseClicked.connect(clicked)
+        keys = [QShortcut(QKeySequence(k), self) for k in ("Return", "Enter")]
+        for key in keys:
+            key.setContext(Qt.WidgetWithChildrenShortcut)
+            key.activated.connect(loop.quit)
+        self.setFocus()
+        try:
+            if count is None or count > 0:
+                loop.exec()
+        finally:
+            plot.scene().sigMouseClicked.disconnect(clicked)
+            for key in keys:
+                key.setParent(None)
+        return points
 
     def drawn_with_matplotlib(self) -> bool:
         """Whether any of its axes is a matplotlib canvas (3-D, a pie)."""

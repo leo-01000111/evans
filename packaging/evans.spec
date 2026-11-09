@@ -42,6 +42,8 @@ HIDDEN = (
     + ["scipy.special._cdflib", "scipy._lib.messagestream",
        # Imported only when a .xlsx is read or written.
        "openpyxl",
+       # Imported only when a version 7.3 .mat file is read or written.
+       "h5py", "h5py.defs", "h5py.utils", "h5py._proxy", "h5py.h5ac",
        # Imported only when a figure needs them: 3-D axes (asked for by the
        # name "3d"), their canvas in the figure area, and contour lines.
        "mpl_toolkits.mplot3d", "matplotlib.backends.backend_qtagg",

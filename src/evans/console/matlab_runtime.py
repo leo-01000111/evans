@@ -4500,6 +4500,13 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
             np.savetxt(path, np.vstack(rows) if rows else np.zeros((0, 0)),
                        fmt="%.7e", delimiter="   ")
             return None
+        from . import matfile73
+        if "-v7.3" in flags or ("-append" in flags
+                                and matfile73.is_v73(path)):
+            if "-append" in flags and matfile73.is_v73(path):
+                chosen = {**matfile73.load(path)[0], **chosen}
+            matfile73.save(path, chosen)
+            return None
         data = {k: _to_mat(v) for k, v in chosen.items()}
         if "-append" in flags and os.path.isfile(path):
             old = scipy.io.loadmat(path)
@@ -4518,7 +4525,12 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
         if not os.path.isfile(path):
             raise MatlabError(f"Unable to find file or directory "
                               f"'{_as_text(filename)}'.")
-        if path.lower().endswith(".mat"):
+        from . import matfile73
+        if path.lower().endswith(".mat") and matfile73.is_v73(path):
+            values, skipped = matfile73.load(path)
+            for warning in skipped:
+                print("Warning: " + warning)
+        elif path.lower().endswith(".mat"):
             raw = scipy.io.loadmat(path, squeeze_me=False,
                                    struct_as_record=False,
                                    chars_as_strings=True)
@@ -5549,3 +5561,10 @@ for _name, _impl in _symbolic.NEW.items():
     setattr(_Library, _lib_attr(_name),
             _only(_impl, _name in _symbolic.COUNTS_OUTPUTS))
 del _name, _impl
+
+
+from . import lib_sparse as _lib_sparse  # noqa: E402
+from . import lib_ui as _lib_ui  # noqa: E402
+
+_lib_sparse.install()
+_lib_ui.install()
