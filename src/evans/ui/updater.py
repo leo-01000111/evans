@@ -164,11 +164,18 @@ class Updater(QObject):
 
     def _ask_open_page(self, release: Release) -> bool:
         """True to open the release page. A method so tests can answer it."""
+        if update.is_packaged():
+            # The Mac app: it cannot replace itself yet, but it is not a
+            # checkout, so say what to do instead of blaming the source.
+            how = ("The Mac app cannot update itself yet: download the new "
+                   "disk image from the release page and drag Evans to "
+                   "Applications.")
+        else:
+            how = "This copy runs from source, so it cannot update itself."
         answer = QMessageBox.question(
             self._window, "Update available",
             f"Evans {release.label} is available (you have "
-            f"{update.__version__}). This copy runs from source, so it "
-            "cannot update itself. Open the release page?")
+            f"{update.__version__}). {how} Open the release page?")
         return answer == QMessageBox.Yes
 
     def _tell(self, title: str, text: str) -> None:

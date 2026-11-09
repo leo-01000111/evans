@@ -627,7 +627,16 @@ Professional users need this before Evans can be used for paid work.
 - [ ] macOS notarisation, and an Intel build if anyone asks. **M**
 - [ ] Windows code signing (deferred on purpose until there are more users; a Certum
       cloud certificate is the plan). **S** once bought.
-- [ ] Auto-update on macOS (Windows has it). **M**
+- [ ] Auto-update on macOS (Windows has it). **M** *State, 2026-11-09:* the Mac app
+      already checks GitHub at launch (`update.is_packaged`) and offers the release
+      page, because it cannot replace itself; the prompt now says to download the
+      disk image (`ui/updater.py`). That reads the Windows `.exe` asset's
+      presence and checksum, so a release whose Windows build were missing would
+      hide the update from Macs too: make the Mac check read the `.dmg` asset.
+      Real self-update (a helper that waits for Evans to quit, swaps the `.app`,
+      relaunches) needs notarisation first: with the ad hoc signature CI uses,
+      Gatekeeper quarantines a downloaded replacement. Order: notarisation, then
+      the helper, then the `.dmg` checksum check.
 - [ ] A reference corpus of real MATLAB outputs (inputs and saved results, run once
       on a MATLAB licence) checked in CI, beside the closed-form golden tests. **M**
 - [ ] A startup-time test and budget, and a size budget. The `dist/Evans` folder is
