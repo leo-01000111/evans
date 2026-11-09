@@ -57,6 +57,54 @@ class MatlabError(Exception):
         self.identifier = identifier
 
 
+def too_many_inputs() -> MatlabError:
+    return MatlabError("Too many input arguments.", "MATLAB:TooManyInputs")
+
+
+def friendly(exc: BaseException) -> tuple[str, str]:
+    """
+    ``(message, identifier)`` for an exception, in MATLAB's words where the
+    Python error is one MATLAB has a name for: a call with the wrong number
+    of inputs, or a parameter used that the caller never passed.
+    """
+    if isinstance(exc, MatlabError):
+        return str(exc), exc.identifier
+    if isinstance(exc, TypeError):
+        text = str(exc)
+        if "positional argument" in text and "<lambda>" in text:
+            if "missing" in text:
+                return "Not enough input arguments.", "MATLAB:minrhs"
+            return "Too many input arguments.", "MATLAB:TooManyInputs"
+    if isinstance(exc, (TypeError, AttributeError, ValueError)):
+        name = _missing_parameter(exc)
+        if name is not None:
+            return (f"Unrecognized function or variable '{name}'.",
+                    "MATLAB:UndefinedFunction")
+    return str(exc), type(exc).__name__
+
+
+def _missing_parameter(exc: BaseException) -> str | None:
+    """
+    The first parameter of a translated function the caller left out, if
+    the failure happened inside one: a missing argument is ``None`` there.
+    """
+    found = None
+    tb = exc.__traceback__
+    while tb is not None:
+        code = tb.tb_frame.f_code
+        if code.co_filename.startswith("<") and code.co_argcount:
+            local = tb.tb_frame.f_locals
+            names = code.co_varnames[:code.co_argcount]
+            nargin = local.get("nargin")
+            if isinstance(nargin, int):
+                for k, n in enumerate(names):
+                    if k >= nargin and local.get(n, 0) is None                             and not n.startswith("_"):
+                        found = n.removesuffix("_") if n.endswith("_")                             else n
+                        break
+        tb = tb.tb_next
+    return found
+
+
 class ScriptReturn(Exception):
     """``return`` at the top level of a script: stop, quietly."""
 
@@ -70,9 +118,7 @@ class MException:
 
     @classmethod
     def wrap(cls, exc: BaseException) -> MException:
-        if isinstance(exc, MatlabError):
-            return cls(str(exc), exc.identifier)
-        return cls(str(exc), type(exc).__name__)
+        return cls(*friendly(exc))
 
     def __repr__(self) -> str:
         return f"MException: {self.message}"
@@ -175,6 +221,200 @@ class StructArray(list):
         lines = [f"{r}×{c} struct array with fields:", ""]
         lines += [f"    {f}" for f in fields]
         return "\n".join(lines)
+
+
+class InputParser:
+    """
+    ``inputParser``: a handle collecting how a function's arguments are
+    checked. Required arguments come first, then optional positionals, then
+    name-value pairs (and switches).
+    """
+
+    def __init__(self) -> None:
+        self.FunctionName = ""
+        self.CaseSensitive = False
+        self.KeepUnmatched = False
+        self.PartialMatching = True
+        self.StructExpand = True
+        self._required: list[tuple[str, Any]] = []
+        self._optional: list[tuple[str, Any, Any]] = []
+        self._named: list[tuple[str, Any, Any, bool]] = []   # + is_switch
+        self.Results = Struct()
+        self.Unmatched = Struct()
+        self.UsingDefaults = Cell()
+
+    @property
+    def Parameters(self) -> Cell:                     # noqa: N802
+        names = ([n for n, _ in self._required]
+                 + [n for n, _, _ in self._optional]
+                 + [n for n, _, _, _ in self._named])
+        return Cell(names)
+
+    def __repr__(self) -> str:
+        flag = lambda v: str(v).lower()               # noqa: E731
+        return "\n".join([
+            "  inputParser with properties:", "",
+            f"     CaseSensitive: {flag(self.CaseSensitive)}",
+            f"      FunctionName: '{self.FunctionName}'",
+            f"     KeepUnmatched: {flag(self.KeepUnmatched)}",
+            f"   PartialMatching: {flag(self.PartialMatching)}",
+            f"      StructExpand: {flag(self.StructExpand)}",
+            f"        Parameters: {{{', '.join(self.Parameters)}}}", ""])
+
+    # ── declaring ───────────────────────────────────────────────
+
+    def _declare(self, name) -> str:
+        if not isinstance(name, str) or not name.isidentifier():
+            raise MatlabError("The argument name must be a valid "
+                              "variable name.")
+        if name in self.Parameters:
+            raise MatlabError(f"The argument '{name}' has already been "
+                              f"declared.")
+        return name
+
+    def addRequired(self, name, validator=None):      # noqa: N802
+        if self._optional or self._named:
+            raise MatlabError("Required arguments must be added before "
+                              "optional and parameter arguments.")
+        self._required.append((self._declare(name), validator))
+
+    def addOptional(self, name, default, validator=None):   # noqa: N802
+        if self._named:
+            raise MatlabError("Optional arguments must be added before "
+                              "parameter arguments.")
+        self._optional.append((self._declare(name), default, validator))
+
+    def addParameter(self, name, default, validator=None):  # noqa: N802
+        self._named.append((self._declare(name), default, validator, False))
+
+    addParamValue = addParameter                      # noqa: N815
+
+    def addSwitch(self, name):                        # noqa: N802
+        self._named.append((self._declare(name), False, None, True))
+
+    # ── parsing ─────────────────────────────────────────────────
+
+    def _fail(self, text: str,
+              identifier: str = "MATLAB:InputParser:ArgumentFailedValidation"):
+        prefix = f"{self.FunctionName}: " if self.FunctionName else ""
+        raise MatlabError(prefix + text, identifier)
+
+    def _check(self, name: str, value, validator) -> None:
+        if validator is None:
+            return
+        try:
+            ok = validator(value)
+        except MatlabError as exc:
+            self._fail(f"The value of '{name}' is invalid. {exc}")
+        except (TypeError, ValueError, AttributeError) as exc:
+            self._fail(f"The value of '{name}' is invalid. "
+                       f"{friendly(exc)[0]}")
+        if ok is None:
+            return                 # validateattributes and friends: silent
+        if isinstance(ok, np.ndarray):
+            ok = bool(ok.size) and bool(np.all(ok))
+        if not ok:
+            text = getattr(validator, "_ml_text", None)
+            if not text:
+                text = getattr(validator, "__name__", "the validator")
+                text = text[2:] if text.startswith("f_") else text
+            self._fail(f"The value of '{name}' is invalid. It must "
+                       f"satisfy the function: {text}.")
+
+    def _name_match(self, arg) -> tuple | None:
+        """The named parameter a text argument spells, if it spells one."""
+        if not isinstance(arg, str):
+            return None
+        fold = (lambda t: t) if self.CaseSensitive else str.lower
+        key = fold(arg)
+        for entry in self._named:
+            if fold(entry[0]) == key:
+                return entry
+        if self.PartialMatching and key:
+            part = [e for e in self._named if fold(e[0]).startswith(key)]
+            if len(part) == 1:
+                return part[0]
+        return None
+
+    def parse(self, *args):
+        args = list(args)
+        results: dict[str, Any] = {}
+        used: set[str] = set()
+        if len(args) < len(self._required):
+            self._fail("Not enough input arguments.", "MATLAB:minrhs")
+        for name, validator in self._required:
+            value = args.pop(0)
+            self._check(name, value, validator)
+            results[name] = value
+        for name, _default, validator in self._optional:
+            if not args:
+                break
+            value = args[0]
+            if isinstance(value, str) and self._name_match(value):
+                break                       # a parameter name, not a value
+            if validator is not None:
+                try:
+                    self._check(name, value, validator)
+                except MatlabError:
+                    if isinstance(value, str):
+                        break               # text that is not this value
+                    raise
+            args.pop(0)
+            results[name] = value
+            used.add(name)
+        if not self._named and not self.KeepUnmatched and args:
+            self._fail("Too many input arguments.", "MATLAB:TooManyInputs")
+        unmatched: dict[str, Any] = {}
+        pairs: list[tuple[str, Any]] = []
+        while args:
+            head = args.pop(0)
+            if isinstance(head, Mapping) and self.StructExpand:
+                pairs.extend(head.items())
+                continue
+            if not isinstance(head, str):
+                self._fail("Parameter names must be text, found a "
+                           "value that is not.",
+                           "MATLAB:InputParser:ParamMustBeChar")
+            entry = self._name_match(head)
+            if entry is not None and entry[3]:        # a switch
+                pairs.append((entry[0], True))
+                continue
+            if not args:
+                if entry is None and not self.KeepUnmatched:
+                    self._fail(f"'{head}' is not a recognized parameter.",
+                               "MATLAB:InputParser:UnmatchedParameter")
+                self._fail(f"No value was provided for '{head}'.",
+                           "MATLAB:InputParser:ParamMissingValue")
+            pairs.append((head, args.pop(0)))
+        for key, value in pairs:
+            entry = self._name_match(key)
+            if entry is None:
+                if not self.KeepUnmatched:
+                    self._fail(f"'{key}' is not a recognized parameter. "
+                               f"See the inputParser's Parameters for the "
+                               f"valid names.",
+                               "MATLAB:InputParser:UnmatchedParameter")
+                unmatched[key] = value
+                continue
+            name, _, validator, _ = entry
+            self._check(name, value, validator)
+            results[name] = value
+            used.add(name)
+        defaults = []
+        for name, default, _ in self._optional:
+            if name not in used:
+                results[name] = default
+                defaults.append(name)
+        for name, default, _, _ in self._named:
+            if name not in used:
+                results[name] = default
+                defaults.append(name)
+        # MATLAB lists Results alphabetically, whatever order they came in.
+        self.Results = Struct({k: results[k] for k in sorted(
+            results, key=str.lower)})
+        self.Unmatched = Struct(unmatched)
+        self.UsingDefaults = Cell(defaults, rows=1)
+        share(self.Results, self.Unmatched)
 
 
 class MapObject:
@@ -1078,6 +1318,7 @@ class Runtime:
     End = staticmethod(End)
     MException = MException
     ScriptReturn = ScriptReturn
+    too_many_inputs = staticmethod(too_many_inputs)
 
     def __init__(self, namespace: dict, base: dict | None = None,
                  clear: Callable[..., None] | None = None) -> None:
@@ -1086,6 +1327,9 @@ class Runtime:
         self._clear = clear
         self.figures = Figures()
         self.script_functions: set[str] = set()
+        #: Compiled name of a function file's chunk -> (file name, MATLAB
+        #: line of each Python line, the file's lines): for error reports.
+        self.frames: dict[str, tuple[str, list[int], list[str]]] = {}
         self._tic = time.perf_counter()
         #: The running script's folder; ``cd`` moves away from it.
         self.script_folder: str | None = None
@@ -1277,20 +1521,21 @@ class Runtime:
             raise MatlabError(f"{name}.m, line {exc.line}: "
                               f"{exc.message}") from None
         functions = [c for c in chunks if c.function]
-        filename = f"<{name}.m>"
         watched = []
         if functions and min(c.first for c in functions) == min(
                 c.first for c in chunks):
             scope = dict(self.base)
             scope["__ml__"] = self
             for chunk in functions:
-                code = compile(chunk.python, filename, "exec")
+                code = compile(chunk.python, self._frame_file(
+                    name, chunk, source), "exec")
                 watched.append((code, chunk.lines, True))
                 exec(code, scope)
             main = min(functions, key=lambda c: c.first)
             fn = scope[re.search(r"^def (\w+)\(", main.python, re.M).group(1)]
         else:
-            codes = [compile(c.python, filename, "exec") for c in chunks]
+            codes = [compile(c.python, self._frame_file(name, c, source),
+                             "exec") for c in chunks]
             watched = [(code, c.lines, c.function)
                        for code, c in zip(codes, chunks)]
 
@@ -1303,6 +1548,15 @@ class Runtime:
         self._files[path] = (stamp, fn, watched)
         self._watch_file(watched, path)
         return fn
+
+    def _frame_file(self, name: str, chunk, source: str) -> str:
+        """
+        The name a file's chunk is compiled under, and the record that lets
+        an error in it say which file, which line, and what that line says.
+        """
+        filename = f"<{name}.m:{chunk.first}>"
+        self.frames[filename] = (name, chunk.lines, source.splitlines())
+        return filename
 
     def _watch_file(self, watched: list, path: str) -> None:
         """
@@ -1579,6 +1833,10 @@ class Runtime:
             if isinstance(obj, Mapping):
                 current = obj.get(key)
                 obj[key] = self.assign(current, rest, value, owned)
+                return obj
+            if isinstance(obj, InputParser):
+                setattr(obj, key, self.assign(getattr(obj, key, None), rest,
+                                              value))
                 return obj
             if isinstance(obj, PlotOptions):
                 current = obj.get(key)
@@ -2580,6 +2838,8 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
             return "cell"
         if isinstance(x, MapObject):
             return "containers.Map"
+        if isinstance(x, InputParser):
+            return "inputParser"
         if isinstance(x, (Struct, StructArray)):
             return "struct"
         if isinstance(x, ctl.TransferFunction):

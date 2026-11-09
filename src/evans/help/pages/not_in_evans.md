@@ -44,7 +44,7 @@ Typing one of these names gives the usual error with a sentence added saying so.
 
 ## Language and functions
 
-`inputParser`, `inputname`, `narginchk`, `nargoutchk`, `nargchk`, `evalc`, `lasterr`, `lastwarn`, `onCleanup`, `isvarname`, `genvarname`, `mfilename`, `mlock`, `munlock`, `builtin`, `run`, `rehash`, `pcode`, `mex`, `memoize`, `isargout`, `nthargout`, `ismethod`, `isprop`, `methods`, `properties`, `metaclass`, `isobject`, `isjava`, `javaObject`, `pyrun`, `pyenv`
+`inputname`, `narginchk`, `nargoutchk`, `nargchk`, `evalc`, `lasterr`, `lastwarn`, `onCleanup`, `isvarname`, `genvarname`, `mfilename`, `mlock`, `munlock`, `builtin`, `run`, `rehash`, `pcode`, `mex`, `memoize`, `isargout`, `nthargout`, `ismethod`, `isprop`, `methods`, `properties`, `metaclass`, `isobject`, `isjava`, `javaObject`, `pyrun`, `pyenv`
 
 ## Files, dialogs and hardware
 

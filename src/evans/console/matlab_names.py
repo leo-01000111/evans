@@ -69,7 +69,7 @@ NOT_IN_EVANS: dict[str, tuple[str, ...]] = {
         "filloutliers",
     ),
     "Language and functions": (
-        "inputParser", "inputname", "narginchk", "nargoutchk", "nargchk",
+        "inputname", "narginchk", "nargoutchk", "nargchk",
         "evalc", "lasterr", "lastwarn", "onCleanup",
         "isvarname", "genvarname", "mfilename", "mlock", "munlock",
         "builtin", "run", "rehash", "pcode", "mex", "memoize", "isargout",

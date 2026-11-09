@@ -350,7 +350,9 @@ the cheap items are done; the large types are not.
       `fileread`. **S**
 - [ ] `eval`, `evalin`, `feval`, `str2func`, `func2str`, `exist`, `inputParser`,
       `validateattributes`, `nargin(fn)`. **M** *Done 2026-11-09, `console/lib_lang.py`,
-      except `inputParser`. `eval` runs in the base workspace; inside a function it
+      and `inputParser` (done 2026-11-09 in `matlab_runtime.InputParser`:
+      `addRequired`/`addOptional`/`addParameter`/`addSwitch`/`parse`, `Results`,
+      `Unmatched`, `UsingDefaults`, validators, name matching as MATLAB's). `eval` runs in the base workspace; inside a function it
       reads variables and refuses to set them. `evalin` takes `'base'` only. `nargin(fn)`
       is not reachable inside a function, where `nargin` is the call's own count.
       The operators exist as functions (`plus`, `minus`, …) so `@plus` works.*
@@ -367,19 +369,35 @@ the cheap items are done; the large types are not.
       translator splices `c{:}` into argument lists and matrix rows
       (`cell_list` in the runtime), and `@(a, varargin)` lambdas take any number
       of arguments. `[varargout{1:nargout}] = f(...)` was not checked.*
-- [ ] **MATLAB-style errors for user functions.** Too many arguments should say
+- [x] **MATLAB-style errors for user functions.** Too many arguments should say
       `Too many input arguments.`, and a missing parameter that is used should say
       `Not enough input arguments.` or name the variable, not `NoneType` arithmetic.
       Anonymous functions and handles must say the same, not `<lambda>() takes 1
       positional argument`. Keep whatever supports `nargin` and `exist('x','var')`.
-      **S–M**
-- [ ] **Errors name the function and line,** in MATLAB's form (`Error using f (line 2)`
+      **S–M** *Done 2026-11-09: a function takes `*_extra` and raises `Too many input
+      arguments.`; a missing parameter is still `None` inside (so `nargin` and
+      `exist` work) and a failure that touches it is reported as `Unrecognized
+      function or variable 'b'.` (`friendly()` in the runtime, also what `catch e`
+      sees, with MATLAB identifiers). Handles say `Too many/Not enough input
+      arguments.`*
+- [x] **Errors name the function and line,** in MATLAB's form (`Error using f (line 2)`
       then `Error in ore (line 10)` with the source line), instead of `Error in
       line 11`. This misled the lab user twice. Keep the Python traceback behind a
-      debug flag. **M**
-- [ ] A script file named with dots (`C.3.2.m`) cannot be called by name in MATLAB;
-      say what Evans does and give a clear message. **S**
-- [ ] Nested functions that share the parent's variables. **M**
+      debug flag. **M** *Done 2026-11-09: `Error using f (line 2)`, the message,
+      then `Error in g (line 5)` and the source line for each caller, down to the
+      script (`Error in line 10`). Function files are compiled per chunk under
+      `<name.m:line>` and registered in `Runtime.frames`. `Interpreter.debug_errors`
+      or `EVANS_DEBUG=1` appends the Python traceback. A failure outside any
+      function keeps the short `Error in line N:` form.*
+- [x] A script file named with dots (`C.3.2.m`) cannot be called by name in MATLAB;
+      say what Evans does and give a clear message. **S** *Done 2026-11-09: typing
+      `C.3.2` or `C.3.2.m` says the name is not valid and suggests `C_3_2.m` or Run
+      from the editor. Evans has no `run('C.3.2.m')` yet.*
+- [x] Nested functions that share the parent's variables. **M** *Done 2026-11-09:
+      a function met before its parent's `end` is nested when it has an `end` of its
+      own; it becomes a closure defined at the top of the parent, and the variables
+      both use are `nonlocal`. Files where every function runs to the next
+      `function` are unchanged.*
 - [ ] Integer and single types: `int8`…`uint64`, `single`, `logical()`, `double()`,
       with saturation. Images and hardware data depend on them. **M**
 - [x] `containers.Map`. **S–M** *Done 2026-11-09. A handle; text or double keys
