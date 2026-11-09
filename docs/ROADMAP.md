@@ -292,9 +292,13 @@ The engine was ahead of the editor and of its links to the console. Tests:
       - **Copy straight from the plot:** Ctrl+C or a right-click menu entry copies
         the plot as an image (and the visible data as tab-separated text) to the
         clipboard, to paste into a report or a spreadsheet. **S**
+        *Done: Ctrl+C and a right-click "Copy plot and data" entry copy the
+        image and the visible range as tab-separated text.*
       - **Better exports:** PNG at a chosen size and DPI, SVG, and PDF/EPS through
         the matplotlib path the console figures already use, with the theme either
         as on screen or on a white page for papers; the same for XY graphs. **S–M**
+        *Done: Export… adds PNG (size in inches and DPI), SVG, PDF and EPS via
+        `figure_mpl`, as on screen or on white; time and XY views.*
       - **Scaling:** manual and auto axis limits, a per-channel offset/scale,
         log axes, linked time axes across scopes, zoom to a box, and a "fit" and
         "reset" button. **M**
