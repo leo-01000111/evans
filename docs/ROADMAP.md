@@ -612,6 +612,17 @@ Professional users need this before Evans can be used for paid work.
       pages, the site and the tests. The `"format"` tag inside the file stays
       readable as it is (CLAUDE.md lists it as a naming exception) and gets a
       version field instead. **S–M**
+      *The flow, decided 2026-11-09:* opening a `.fmdl` works as now. The first
+      plain **Save** on it shows a one-time prompt ("Evans is moving to a new
+      model file, `.evx`. Save this one in the new format?") with *Save as .evx*
+      and *Keep .fmdl this time*, and Save then writes `name.evx` beside the
+      original. Rules: the original is never deleted or renamed, and the new file
+      is written completely before anything else happens; Open, `open_system`,
+      `sim`, referenced models and script links try `.evx` first, then `.fmdl`;
+      Save As offers both types, so a copy for someone on an older Evans can still
+      be saved as `.fmdl`; autosave never converts and never asks; a file already
+      in `.evx` never sees the prompt. The patch notes tell users that older
+      versions cannot open `.evx`.
 - [ ] A Linux build (AppImage or a `.deb`). CI already tests on Ubuntu. **M**
 - [ ] macOS notarisation, and an Intel build if anyone asks. **M**
 - [ ] Windows code signing (deferred on purpose until there are more users; a Certum

@@ -19,7 +19,7 @@ from .matlab_runtime import Cell, MatlabError, _as_text, _nargout, share
 class ClassLibrary:
     """MATLAB's functions that ask about, or act on, objects."""
 
-    def _class_of(self, x, who: str) -> ClassDef:
+    def _classdef_of(self, x, who: str) -> ClassDef:
         if isinstance(x, ClassObject):
             return x.cls
         if isinstance(x, str):
@@ -37,7 +37,7 @@ class ClassLibrary:
 
     @_nargout
     def f_properties(self, x, nargout=1):
-        cls = self._class_of(x, "properties")
+        cls = self._classdef_of(x, "properties")
         names = [p.name for p in cls.all_props()
                  if p.get_access == "public" and not p.hidden]
         return self._listing(f"Properties for class {cls.name}:", names,
@@ -45,7 +45,7 @@ class ClassLibrary:
 
     @_nargout
     def f_methods(self, x, nargout=1):
-        cls = self._class_of(x, "methods")
+        cls = self._classdef_of(x, "methods")
         names = cls.public_methods()
         return self._listing(f"Methods for class {cls.name}:", names,
                              nargout)
