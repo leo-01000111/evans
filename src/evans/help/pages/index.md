@@ -60,7 +60,7 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 ## Arrays
 
-[zeros](zeros) · [ones](ones) · [eye](eye) · [rand](rand) · [linspace](linspace) · [logspace](logspace) · [size](size) · [length](length) · [numel](numel) · [reshape](reshape) · [repmat](repmat)
+[zeros](zeros) · [ones](ones) · [eye](eye) · [rand](rand) · [linspace](linspace) · [logspace](logspace) · [size](size) · [length](length) · [numel](numel) · [reshape](reshape) · [repmat](repmat) · [magic](magic)
 
 ## Maths
 
@@ -100,7 +100,7 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 ## Data files
 
-[readmatrix](readmatrix) · [writematrix](writematrix) · [readtable](readtable) · [writetable](writetable) · [table](table) · [fopen](fopen) · [fclose](fclose) · [fgetl](fgetl) · [textscan](textscan) · [jsondecode](jsondecode) · [jsonencode](jsonencode)
+[readmatrix](readmatrix) · [writematrix](writematrix) · [readtable](readtable) · [writetable](writetable) · [table](table) · [fopen](fopen) · [fclose](fclose) · [fgetl](fgetl) · [fileread](fileread) · [textscan](textscan) · [jsondecode](jsondecode) · [jsonencode](jsonencode)
 
 ## Signal processing
 
@@ -114,6 +114,14 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 [who](who) · [whos](whos) · [dir](dir) · [exist](exist) · [datestr](datestr) · [nchoosek](nchoosek) · [dec2bin](dec2bin)
 
+## Language
+
+[eval](eval) · [evalin](evalin) · [feval](feval) · [str2func](str2func) · [func2str](func2str) · [nargin](nargin) · [validateattributes](validateattributes)
+
+## Maps
+
+[containers](containers) · [isKey](isKey) · [keys](keys) · [values](values) · [remove](remove)
+
 ## Guides
 
-[s, the Laplace variable](s) · [MATLAB and Python at the prompt](python)
+[s, the Laplace variable](s) · [MATLAB and Python at the prompt](python) · [Not in Evans](not_in_evans)

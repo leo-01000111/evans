@@ -571,6 +571,8 @@ class _Matrix(_Node):
 class _Lambda(_Node):
     params: list[str]
     body: _Node
+    #: The handle as written, for ``func2str``.
+    text: str = ""
 
 
 @dataclass
@@ -1119,6 +1121,7 @@ class _Parser:
         return _Matrix(open_tok.line, rows, cell=(close == "}"))
 
     def _handle(self) -> _Node:
+        start = self.p
         t = self._advance()                    # @
         if self._is_op("("):
             self._advance()
@@ -1129,8 +1132,16 @@ class _Parser:
                     continue
                 params.append(self._ident("a parameter name"))
             self._advance()
-            return _Lambda(t.line, params, self._expr())
+            body = self._expr()
+            return _Lambda(t.line, params, body,
+                           _source_text(self.toks[start:self.p]))
         return _Handle(t.line, self._ident("a function name after '@'"))
+
+
+def _source_text(tokens: list[_Tok]) -> str:
+    """An expression's tokens as text, closed up as MATLAB's func2str does."""
+    return "".join("'" + t.text.replace("'", "''") + "'" if t.kind == "str"
+                   else t.text for t in tokens)
 
 
 def _is_lvalue(node: _Node) -> bool:
@@ -1483,7 +1494,7 @@ class _Emitter:
             return self._linked_read(name)
         if name in self.vars:
             return _py_name(name)
-        return f"{_RT}.value({_RT}.lookup({name!r}, globals(), locals()))"
+        return f"{_RT}.read({name!r}, globals(), locals())"
 
     def _callee(self, name: str) -> str:
         if name in self.linked:
@@ -1529,6 +1540,9 @@ class _Emitter:
         if isinstance(node, _Index):
             target = node.target
             args = self._arglist(node.args)
+            if self._is_map_class(target):
+                return (f"{_RT}.containers_map(globals(), locals(), "
+                        f"({args}))")
             if isinstance(target, _Name):
                 # A plot names its curves after the variables passed, the way
                 # MATLAB's legend does, and a table its columns after them —
@@ -1546,6 +1560,9 @@ class _Emitter:
             return (f"{_RT}.cell_index({e(node.target)}, "
                     f"({self._arglist(node.args)}))")
         if isinstance(node, _Field):
+            if self._is_map_class(node):
+                return (f"{_RT}.containers_map(globals(), locals(), (), "
+                        f"True)")
             key = (repr(node.name) if isinstance(node.name, str)
                    else e(node.name))
             return f"{_RT}.field({e(node.target)}, {key})"
@@ -1558,19 +1575,27 @@ class _Emitter:
             inner = _Emitter(self.vars | set(node.params))
             params = ", ".join(_py_name(p) for p in node.params)
             body = f"(lambda {params}: {inner.expr(node.body)})"
+            text = repr(node.text)
             # MATLAB captures the variables' values when the handle is made;
             # a Python lambda would read them when called.
             free = sorted(n for n in _names_in(node.body) - set(node.params)
                           if n in self.vars)
             if not free:
-                return body
+                return f"{_RT}.anon({body}, {text})"
             names = ", ".join(_py_name(n) for n in free)
             keys = "".join(f"{_py_name(n)!r}, " for n in free)
-            return (f"(lambda {names}: {body})"
-                    f"(*{_RT}.capture(locals(), ({keys})))")
+            return (f"{_RT}.anon((lambda {names}: {body})"
+                    f"(*{_RT}.capture(locals(), ({keys}))), {text})")
         if isinstance(node, _Handle):
             return self._callee(node.name)
         raise MatlabSyntaxError("unsupported expression", node.line)
+
+    def _is_map_class(self, node) -> bool:
+        """``containers.Map``, the class, unless ``containers`` is a variable."""
+        return (isinstance(node, _Field) and node.name == "Map"
+                and isinstance(node.target, _Name)
+                and node.target.name == "containers"
+                and "containers" not in self.vars)
 
     def _binary(self, node: _Bin, e) -> str:
         a, b = e(node.left), e(node.right)

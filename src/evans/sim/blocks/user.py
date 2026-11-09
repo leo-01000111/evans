@@ -37,7 +37,7 @@ _CAT = "User-Defined"
 _SIGNATURE = re.compile(
     r"^\s*function\s+(?:(?:\[(?P<outs>[^\]]*)\]|(?P<out>\w+))\s*=\s*)?"
     r"(?P<name>\w+)\s*(?:\((?P<ins>[^)]*)\))?", re.M)
-_LOOKUP = re.compile(r"__ml__\.lookup\('(\w+)'")
+_LOOKUP = re.compile(r"__ml__\.(?:lookup|read)\('(\w+)'")
 
 
 class _MatlabCode:

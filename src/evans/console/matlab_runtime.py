@@ -177,6 +177,109 @@ class StructArray(list):
         return "\n".join(lines)
 
 
+class MapObject:
+    """
+    ``containers.Map``: a handle, so every variable holding it sees a change.
+
+    Keys are all text or all real numbers, kept in MATLAB's order (text by
+    character code, numbers ascending).
+    """
+
+    _NUMERIC = ("double", "single", "int8", "uint8", "int16", "uint16",
+                "int32", "uint32", "int64", "uint64")
+
+    def __init__(self, key_type: str = "char", value_type: str = "any"):
+        self.key_type = key_type
+        self.value_type = value_type
+        self.data: dict = {}
+
+    @property
+    def is_text(self) -> bool:
+        return self.key_type == "char"
+
+    @property
+    def KeyType(self) -> str:                         # noqa: N802
+        return self.key_type
+
+    @property
+    def ValueType(self) -> str:                       # noqa: N802
+        return self.value_type
+
+    @property
+    def Count(self) -> int:                           # noqa: N802
+        return len(self.data)
+
+    def key(self, k):
+        """``k`` as this map stores it, or an error saying why not."""
+        if self.is_text:
+            if not isinstance(k, str):
+                raise MatlabError("Specified key type does not match the "
+                                  "type of this container.")
+            return k
+        if isinstance(k, (str, Cell, bool)) or not _is_number(k):
+            raise MatlabError("Specified key type does not match the "
+                              "type of this container.")
+        return float(k)
+
+    def sorted_keys(self) -> list:
+        return sorted(self.data)
+
+    def get(self, k):
+        k = self.key(k)
+        if k not in self.data:
+            raise MatlabError("The specified key is not present in this "
+                              "container.")
+        return self.data[k]
+
+    def put(self, k, v) -> None:
+        self.data[self.key(k)] = v
+
+    def __repr__(self) -> str:
+        return "\n".join(["  Map with properties:", "",
+                          f"        Count: {len(self.data)}",
+                          f"      KeyType: {self.key_type}",
+                          f"    ValueType: {self.value_type}", ""])
+
+    # Methods reached as ``m.keys()``, ``m.isKey(k)``, ``m.remove(k)``.
+
+    def keys(self):
+        return Cell(self.sorted_keys() if self.is_text
+                    else [_scalar(k) for k in self.sorted_keys()])
+
+    def values(self, which=None):
+        if which is None:
+            return Cell([self.data[k] for k in self.sorted_keys()])
+        if not isinstance(which, Cell):
+            raise MatlabError("Input argument 'KeySet' must be a cell "
+                              "array.")
+        return Cell([self.get(k) for k in which])
+
+    def isKey(self, k):                               # noqa: N802
+        if isinstance(k, Cell):
+            return np.array([self._has(x) for x in k], dtype=bool)
+        return self._has(k)
+
+    def _has(self, k) -> bool:
+        try:
+            return self.key(k) in self.data
+        except MatlabError:
+            return False
+
+    def remove(self, k):
+        for x in (k if isinstance(k, Cell) else [k]):
+            if not self._has(x):
+                raise MatlabError("The specified key is not present in "
+                                  "this container.")
+            del self.data[self.key(x)]
+        return self
+
+    def length(self) -> int:
+        return len(self.data)
+
+    def numel(self) -> int:
+        return len(self.data)
+
+
 _CONTAINERS = (Cell, Struct, StructArray)
 
 
@@ -431,6 +534,8 @@ def _shape(x) -> tuple[int, int]:
         return (1 if x else 0, len(x))
     if isinstance(x, (Cell, StructArray)):
         return x.dims
+    if isinstance(x, MapObject):
+        return (len(x.data), 1)
     if isinstance(x, (Struct, PlotOptions, Table)):
         return (len(x.rows), len(x.columns)) if isinstance(x, Table) \
             else (1, 1)
@@ -545,6 +650,8 @@ def display(value) -> str:
         return "[]"
     if _is_sym(value):
         return _symbolic.text(value)
+    if _is_function(value) and getattr(value, "_ml_text", None):
+        return value._ml_text
     return repr(value) if not _is_lti(value) else _system_text(value)
 
 
@@ -1006,7 +1113,8 @@ class Runtime:
         path = self.find_file(name, refresh=True)
         if path is not None:
             return self._file_function(name, path)
-        raise MatlabError(f"Unrecognized function or variable '{name}'.")
+        from .matlab_names import missing_message
+        raise MatlabError(missing_message(name))
 
     def evaluate(self, text: str):
         """
@@ -1187,6 +1295,31 @@ class Runtime:
             self.tracer.watch(code, lines, debuggable=True, quiet=quiet,
                               file=key)
 
+    def read(self, name: str, glob: dict, loc: dict):
+        """
+        A bare name in an expression. A variable is its value, even a
+        function handle (``cellfun(f, c)``); a command or function file is
+        called with no inputs.
+        """
+        value = self.lookup(name, glob, loc)
+        if _is_function(value):
+            held = loc[name] if loc is not glob and name in loc                 else glob.get(name)
+            if held is value and value is not self.base.get(name, object()):
+                return value
+        return self.value(value)
+
+    def containers_map(self, glob: dict, loc: dict, args: tuple,
+                       bare: bool = False):
+        """
+        ``containers.Map(...)``, the class — unless ``containers`` is a
+        variable of the user's, which wins as any variable does.
+        """
+        held = loc["containers"] if loc is not glob and "containers" in loc             else glob.get("containers")
+        if held is not None:
+            member = self.field(held, "Map")
+            return member if bare or not args else self.index(member, args)
+        return self.lib.f_containers_Map(*args)
+
     def value(self, x):
         """A bare function name in an expression calls it with no inputs."""
         if _is_function(x):
@@ -1198,6 +1331,12 @@ class Runtime:
         fn._ml_function = True
         fn._ml_nargout = True
         self.script_functions.add(fn.__name__)
+        return fn
+
+    @staticmethod
+    def anon(fn, text: str):
+        """An anonymous function, remembering how it was written."""
+        fn._ml_text = text
         return fn
 
     @staticmethod
@@ -1241,6 +1380,11 @@ class Runtime:
         raise MatlabError("Too many output arguments.")
 
     def index(self, x, args: tuple):
+        if isinstance(x, MapObject):
+            if len(args) != 1:
+                raise MatlabError("Only a single key can be given when "
+                                  "indexing a containers.Map.")
+            return x.get(args[0])
         if not args:
             return x
         if _is_lti(x):
@@ -1421,6 +1565,16 @@ class Runtime:
                                   owned)
             return cell
         # ()
+        if isinstance(obj, MapObject):
+            if len(key) != 1:
+                raise MatlabError("Only a single key can be given when "
+                                  "indexing a containers.Map.")
+            if rest:
+                current = obj.get(key[0]) if obj._has(key[0]) else None
+                obj.put(key[0], self.assign(current, rest, value))
+            else:
+                obj.put(key[0], share(value))
+            return obj
         if rest or isinstance(value, Mapping) or isinstance(
                 obj, StructArray):
             array = StructArray() if obj is None else obj
@@ -2164,6 +2318,7 @@ def _is_linespec(x) -> bool:
 # a method defined here wins over a mixin's of the same name.
 from .lib_cells import CellLibrary  # noqa: E402
 from .lib_files import FileLibrary  # noqa: E402
+from .lib_lang import LanguageLibrary  # noqa: E402
 from .lib_optim import OptimLibrary  # noqa: E402
 from .lib_plot import PlotLibrary  # noqa: E402
 from .lib_signal import SignalLibrary  # noqa: E402
@@ -2175,7 +2330,7 @@ from .lib_text import TextLibrary  # noqa: E402
 
 class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
                SignalLibrary, OptimLibrary, SystemLibrary, SimulinkLibrary,
-               PlotLibrary):
+               PlotLibrary, LanguageLibrary):
     """MATLAB's own functions, with MATLAB's shapes and argument rules."""
 
     def __init__(self, rt: Runtime) -> None:
@@ -2391,6 +2546,8 @@ class _Library(FileLibrary, StatsLibrary, TextLibrary, CellLibrary,
             return "logical"
         if isinstance(x, Cell):
             return "cell"
+        if isinstance(x, MapObject):
+            return "containers.Map"
         if isinstance(x, (Struct, StructArray)):
             return "struct"
         if isinstance(x, ctl.TransferFunction):

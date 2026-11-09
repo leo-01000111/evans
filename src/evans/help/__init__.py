@@ -55,7 +55,7 @@ PAGES = Path(__file__).parent / "pages"
 HOME = "index"
 
 #: Pages that explain rather than document one function.
-GUIDES: tuple[str, ...] = ("index", "s", "python")
+GUIDES: tuple[str, ...] = ("index", "s", "python", "not_in_evans")
 
 #: The function pages, grouped as the index tree shows them. The control
 #: groups are the console's own (``api._GROUPS``), so a command added there
@@ -72,7 +72,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Plot options": ("bodeoptions", "nyquistoptions", "timeoptions",
                      "pzoptions"),
     "Arrays": ("zeros", "ones", "eye", "rand", "linspace", "logspace", "size",
-               "length", "numel", "reshape", "repmat"),
+               "length", "numel", "reshape", "repmat", "magic"),
     "Maths": ("abs", "sqrt", "exp", "sum", "mean", "max", "min", "sort",
               "find", "cumsum", "diff", "roots", "poly", "polyval", "conv",
               "inv", "det", "eig"),
@@ -114,7 +114,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
                    "dlmread", "dlmwrite", "xlsread", "xlswrite", "sheetnames",
                    "array2table", "table2array", "height", "width", "istable",
                    "fgets", "feof", "frewind", "ftell", "fseek", "fscanf",
-                   "fread", "fwrite"),
+                   "fread", "fwrite", "fileread"),
     "Signal processing": ("filtfilt", "fir1", "pwelch", "hann", "xcorr",
                           "resample", "hamming", "blackman", "hanning",
                           "kaiser", "rectwin", "triang", "bartlett", "window",
@@ -133,6 +133,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
                "ispc", "ismac", "isunix", "pause", "clock", "now", "date",
                "datenum", "datevec", "bin2dec", "dec2hex", "hex2dec",
                "dec2base", "base2dec"),
+    "Language": ("eval", "evalin", "feval", "str2func", "func2str", "nargin",
+                 "validateattributes"),
+    "Maps": ("containers", "isKey", "keys", "values", "remove"),
     "Special functions": ("factorial", "primes", "isprime", "gcd", "lcm",
                           "erf", "erfc", "erfinv", "erfcinv", "gamma",
                           "gammaln", "beta", "betaln", "nthroot"),

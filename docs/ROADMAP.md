@@ -338,19 +338,30 @@ Left over from this phase:
 
 ## Phase 4 — Running other people's MATLAB code
 
-This is what decides whether a colleague's `.m` file runs.
+This is what decides whether a colleague's `.m` file runs. *Started 2026-11-09 (0.16.0):*
+the cheap items are done; the large types are not.
 
-- [ ] An error for an unknown name that says when the function is a MATLAB one Evans
+- [x] An error for an unknown name that says when the function is a MATLAB one Evans
       does not have yet, so the user knows they haven't mistyped it, with a link to
-      a "not in Evans" list. **S**
-- [ ] Everyday basics found missing while writing the help pages: `magic`,
+      a "not in Evans" list. **S** *`console/matlab_names.py` holds the list and the
+      "Not in Evans" help page is built from it; a test fails if a listed name is
+      later implemented, or the page goes stale.*
+- [x] Everyday basics found missing while writing the help pages: `magic`,
       `fileread`. **S**
 - [ ] `eval`, `evalin`, `feval`, `str2func`, `func2str`, `exist`, `inputParser`,
-      `validateattributes`, `nargin(fn)`. **M**
+      `validateattributes`, `nargin(fn)`. **M** *Done 2026-11-09, `console/lib_lang.py`,
+      except `inputParser`. `eval` runs in the base workspace; inside a function it
+      reads variables and refuses to set them. `evalin` takes `'base'` only. `nargin(fn)`
+      is not reachable inside a function, where `nargin` is the call's own count.
+      The operators exist as functions (`plus`, `minus`, …) so `@plus` works.*
 - [ ] Nested functions that share the parent's variables. **M**
 - [ ] Integer and single types: `int8`…`uint64`, `single`, `logical()`, `double()`,
       with saturation. Images and hardware data depend on them. **M**
-- [ ] `containers.Map`. **S–M**
+- [x] `containers.Map`. **S–M** *Done 2026-11-09. A handle; text or double keys
+      (other key types are stored as doubles until integer types exist);
+      `copy` and `Map` arrays are not done. The translator turns
+      `containers.Map(...)` into a runtime call that yields to a user variable
+      called `containers`.*
 - [ ] A real `table`: constructor, `T.col`, row filtering, `height`, `width`,
       `sortrows`, `join`; then `datetime`, `duration`, `timetable`. **L**
 - [ ] String arrays as their own type (`numel("abc") == 1`, `["a" "b"]`), distinct
