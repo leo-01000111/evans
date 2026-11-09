@@ -424,7 +424,7 @@ the cheap items are done; the large types are not.
       later implemented, or the page goes stale.*
 - [x] Everyday basics found missing while writing the help pages: `magic`,
       `fileread`. **S**
-- [ ] `eval`, `evalin`, `feval`, `str2func`, `func2str`, `exist`, `inputParser`,
+- [x] `eval`, `evalin`, `feval`, `str2func`, `func2str`, `exist`, `inputParser`,
       `validateattributes`, `nargin(fn)`. **M** *Done 2026-11-09, `console/lib_lang.py`,
       and `inputParser` (done 2026-11-09 in `matlab_runtime.InputParser`:
       `addRequired`/`addOptional`/`addParameter`/`addSwitch`/`parse`, `Results`,
