@@ -70,8 +70,14 @@ _COLORBAR = {"east": "right", "west": "left", "north": "top", "south":
 # ──────────────────────────────────────────────────────────────
 
 def save(spec: FigureSpec, path, *, dpi: float | None = None,
-         width: float | None = None, height: float | None = None) -> None:
-    """Write ``spec`` to ``path`` in the format its extension names."""
+         width: float | None = None, height: float | None = None,
+         look: Look = PRINT, tight: bool = True) -> None:
+    """
+    Write ``spec`` to ``path`` in the format its extension names.
+
+    ``look`` is the colours (default: ink on white). ``tight`` crops the
+    margins; pass ``False`` to get exactly ``width`` x ``height`` inches.
+    """
     import os
 
     from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -81,10 +87,11 @@ def save(spec: FigureSpec, path, *, dpi: float | None = None,
     w, h = _size(spec, width, height)
     figure = Figure(figsize=(w, h))
     FigureCanvasAgg(figure)
-    draw(figure, spec, PRINT)
+    draw(figure, spec, look)
     fmt = os.path.splitext(path)[1].lower().lstrip(".")
-    figure.savefig(path, format=fmt, dpi=dpi or 150, bbox_inches="tight",
-                   facecolor="white")
+    figure.savefig(path, format=fmt, dpi=dpi or 150,
+                   bbox_inches="tight" if tight else None,
+                   facecolor=look.background)
 
 
 def png(spec: FigureSpec, *, width: float = 6.4, height: float = 3.6,

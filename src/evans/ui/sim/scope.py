@@ -5,18 +5,27 @@ The last few runs are kept, so a change can be judged against what it
 replaced: with "Compare" ticked, the same signals from earlier runs are drawn
 under the new ones, dashed and fading with age. A model with an XY Graph
 block can show that graph instead of the time plot. "Export…" writes the
-run's signals to CSV or ``.mat``.
+run's signals to CSV or ``.mat``, or the plot to PNG, SVG, PDF or EPS (size,
+DPI and theme chosen). Ctrl+C, or "Copy plot and data" in the right-click
+menu, puts the plot as an image and the visible data as tab-separated text on
+the clipboard.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QMimeData, Qt
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -37,6 +46,9 @@ MAX_DRAWN = 20_000
 HISTORY = 5
 #: The view choice that means "against time" rather than an XY graph.
 TIME_VIEW = "Time"
+#: Export extensions that draw the plot (through matplotlib) rather than
+#: write the signals.
+IMAGE_FORMATS = (".png", ".svg", ".pdf", ".eps")
 
 
 class ScopeWidget(QWidget):
@@ -79,7 +91,8 @@ class ScopeWidget(QWidget):
         bar.addWidget(self._depth)
         bar.addStretch()
         self._export = QPushButton("Export…")
-        self._export.setToolTip("Save the run's signals as CSV or .mat")
+        self._export.setToolTip("Save the run's signals as CSV or .mat, or the "
+                                "plot as PNG, SVG, PDF or EPS")
         self._export.clicked.connect(self._ask_export)
         self._export.setEnabled(False)
         bar.addWidget(self._export)
@@ -88,6 +101,15 @@ class ScopeWidget(QWidget):
         self._plot = make_plot("Scope", "Time (s)", "Amplitude")
         self._plot.getPlotItem().addLegend(offset=(-10, 10))
         root.addWidget(self._plot, stretch=1)
+
+        copy = QAction("Copy plot and data", self)
+        copy.setShortcut(QKeySequence.Copy)
+        copy.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+        copy.triggered.connect(self.copy_to_clipboard)
+        self.addAction(copy)
+        self._copy_action = copy
+        self._plot.getPlotItem().vb.menu.addSeparator()
+        self._plot.getPlotItem().vb.menu.addAction(copy)
 
         self._cursor = pg.InfiniteLine(angle=90, movable=True,
                                        pen=pg.mkPen(role_colour("reference"), width=1.2,
@@ -226,13 +248,138 @@ class ScopeWidget(QWidget):
             raise ValueError("there is no run to export yet")
         return export_signals(self._result, path, names)
 
+    # ── copy and image export ───────────────────────────────────
+
+    def _visible_range(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        (x0, x1), (y0, y1) = self._plot.getPlotItem().viewRange()
+        return (float(x0), float(x1)), (float(y0), float(y1))
+
+    def _shown_channels(self) -> list[tuple[int, str, str, int]]:
+        """(colour index, signal, label, column) for each ticked channel."""
+        out = []
+        for name, check in self._checks.items():
+            if not check.isChecked():
+                continue
+            width = self._result.signals[name].shape[1]
+            shown = self._result.label(name)
+            for channel in range(width):
+                label = shown if width == 1 else f"{shown}[{channel}]"
+                out.append((len(out), name, label, channel))
+        return out
+
+    def _in_xy_view(self) -> bool:
+        return (self._result is not None
+                and self._view.currentText() in self._result.xy)
+
+    def data_text(self, visible_only: bool = True) -> str:
+        """
+        The plotted data as tab-separated text with a header row.
+
+        Time view: ``t`` and one column per ticked channel, the samples inside
+        the visible time range (all of them with ``visible_only=False``). XY
+        view: the two signals. Full resolution, not the thinned drawing.
+        """
+        if self._result is None:
+            return ""
+        (x0, x1), _ = self._visible_range()
+        if self._in_xy_view():
+            x_name, y_name = self._result.xy[self._view.currentText()]
+            xs = self._result.signals[x_name][:, 0]
+            ys = self._result.signals[y_name][:, 0]
+            rows = [("\t".join((self._result.label(x_name),
+                                self._result.label(y_name))))]
+            rows += [f"{a:.10g}\t{b:.10g}" for a, b in zip(xs, ys)]
+            return "\n".join(rows)
+        t = np.asarray(self._result.t, dtype=float)
+        keep = (t >= x0) & (t <= x1) if visible_only else np.ones(len(t), bool)
+        channels = self._shown_channels()
+        columns = [t[keep]] + [self._result.signals[n][keep, c]
+                               for _i, n, _l, c in channels]
+        rows = ["\t".join(["t"] + [lab for _i, _n, lab, _c in channels])]
+        for k in range(len(columns[0])):
+            rows.append("\t".join(f"{col[k]:.10g}" for col in columns))
+        return "\n".join(rows)
+
+    def copy_to_clipboard(self) -> None:
+        """Put the plot (image) and its visible data (text) on the clipboard."""
+        if self._result is None:
+            return
+        mime = QMimeData()
+        mime.setImageData(self._plot.grab().toImage())
+        mime.setText(self.data_text())
+        QApplication.clipboard().setMimeData(mime)
+
+    def figure_spec(self, look=None):
+        """
+        What the plot shows, as a :class:`~evans.console.figures.FigureSpec`
+        for matplotlib: the ticked channels (or the XY graph), earlier runs
+        when "Compare" is on, over the range now in view.
+        """
+        from ...console.figures import FigureSpec
+        if self._result is None:
+            raise ValueError("there is no run to export yet")
+        if look is None:
+            look = _screen_look()
+        cycle = look.cycle
+        (x0, x1), (y0, y1) = self._visible_range()
+        if self._in_xy_view():
+            title = self._view.currentText()
+            xn, yn = self._result.xy[title]
+            xs, ys = self._result.label(xn), self._result.label(yn)
+            spec = FigureSpec("xy", title, xs, ys)
+            for age, old in enumerate(self._earlier(), start=1):
+                if xn in old.signals and yn in old.signals:
+                    spec.add(old.signals[xn][:, 0], old.signals[yn][:, 0],
+                             f"run −{age}", color=cycle[0], linestyle="--",
+                             alpha=max(0.15, 0.6 / age), linewidth=1.0)
+            spec.add(self._result.signals[xn][:, 0],
+                     self._result.signals[yn][:, 0], f"{ys} vs {xs}",
+                     color=cycle[0])
+        else:
+            spec = FigureSpec("time", "Scope", "Time (s)", "Amplitude")
+            for i, name, label, channel in self._shown_channels():
+                colour = cycle[i % len(cycle)]
+                for age, old in enumerate(self._earlier(), start=1):
+                    if name in old.signals and \
+                            old.signals[name].shape[1] > channel:
+                        spec.add(old.t, old.signals[name][:, channel],
+                                 f"{label} (run −{age})", color=colour,
+                                 linestyle="--", alpha=max(0.15, 0.6 / age),
+                                 linewidth=1.0)
+                spec.add(self._result.t, self._result.signals[name][:, channel],
+                         label, color=colour)
+        spec.extra["grid"] = True
+        spec.extra["xlim"] = (x0, x1)
+        spec.extra["ylim"] = (y0, y1)
+        return spec
+
+    def export_image(self, path, *, width: float = 6.4, height: float = 3.6,
+                     dpi: float = 150, on_screen: bool = False) -> None:
+        """
+        Save the plot as PNG, SVG, PDF or EPS (by the extension) through the
+        matplotlib path the console figures use. ``width`` and ``height`` are
+        inches, so PNG pixels are size x ``dpi``. ``on_screen`` keeps the
+        theme's colours; otherwise ink on a white page, for a paper.
+        """
+        from ...console import figure_mpl
+        look = _screen_look() if on_screen else figure_mpl.PRINT
+        figure_mpl.save(self.figure_spec(look), path, dpi=dpi, width=width,
+                        height=height, look=look, tight=False)
+
     def _ask_export(self) -> None:
         if self._result is None:
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export signals", "signals.csv",
-            "CSV (*.csv);;MATLAB data (*.mat)")
-        if path:
+            self, "Export", "signals.csv",
+            "CSV (*.csv);;MATLAB data (*.mat);;PNG image (*.png);;"
+            "SVG image (*.svg);;PDF (*.pdf);;EPS (*.eps)")
+        if not path:
+            return
+        if path.lower().endswith(IMAGE_FORMATS):
+            options = _ImageOptions(self)
+            if options.exec():
+                self.export_image(path, **options.values())
+        else:
             self.export(path)
 
     def _update_readout(self) -> None:
@@ -261,6 +408,49 @@ class ScopeWidget(QWidget):
         self._checks.clear()
         self._plot.getPlotItem().clear()
         self._readout.setText("")
+
+
+def _screen_look():
+    from ..console.figure_view import screen_look
+    return screen_look()
+
+
+class _ImageOptions(QDialog):
+    """Size, resolution and theme for an exported image."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Export image")
+        form = QFormLayout(self)
+        self.width_in = QDoubleSpinBox()
+        self.width_in.setRange(1.0, 40.0)
+        self.width_in.setValue(6.4)
+        self.width_in.setSuffix(" in")
+        self.height_in = QDoubleSpinBox()
+        self.height_in.setRange(1.0, 40.0)
+        self.height_in.setValue(3.6)
+        self.height_in.setSuffix(" in")
+        self.dpi = QSpinBox()
+        self.dpi.setRange(36, 1200)
+        self.dpi.setValue(150)
+        self.dpi.setToolTip("Pixels per inch (PNG); vector formats ignore it")
+        self.theme = QComboBox()
+        self.theme.addItems(["White page (for papers)", "As on screen"])
+        form.addRow("Width", self.width_in)
+        form.addRow("Height", self.height_in)
+        form.addRow("Resolution", self.dpi)
+        form.addRow("Theme", self.theme)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def values(self) -> dict:
+        return {"width": self.width_in.value(),
+                "height": self.height_in.value(),
+                "dpi": self.dpi.value(),
+                "on_screen": self.theme.currentIndex() == 1}
 
 
 def _faded(index: int, age: int):
