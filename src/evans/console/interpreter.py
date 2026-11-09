@@ -82,6 +82,11 @@ class Interpreter:
         #: Set by the figure area: whether a figure drawn earlier is still
         #: open there. Without it, figures are taken to stay open.
         self.figure_open = None
+        #: Set by the figure area: the spec of the selected figure tab (or
+        #: None), so ``gcf`` follows a tab the user clicked.
+        self.selected_figure = None
+        #: Set by the figure area: close the figure drawn from a spec.
+        self.close_figure = None
         #: Set by the UI: the folder of the script being run. A MATLAB script
         #: finds its function files (``name.m``) and data files there.
         self.script_folder: str | None = None
@@ -345,6 +350,7 @@ class Interpreter:
         runtime.begin(folder or self.script_folder, keep_figures=prompt)
         if prompt:
             self._forget_closed_figures(runtime.figures)
+            self._follow_selected_figure(runtime.figures)
         previous = set_figure_sink(lambda spec: runtime.figures.collect(spec))
         line_maps: dict[str, list[int]] = {}
         results: list[Result] = []
@@ -422,8 +428,14 @@ class Interpreter:
             figures = runtime.figures
             if figures.close_requested and self.close_figures is not None:
                 self.close_figures()
+            for spec in figures.closed:
+                if self.close_figure is not None:
+                    self.close_figure(spec)
+            figures.closed.clear()
             for spec in figures.to_draw():
                 previous(spec)
+            if self.selected_figure is not None:
+                figures.seen = self.selected_figure()
         return results
 
     def _dotted_name_message(self, text: str) -> str:
@@ -481,9 +493,21 @@ class Interpreter:
         """
         if self.figure_open is None:
             return
-        for spec in list(figures.drawable()):
+        for spec in list(figures.specs):
             if id(spec) in figures._shown and not self.figure_open(spec):
                 figures.forget(spec)
+
+    def _follow_selected_figure(self, figures) -> None:
+        """
+        If the user picked another figure tab since the last run, make that
+        figure current, so ``gcf`` and the next ``title`` mean it.
+        """
+        if self.selected_figure is None:
+            return
+        spec = self.selected_figure()
+        if spec is not None and spec is not figures.seen and \
+                figures.has(spec):
+            figures.select_spec(spec, touch=False)
 
     def _matlab_runtime(self):
         from .matlab_runtime import Runtime

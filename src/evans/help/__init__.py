@@ -77,7 +77,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Maths": ("abs", "sqrt", "exp", "sum", "mean", "max", "min", "sort",
               "find", "cumsum", "diff", "roots", "poly", "polyval", "conv",
               "inv", "det", "eig"),
-    "Plotting": ("plot", "figure", "subplot", "hold", "grid", "ngrid",
+    "Plotting": ("plot", "figure", "gcf", "close", "clf", "subplot", "hold", "grid", "ngrid",
                  "title", "xlabel", "ylabel", "legend", "axis", "xlim", "ylim",
                  "semilogx", "tiledlayout", "nexttile", "yyaxis", "text",
                  "xline", "yline", "annotation", "colororder", "lines",

@@ -405,7 +405,11 @@ Left over from this phase:
 
 - [ ] Handle graphics: `h = plot(...)` and `set(h, …)`/`h.Color = …`, `cb.Label.String`.
       Every plot function returns nothing; properties go in as name-value pairs. **L**
-- [ ] `figure(n)` going back to figure `n`, and `gcf` following the selected tab. **S–M**
+- [x] `figure(n)` going back to figure `n`, and `gcf` following the selected tab. **S–M**
+      *Done 2026-11-09:* figures carry a number (`FigureSpec.number`); `figure(n)`
+      selects it or opens it with that number, and the next plot replaces its
+      contents. `gcf` follows the selected tab, `close(n)`/`close` and `clf`
+      keep numbers and tabs consistent. Help pages for `gcf`, `close`, `clf`.
 - [ ] Data tips on 3-D axes, and the live colour map of a mesh after a theme switch
       without a redraw. **S each**
 - [ ] `histogram` and `stem` pages, and the rest of the plotting commands that still have

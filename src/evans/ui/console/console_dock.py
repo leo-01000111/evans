@@ -251,9 +251,12 @@ class FigureArea(QWidget):
         view = FigureView(spec)
         # The lowest number no open figure has, as MATLAB numbers them: once
         # a run's figures are cleared away, the next run starts at 1 again.
+        # A number the script asked for (``figure(3)``) is kept if free.
         taken = {v.number for v in self._views}
-        view.number = next(n for n in range(1, len(taken) + 2)
-                           if n not in taken)
+        free = next(n for n in range(1, len(taken) + 2) if n not in taken)
+        view.number = spec.number if (spec.number > 0
+                                      and spec.number not in taken) else free
+        spec.number = view.number
         view.from_script = self._script_running
         self._views.append(view)
         self._place(view, self._tabs)
@@ -304,6 +307,17 @@ class FigureArea(QWidget):
             self._views.remove(view)
         view.deleteLater()
         self._sync_placeholder()
+
+    def selected_spec(self) -> FigureSpec | None:
+        """The spec of the selected figure tab, if there is one."""
+        view = self.current_figure()
+        return view.spec if view is not None else None
+
+    def close_spec(self, spec: FigureSpec) -> None:
+        """Close the figure drawn from ``spec``, if it is open."""
+        view = self.view_of(spec)
+        if view is not None:
+            self.close_figure(view)
 
     def close_all(self) -> None:
         for view in list(self._views):
@@ -664,6 +678,9 @@ class ConsolePanel(QWidget):
         # A line typed at the prompt amends the last figure while it is open.
         self.interpreter.figure_open = \
             lambda spec: self.figures.view_of(spec) is not None
+        # `gcf` follows the selected tab; `close(n)` closes a tab.
+        self.interpreter.selected_figure = self.figures.selected_spec
+        self.interpreter.close_figure = self.figures.close_spec
 
         # Stopping and debugging: user code runs on this (the GUI) thread,
         # and the tracer gives the event loop a turn while it does — see
