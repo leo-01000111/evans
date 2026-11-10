@@ -42,7 +42,9 @@ scratch/
 *.log
 
 # ── Claude Code session state ───────────────────────────────────
-.claude/
+# Ignored, except the project's subagents, which ship with the code.
+.claude/*
+!.claude/agents/
 
 # ── Documentation site build output ─────────────────────────────
 site/_build/

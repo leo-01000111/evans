@@ -12,16 +12,17 @@ exceptions are the legacy `.fmdl` format tag, the settings migration, and the
 trademarks: mention them only to describe compatibility.
 
 ## Commands
-- Tests: `python -m pytest` (Qt runs offscreen; `tests/conftest.py` sets this).
+- Tests: `python -m pytest` (about 8 minutes; Qt runs offscreen). While working,
+  run only the changed area's tests (table in `docs/CODEMAP.md`); run the full
+  suite once, in the background, before committing.
 - Lint: `ruff check .` (CI runs it; `Inspiration/` is excluded).
 - Run: `python app.py`.
 - Examples under File > Examples are built by `tools/build_examples.py`.
 - Docs site is built from `site/` into `site/_build/` (ignored).
 
 ## Layout
-`src/evans/`: `core` (analysis, no Qt), `console` (MATLAB interpreter and the
-`lib_*` command libraries), `sim`, `ui`, `help`, `assistant`, `examples`.
-`tests/` holds unit tests; `tests/golden/` holds the value and UI-layout tests.
+Read `docs/CODEMAP.md` before exploring: every package, the large files to
+search rather than read, and which tests cover which area.
 
 ## Things that are not obvious
 - Every console command has a help page in `src/evans/help/pages/*.md`;
@@ -42,3 +43,10 @@ Evans is a large codebase, so coding in it with an LLM is expensive. Work slowly
 one feature at a time, finished, tested and reviewed before the next starts. Do
 not batch several roadmap items or run parallel feature agents. Read only the
 files the feature needs, and ask before moving on to the next item.
+
+- One session per feature: a fresh context reads less and drifts less than a
+  long one. Decisions and leftovers go in `docs/ROADMAP.md`, not only in chat.
+- Navigate with go-to-definition and find-references (the Pyright language
+  server; `[tool.pyright]` in `pyproject.toml`) before reading whole files.
+- Hand broad searches to a cheap read-only subagent (`scout`, on Haiku) and
+  keep only its conclusions.

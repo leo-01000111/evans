@@ -64,6 +64,17 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 filterwarnings = ["ignore::DeprecationWarning"]
 
+[tool.pyright]
+# For code navigation (go to definition, find references) by editors and
+# coding agents, not as a type gate: checking is off, so only real errors
+# (unresolved imports, undefined names, syntax) are reported.
+include = ["src", "tests", "tools", "app.py"]
+exclude = ["Inspiration", "COURSE MATERIAL", "build", "dist", "site/_build",
+           "brag-output", "**/__pycache__", ".claude"]
+extraPaths = ["src"]
+pythonVersion = "3.12"
+typeCheckingMode = "off"
+
 [tool.ruff]
 line-length = 88
 target-version = "py312"
