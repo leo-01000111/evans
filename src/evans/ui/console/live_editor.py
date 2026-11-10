@@ -67,7 +67,9 @@ from ...console.live import (
     LiveDocument,
     LiveRunner,
     load,
+    parse_live_document,
     save,
+    to_live_m,
     workspace_evaluator,
 )
 from ...console.live.markup import inline_html, to_html
@@ -649,7 +651,10 @@ class LiveScriptEditor(QWidget):
         preview = QShortcut(QKeySequence(PREVIEW_SHORTCUT), self)
         preview.setContext(Qt.WidgetWithChildrenShortcut)
         preview.activated.connect(self.preview_button.toggle)
+        #: The script as its file holds it (None: never matches, unsaved).
+        self._baseline: str | None = None
         self._rebuild()
+        self.mark_saved()
 
     # ── toolbar ─────────────────────────────────────────────────
 
@@ -748,6 +753,7 @@ class LiveScriptEditor(QWidget):
         self._show_path(document.path)
         self._rebuild()
         self._update_auto_labels()
+        self.mark_saved()
 
     def set_follow(self, attach) -> None:
         """
@@ -821,6 +827,31 @@ class LiveScriptEditor(QWidget):
     def _sync(self) -> None:
         for widget in self._widgets:
             widget.sync_to_cell()
+
+    # ── crash recovery ──────────────────────────────────────────
+
+    def _as_text(self) -> str:
+        self._sync()
+        return to_live_m(self.document)
+
+    def mark_saved(self) -> None:
+        """What is on screen now is what the file holds."""
+        self._baseline = self._as_text()
+
+    def recovery_items(self) -> list:
+        """The live script, when it differs from its file, for recovery."""
+        from ..recovery import LIVE, Item
+        text = self._as_text()
+        if text == self._baseline:
+            return []
+        return [Item(LIVE, "live", self.path.name if self.path
+                     else "Untitled live script", text,
+                     str(self.path) if self.path else None)]
+
+    def restore_text(self, text: str, path: str | None = None) -> None:
+        """A recovered copy on screen, unsaved; Save writes it to ``path``."""
+        self.set_document(parse_live_document(text, path))
+        self._baseline = None
 
     # ── selection ───────────────────────────────────────────────
 
@@ -1111,6 +1142,7 @@ class LiveScriptEditor(QWidget):
             return None
         self._show_path(written)
         self._status.setText(f"Saved {written.name}")
+        self.mark_saved()
         return written
 
     def _mlx_would_lose(self) -> bool:

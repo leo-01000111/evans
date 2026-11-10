@@ -615,14 +615,37 @@ work.
 
 Professional users need this before Evans can be used for paid work.
 
-- [ ] **Autosave and crash recovery.** Nothing is saved on its own today. Write a
+- [x] **Autosave and crash recovery.** Nothing is saved on its own today. Write a
       recovery copy of every unsaved document (editor scripts, live scripts, Model
       tab diagrams, console history, the workspace) to a folder under the user's
       app data every minute or so and after each edit pause, never over the real
       file. On the next start after a crash, offer to restore them. Add a setting
       for the interval and for turning it off, delete the copy on a normal save or
       close, and keep the last few versions of a model. Test with a simulated kill
-      mid-edit. **M**
+      mid-edit. **M** *Done 2026-11-10, `ui/recovery.py`:* each running Evans
+      has a folder under app data (`recovery/session-<pid>-<start>`) with a
+      heartbeat; on a timer it writes the unsaved script tabs, the live script
+      and the diagram (when they differ from their files), each through a
+      temporary file and a rename, and keeps three earlier copies of the model.
+      A clean quit deletes the folder. At the next start a folder whose Evans is
+      gone (or whose heartbeat stopped) is offered back: Restore / Discard / Ask
+      next time; restored documents come back unsaved and nothing touches the
+      real files until the user saves. File ▸ Autosave for crash recovery turns
+      it off and sets 30 s – 5 min (1 min by default). Tested with a real
+      process killed mid-session (`tests/golden/test_recovery.py`). *Left out:*
+      the workspace (a `save` of it can be large and not every value can be
+      written), copies on an edit pause (only the timer), and restoring the
+      earlier model copies from the dialog (they stay in the folder only until
+      the user answers). The console history was already saved after every
+      command.
+- [ ] **Ask before quitting with an unsaved model or live script.** Found while
+      doing autosave: only the script editor's tabs are settled on quit
+      (`confirm_close_all`). The Model tab and the Live editor have no unsaved
+      mark and no prompt, so a quit drops their changes silently, and the Model
+      tab's Save always asks for a file (it does not remember the one it came
+      from). The baselines autosave now keeps (`SimTab.mark_saved`,
+      `LiveScriptEditor.mark_saved`) are the "is it unsaved?" test this needs.
+      **S–M**
 - [ ] **Rename the model file extension `.fmdl`** (FauxMatlab model, a leftover of the
       old name). The new extension is `.evx`, chosen
       2026-11-09 after a search found no common program using it (`.evm` was the

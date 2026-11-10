@@ -159,6 +159,8 @@ def main() -> None:
 
     # The scripts that were open when Evans last closed.
     win.reopen_scripts()
+    # Offer back what a crash left, then keep copies of unsaved work.
+    win.start_recovery()
 
     # `Evans.exe model.fmdl`: the file association, or a drop on the exe.
     for path in _file_arguments(app.arguments()[1:]):

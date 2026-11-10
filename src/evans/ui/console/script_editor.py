@@ -448,6 +448,36 @@ class ScriptEditor(QWidget):
                 if d is not exclude and d.path is not None and d.modified
                 and d.path.suffix.lower() == suffix]
 
+    # ── crash recovery ──────────────────────────────────────────
+
+    def recovery_items(self) -> list:
+        """Every tab with unsaved changes, for :mod:`..recovery`."""
+        from ..recovery import SCRIPT, Item
+        return [Item(SCRIPT, f"script-{d.number}", d.name, d.text(),
+                     str(d.path) if d.path else None,
+                     {"language": d.language})
+                for d in self.documents() if d.modified and not d.blank]
+
+    def restore_text(self, text: str, path: str | None = None,
+                     language: str = "auto") -> ScriptDocument:
+        """
+        A recovered copy, in the tab of its file if that is open (else a new
+        tab), marked unsaved: nothing is written until the user saves.
+        """
+        document = self.document_for(path) if path else None
+        if document is None:
+            current = self.current_document()
+            document = current if current.blank else self.new_document()
+            document.path = Path(path).resolve() if path else None
+        document.code.setPlainText(text)
+        document.code.document().setModified(True)
+        document.language = language if language in (
+            "auto", "matlab", "python") else "auto"
+        self._retitle(document)
+        self.show_document(document)
+        self._on_current_changed(self._tabs.currentIndex())
+        return document
+
     # ── remembered between sessions ─────────────────────────────
 
     def remember_open(self) -> None:

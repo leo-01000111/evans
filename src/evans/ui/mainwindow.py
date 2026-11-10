@@ -69,7 +69,7 @@ from ..core.tf_utils import (
     second_order,
     unity,
 )
-from . import help, iconset, keys, persist, theme, winframe
+from . import help, iconset, keys, persist, recovery, theme, winframe
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
 from .assistant import AssistantDock
 from .block_editor import BlockEditor
@@ -631,10 +631,127 @@ class MainWindow(QMainWindow):
         """The scripts open when Evans last closed, in their tabs again."""
         return self._console.editor.reopen_remembered()
 
+    # ── Crash recovery ───────────────────────────────────────
+
+    def _build_autosave_menu(self) -> QMenu:
+        """File ▸ Autosave: on or off, and how often."""
+        menu = QMenu("&Autosave for crash recovery", self)
+        menu.setToolTipsVisible(True)
+        self._act_autosave = QAction("&On", self, checkable=True)
+        self._act_autosave.setChecked(recovery.saved_enabled())
+        self._act_autosave.setToolTip(
+            "Keep a copy of unsaved scripts, the live script and the model, "
+            "to offer back if Evans closes without being asked to")
+        self._act_autosave.toggled.connect(
+            lambda on: self.set_autosave(on, self._autosave_interval))
+        menu.addAction(self._act_autosave)
+        menu.addSeparator()
+        self._autosave_interval = recovery.saved_interval()
+        group = QActionGroup(self)
+        self._autosave_interval_actions = {}
+        for seconds in recovery.INTERVALS:
+            label = f"Every {seconds} s" if seconds < 60 \
+                else f"Every {seconds // 60} min"
+            action = QAction(label, self, checkable=True)
+            action.setChecked(seconds == self._autosave_interval)
+            action.triggered.connect(
+                lambda _c=False, s=seconds:
+                self.set_autosave(self._act_autosave.isChecked(), s))
+            group.addAction(action)
+            menu.addAction(action)
+            self._autosave_interval_actions[seconds] = action
+        return menu
+
+    def recovery_items(self) -> list:
+        """Every document with changes not on disk."""
+        return [*self._console.editor.recovery_items(),
+                *self._console.live.recovery_items(),
+                *self._sim_tab.recovery_items()]
+
+    def start_recovery(self, root=None) -> None:
+        """
+        At startup: offer what a crash left behind, then start keeping
+        copies of this session's unsaved documents (when autosave is on).
+        ``root`` is for tests; Evans uses the app data folder.
+        """
+        self._recovery = recovery.RecoveryController(
+            self.recovery_items, root, self._autosave_interval)
+        left = self._recovery.orphans()
+        if self._act_autosave.isChecked():
+            self._recovery.start()
+        if left:
+            self.offer_recovery(left)
+
+    def set_autosave(self, on: bool, interval: int) -> None:
+        self._autosave_interval = interval
+        recovery.remember(on, interval)
+        if self._autosave_interval_actions.get(interval) is not None:
+            self._autosave_interval_actions[interval].setChecked(True)
+        controller = getattr(self, "_recovery", None)
+        if controller is None:
+            return
+        controller.set_interval(interval)
+        if on and not controller.running:
+            controller.start()
+            controller.snapshot()
+        elif not on and controller.running:
+            controller.stop()
+
+    def offer_recovery(self, left) -> str:
+        """Ask what to do with what a crash left; returns the answer."""
+        items = [item for orphan in left for item in orphan.items]
+        choice = self._ask_recovery(items)
+        if choice == "restore":
+            for item in items:
+                self._restore_item(item)
+            for orphan in left:
+                recovery.discard(orphan)
+            self._status.showMessage(
+                f"Restored {len(items)} document"
+                f"{'s' if len(items) != 1 else ''}; save them to keep them",
+                8000)
+        elif choice == "discard":
+            for orphan in left:
+                recovery.discard(orphan)
+        # "later": the folders stay, and are offered again at the next start.
+        return choice
+
+    def _restore_item(self, item) -> None:
+        if item.kind == recovery.SCRIPT:
+            self._console.editor.restore_text(
+                item.text, item.path, item.extra.get("language", "auto"))
+            self._stack.set_current(Workspace.CONSOLE)
+        elif item.kind == recovery.LIVE:
+            self._console.live.restore_text(item.text, item.path)
+        elif item.kind == recovery.MODEL:
+            self._sim_tab.restore_model_text(item.text)
+
+    def _ask_recovery(self, items) -> str:
+        """'restore', 'discard' or 'later'. A method so tests can answer it."""
+        names = "\n".join(
+            f"  • {item.title}" + (f"  ({item.path})" if item.path else "")
+            for item in items)
+        box = QMessageBox(
+            QMessageBox.Warning, "Recover unsaved work?",
+            "Evans did not close normally last time. These had changes "
+            f"that were not saved:\n\n{names}\n\nRestore them? Nothing is "
+            "written to your files until you save.", parent=self)
+        restore = box.addButton("Restore", QMessageBox.AcceptRole)
+        discard = box.addButton("Discard", QMessageBox.DestructiveRole)
+        box.addButton("Ask next time", QMessageBox.RejectRole)
+        box.setDefaultButton(restore)
+        box.exec()
+        clicked = box.clickedButton()
+        return ("restore" if clicked is restore else
+                "discard" if clicked is discard else "later")
+
     def closeEvent(self, event) -> None:
         if not self.confirm_quit():
             event.ignore()
             return
+        # A clean quit: the recovery copies are not needed.
+        if getattr(self, "_recovery", None) is not None:
+            self._recovery.stop()
         self._console.editor.remember_open()
         self.save_layout()
         # The help window has no parent, so it would keep Evans running.
@@ -919,6 +1036,8 @@ class MainWindow(QMainWindow):
         self._examples_menu = file_menu.addMenu("E&xamples")
         self._examples_menu.setToolTipsVisible(True)
         self._fill_examples_menu()
+        file_menu.addSeparator()
+        file_menu.addMenu(self._build_autosave_menu())
         file_menu.addSeparator()
         file_menu.addAction(act_quit)
 

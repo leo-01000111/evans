@@ -8,6 +8,7 @@ crashed one — so the UI stays live, shows progress, and can be cancelled.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -210,6 +211,9 @@ class SimTab(QWidget, GuardedPanel):
         self._palette_dock.toggled.connect(self._on_palette_toggled)
         self._restoring_palette = False
         self._restore_palette_state()
+        #: The model as its file holds it (None: unsaved whatever it is).
+        self._saved_state: str | None = None
+        self.mark_saved()
 
     def _build_toolbar(self) -> QWidget:
         """
@@ -539,6 +543,8 @@ class SimTab(QWidget, GuardedPanel):
         self._canvas.set_model(course_loop())
         self._canvas.fit_all()
         self._settings_from_model()
+        # The starter is not the user's work: nothing to recover yet.
+        self.mark_saved()
 
     # ── running ─────────────────────────────────────────────────
 
@@ -717,6 +723,7 @@ class SimTab(QWidget, GuardedPanel):
         self._scope.clear()
         self._result = None
         self._status.setText(f"Loaded {path}")
+        self.mark_saved()
         if remember:
             self.file_used.emit(Path(path))
 
@@ -764,7 +771,35 @@ class SimTab(QWidget, GuardedPanel):
             return
         self._canvas.root_model().save(path)
         self._status.setText(f"Saved {path}")
+        self.mark_saved()
         self.file_used.emit(Path(path))
+
+    # ── crash recovery ──────────────────────────────────────────
+
+    def _model_text(self) -> str:
+        return json.dumps(self._canvas.root_model().to_dict(), indent=1,
+                          sort_keys=True)
+
+    def mark_saved(self) -> None:
+        """The diagram on screen is the one its file holds."""
+        self._saved_state = self._model_text()
+
+    def recovery_items(self) -> list:
+        """The diagram, when it differs from its file, for recovery."""
+        from ..recovery import MODEL, Item
+        text = self._model_text()
+        if text == self._saved_state:
+            return []
+        return [Item(MODEL, "model", self._canvas.root_model().name, text)]
+
+    def restore_model_text(self, text: str) -> None:
+        """A recovered diagram on the canvas, unsaved."""
+        self._canvas.set_model(SimModel.from_dict(json.loads(text)))
+        self._canvas.fit_all()
+        self._scope.clear()
+        self._result = None
+        self._saved_state = None
+        self._status.setText("Restored a recovered model; save it to keep it.")
 
     # ── misc ────────────────────────────────────────────────────
 
