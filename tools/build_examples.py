@@ -167,10 +167,10 @@ def pid_saturation() -> SimModel:
 
 
 BUILDERS = {
-    "dc_motor.fmdl": dc_motor,
-    "cruise_control.fmdl": cruise_control,
-    "inverted_pendulum.fmdl": inverted_pendulum,
-    "pid_saturation.fmdl": pid_saturation,
+    "dc_motor.evx": dc_motor,
+    "cruise_control.evx": cruise_control,
+    "inverted_pendulum.evx": inverted_pendulum,
+    "pid_saturation.evx": pid_saturation,
 }
 
 

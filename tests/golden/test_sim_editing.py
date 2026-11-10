@@ -399,14 +399,14 @@ def test_every_example_runs_as_it_opens(example):
 
 def test_the_examples_show_what_they_promise():
     by_file = {e.file: SimModel.load(e.path) for e in EXAMPLES}
-    m = by_file["pid_saturation.fmdl"]
+    m = by_file["pid_saturation.evx"]
     r = simulate(m, t_end=20.0, n_points=400)
     # Windup overshoots well past the anti-windup loop.
     assert r.trace("G_w.out").max() > r.trace("G_a.out").max() + 0.1
-    m = by_file["inverted_pendulum.fmdl"]
+    m = by_file["inverted_pendulum.evx"]
     r = simulate(m, t_end=5.0, n_points=200)
     assert abs(r.trace("th.out")[-1]) < 1e-3          # held upright
-    m = by_file["cruise_control.fmdl"]
+    m = by_file["cruise_control.evx"]
     r = simulate(m, t_end=40.0, n_points=200)
     # The PI is still closing the last 1 % at 40 s.
     assert r.trace("G.out")[-1] == pytest.approx(10.0, rel=0.01)

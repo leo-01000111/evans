@@ -5,11 +5,11 @@ Load a Simulink model from its file without showing it.
 ## Syntax
 
     load_system('name')
-    load_system('file.fmdl')
+    load_system('file.evx')
 
 ## Description
 
-`load_system('name')` reads `name.fmdl` from the current folder or the path, so that [get_param](get_param), [set_param](set_param) and [sim](sim) can use it by name. A model is named after its file. Loading is also what `sim('name')` does by itself when the model is not loaded yet. `close_system('name')` forgets the loaded copy; the file is not touched.
+`load_system('name')` reads `name.evx` (or, failing that, the older `name.fmdl`) from the current folder or the path, so that [get_param](get_param), [set_param](set_param) and [sim](sim) can use it by name. A model is named after its file. Loading is also what `sim('name')` does by itself when the model is not loaded yet. `close_system('name')` forgets the loaded copy; the file is not touched.
 
 ## Example
 

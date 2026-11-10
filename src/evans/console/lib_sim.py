@@ -13,8 +13,8 @@ Which model a name means
 ------------------------
 A model is named as in Simulink, by its file name without the extension. A
 name is looked up among the models already loaded, then as the model on the
-Model tab, then as ``name.fmdl`` in the current folder and on the path,
-which loads it. Block paths are ``model/block``, and ``model/sub/block``
+Model tab, then as ``name.evx`` (or the older ``name.fmdl``) in the
+current folder and on the path, which loads it. Block paths are ``model/block``, and ``model/sub/block``
 inside a subsystem.
 
 Parameters
@@ -288,8 +288,9 @@ class SimulinkLibrary:
         if name is None:
             self.rt.models.clear()
             return None
+        from ..sim.model import is_model_file
         model_name = _as_text(name).split("/")[0]
-        if model_name.lower().endswith(".fmdl"):
+        if is_model_file(model_name):
             model_name = os.path.splitext(os.path.basename(model_name))[0]
         self.rt.models.pop(model_name, None)
         return None
@@ -298,11 +299,13 @@ class SimulinkLibrary:
 
     @_nargout
     def f_save_system(self, name=None, path=None, *_, nargout=0):
+        from ..sim.model import SUFFIX, is_model_file
         model = self._model(name) if name is not None else self._current()
         target = self.rt.resolve(_as_text(path)) if path is not None \
-            else os.path.join(self.rt.folder, f"{model.name}.fmdl")
-        if not target.lower().endswith(".fmdl"):
-            target += ".fmdl"
+            else os.path.join(self.rt.folder, f"{model.name}{SUFFIX}")
+        # A .fmdl asked for by name is written as .fmdl, for an older Evans.
+        if not is_model_file(target):
+            target += SUFFIX
         old = model.name
         model.save(target)
         self.rt.models.pop(old, None)
@@ -508,14 +511,20 @@ class SimulinkLibrary:
 
     def _model(self, name):
         """A model by name (or path, or file name), loading it if need be."""
-        from ..sim.model import SimModel
+        from ..sim.model import (
+            LEGACY_SUFFIX,
+            SUFFIX,
+            SimModel,
+            find_model_file,
+            is_model_file,
+        )
         if isinstance(name, SimModel):
             return name
         text = _as_text(name).strip()
         if not text:
             raise MatlabError("A model name is empty.")
         head = text.replace("\\", "/")
-        if head.lower().endswith(".fmdl"):
+        if is_model_file(head):
             path = self.rt.resolve(head)
             stem = os.path.splitext(os.path.basename(path))[0]
             if stem in self.rt.models:
@@ -530,12 +539,12 @@ class SimulinkLibrary:
         if head in self.rt.models:
             return self.rt.models[head]
         for folder in [self.rt.folder, *self.rt.path]:
-            path = os.path.join(folder, f"{head}.fmdl")
-            if os.path.isfile(path):
-                return self._load(path)
+            path = find_model_file(folder, head)
+            if path is not None:
+                return self._load(str(path))
         raise MatlabError(
-            f"'{head}' is not loaded, and there is no {head}.fmdl in the "
-            f"current folder or on the path.")
+            f"'{head}' is not loaded, and there is no {head}{SUFFIX} "
+            f"(or {head}{LEGACY_SUFFIX}) in the current folder or on the path.")
 
     def _load(self, path: str):
         from ..sim.model import ModelError, SimModel
@@ -548,11 +557,11 @@ class SimulinkLibrary:
 
     def _split(self, obj):
         """``(model, [block, …])`` from a path such as ``'m/sub/Gain1'``."""
-        from ..sim.model import SimModel
+        from ..sim.model import SimModel, is_model_file
         if isinstance(obj, SimModel):
             return obj, []
         text = _as_text(obj).replace("\\", "/").strip("/")
-        if text.lower().endswith(".fmdl"):
+        if is_model_file(text):
             return self._model(text), []
         head, *parts = text.split("/")
         return self._model(head), parts

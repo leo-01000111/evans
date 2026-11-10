@@ -19,7 +19,7 @@ them (grep, go-to-definition), don't read them whole.**
 | `evans.sim` | the Simulink engine: model file, compile/flatten, solver, linearise | `model.py`, `compile.py`, `solver.py` |
 | `evans.sim.blocks` | the block library, one module per Simulink category | `__init__.py`, `../block.py` (the contract) |
 | `evans.help` | help pages, one Markdown file per command in `help/pages/` | `__init__.py` |
-| `evans.examples` | sample `.fmdl` models (rebuilt by `tools/build_examples.py`) | `__init__.py` |
+| `evans.examples` | sample `.evx` models (rebuilt by `tools/build_examples.py`) | `__init__.py` |
 | `evans.assistant` | Cedric's OpenRouter client and prompt protocol, Qt-free | `client.py`, `protocol.py` |
 | `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave | `mainwindow.py` |
 | `evans.ui.console` | command window, workspace, script editor, live editor, figures | `console_dock.py` |

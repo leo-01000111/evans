@@ -113,7 +113,7 @@ a = Analysis(
            (str(ROOT / "src" / "evans" / "help" / "pages" / "*.md"),
             "evans/help/pages"),
            # File ▸ Examples' models, read by path like the help pages.
-           (str(ROOT / "src" / "evans" / "examples" / "*.fmdl"),
+           (str(ROOT / "src" / "evans" / "examples" / "*.evx"),
             "evans/examples"),
            # The licences travel with the build: MIT for the code, and
            # Cedric's all-rights-reserved notice for the character it shows.
@@ -205,14 +205,16 @@ if MAC:
             # Follow the system's light/dark appearance for native chrome.
             "NSRequiresAquaSystemAppearance": False,
             "NSHumanReadableCopyright": "© Leon Gorecki",
-            # .fmdl is Evans' own format, so Evans owns it, as the Windows
-            # installer's association does. Not .m: that belongs to MATLAB
-            # and to whatever editor the user already has.
+            # .evx (and .fmdl, its older name) is Evans' own format, so
+            # Evans owns it, as the Windows installer's association does.
+            # Not .m: that belongs to MATLAB and to whatever editor the user
+            # already has.
             "UTExportedTypeDeclarations": [{
                 "UTTypeIdentifier": "eu.leongorecki.evans.model",
                 "UTTypeDescription": "Evans model",
                 "UTTypeConformsTo": ["public.data", "public.content"],
-                "UTTypeTagSpecification": {"public.filename-extension": ["fmdl"]},
+                "UTTypeTagSpecification": {
+                    "public.filename-extension": ["evx", "fmdl"]},
             }],
             "CFBundleDocumentTypes": [{
                 "CFBundleTypeName": "Evans model",

@@ -1,6 +1,6 @@
 """
-A Simulink model: blocks, connections, and the ``.fmdl`` file format.
-=====================================================================
+A Simulink model: blocks, connections, and the ``.evx`` file format.
+====================================================================
 Deliberately separate from :class:`evans.core.model.Model`, which is the
 single-port LTI graph the analysis half uses. A simulation block has several
 typed ports and need not be linear, so it needs its own container —
@@ -10,6 +10,7 @@ typed ports and need not be linear, so it needs its own container —
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,48 @@ FORMAT = "evans-model"
 #: Read, never written, so older .fmdl files keep opening.
 LEGACY_FORMATS = ("fake" "matlab-model",)
 VERSION = 1
+
+#: The model file's extension. It used to be ``.fmdl`` (from the old name);
+#: those files hold the same JSON and keep opening for good.
+SUFFIX = ".evx"
+LEGACY_SUFFIX = ".fmdl"
+#: Every extension a model file may have, the preferred one first.
+SUFFIXES = (SUFFIX, LEGACY_SUFFIX)
+
+
+def is_model_file(path: str | Path) -> bool:
+    """Whether ``path`` names a model file, new or old extension."""
+    return Path(path).suffix.lower() in SUFFIXES
+
+
+def find_model_file(folder: str | Path, name: str) -> Path | None:
+    """``name.evx`` in ``folder``, else ``name.fmdl``, else ``None``."""
+    for suffix in SUFFIXES:
+        path = Path(folder) / f"{name}{suffix}"
+        if path.is_file():
+            return path
+    return None
+
+
+def preferred_file(path: str | Path) -> Path:
+    """
+    The file to open for ``path``: an old ``name.fmdl`` that has a
+    ``name.evx`` beside it, at least as new (or the ``.fmdl`` is gone),
+    means the ``.evx``, which it was saved as. Anything else is ``path``.
+    """
+    path = Path(path)
+    if path.suffix.lower() != LEGACY_SUFFIX:
+        return path
+    new = path.with_suffix(SUFFIX)
+    try:
+        new_time = new.stat().st_mtime
+    except OSError:
+        return path
+    try:
+        old_time = path.stat().st_mtime
+    except OSError:
+        return new
+    return new if new_time >= old_time else path
 
 #: A model's run settings, as Simulink names them, and their defaults.
 #: ``MaxStep`` 0 means automatic; a fixed-step solver needs a positive one.
@@ -351,9 +394,17 @@ class SimModel:
 
     def save(self, path: str | Path) -> None:
         """Write the model; as in Simulink, it takes the file's name."""
-        self.name = Path(path).stem
-        Path(path).write_text(json.dumps(self.to_dict(), indent=2),
-                              encoding="utf-8")
+        path = Path(path)
+        self.name = path.stem
+        text = json.dumps(self.to_dict(), indent=2)
+        # Written whole beside the target, then swapped in: a failure part
+        # way leaves the old file as it was, never a half-written one.
+        part = path.with_name(path.name + ".part")
+        try:
+            part.write_text(text, encoding="utf-8")
+            os.replace(part, path)
+        finally:
+            part.unlink(missing_ok=True)
 
     @classmethod
     def load(cls, path: str | Path) -> SimModel:

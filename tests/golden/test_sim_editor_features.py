@@ -655,7 +655,7 @@ def test_open_and_save_come_first_and_survive_a_narrow_window(app):
     tab = _tab(app, 700)
     texts = _texts(tab)
     assert texts.index("Open…") < texts.index("Undo")
-    assert texts.index("Save…") < texts.index("Linearise")
+    assert texts.index("Save") < texts.index("Linearise")
     hidden = hidden_actions(tab._toolbar)
     assert "Open" not in hidden and "Save" not in hidden
     tab.deleteLater()

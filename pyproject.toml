@@ -57,7 +57,7 @@ include = ["evans*"]
 # The help window's hand-written pages.
 "evans.help" = ["pages/*.md"]
 # File ▸ Examples' models, built by tools/build_examples.py.
-"evans.examples" = ["*.fmdl"]
+"evans.examples" = ["*.evx"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

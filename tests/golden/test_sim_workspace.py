@@ -343,7 +343,7 @@ def test_sim_options_override_the_model(it):
 def test_save_and_load_by_name(it, tmp_path):
     run(it, BUILD + "save_system('loop'); close_system('loop');",
         folder=tmp_path)
-    assert (tmp_path / "loop.fmdl").exists()
+    assert (tmp_path / "loop.evx").exists()
     run(it, "Kp = 1; o = sim('loop'); names = find_system('loop', "
             "'BlockType', 'Gain');", folder=tmp_path)
     assert it.namespace["o"].y[-1, 0] == pytest.approx(1 - math.exp(-6),

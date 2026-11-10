@@ -125,7 +125,7 @@ class RecentFiles:
 
     KEY = "recentFiles"
     #: What counts: MATLAB and Python scripts, and Simulink-style models.
-    SUFFIXES = (".m", ".py", ".fmdl")
+    SUFFIXES = (".m", ".py", ".evx", ".fmdl")
 
     def __init__(self, limit: int = 10) -> None:
         self.limit = limit

@@ -84,7 +84,8 @@ Compression=lzma2/max
 SolidCompression=yes
 
 ; Close a running Evans before replacing its files, and the shell is told
-; about the .fmdl association so Explorer picks up the icon straight away.
+; about the .evx and .fmdl associations so Explorer picks up the icon
+; straight away.
 CloseApplications=yes
 RestartApplications=no
 ChangesAssociations=yes
@@ -92,7 +93,7 @@ ChangesAssociations=yes
 [Tasks]
 Name: desktopicon; Description: "{cm:CreateDesktopIcon}"; \
     GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: fmdlassoc; Description: "Open Evans models (.fmdl) with Evans"; \
+Name: modelassoc; Description: "Open Evans models (.evx, .fmdl) with Evans"; \
     GroupDescription: "File associations:"
 
 [InstallDelete]
@@ -113,27 +114,33 @@ Name: "{autodesktop}\Evans"; Filename: "{app}\Evans.exe"; \
     AppUserModelID: "{#AppUserModelID}"; Tasks: desktopicon
 
 [Registry]
-; .fmdl is Evans' own format, so Evans may be its default program. Not .m or
-; .mlx: those belong to MATLAB, and an installer that took them over would
-; be rude to anybody who has both.
+; .evx is Evans' own format (.fmdl its older name), so Evans may be their
+; default program. Not .m or .mlx: those belong to MATLAB, and an installer
+; that took them over would be rude to anybody who has both.
 ;
 ; HKA is HKCU in a per-user install. Uninstall removes exactly these keys
 ; and values; the settings under Software\Evans stay where they are.
+Root: HKA; Subkey: "Software\Classes\.evx"; ValueType: string; ValueName: ""; \
+    ValueData: "{#ProgId}"; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: modelassoc
+Root: HKA; Subkey: "Software\Classes\.evx\OpenWithProgids"; ValueType: string; \
+    ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: modelassoc
 Root: HKA; Subkey: "Software\Classes\.fmdl"; ValueType: string; ValueName: ""; \
-    ValueData: "{#ProgId}"; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: fmdlassoc
+    ValueData: "{#ProgId}"; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: modelassoc
 Root: HKA; Subkey: "Software\Classes\.fmdl\OpenWithProgids"; ValueType: string; \
-    ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: fmdlassoc
+    ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: modelassoc
 Root: HKA; Subkey: "Software\Classes\{#ProgId}"; ValueType: string; ValueName: ""; \
-    ValueData: "Evans model"; Flags: uninsdeletekey; Tasks: fmdlassoc
+    ValueData: "Evans model"; Flags: uninsdeletekey; Tasks: modelassoc
 Root: HKA; Subkey: "Software\Classes\{#ProgId}"; ValueType: string; \
-    ValueName: "AppUserModelID"; ValueData: "{#AppUserModelID}"; Tasks: fmdlassoc
+    ValueName: "AppUserModelID"; ValueData: "{#AppUserModelID}"; Tasks: modelassoc
 Root: HKA; Subkey: "Software\Classes\{#ProgId}\DefaultIcon"; ValueType: string; \
-    ValueName: ""; ValueData: "{app}\Evans.exe,0"; Tasks: fmdlassoc
+    ValueName: ""; ValueData: "{app}\Evans.exe,0"; Tasks: modelassoc
 Root: HKA; Subkey: "Software\Classes\{#ProgId}\shell\open\command"; ValueType: string; \
-    ValueName: ""; ValueData: """{app}\Evans.exe"" ""%1"""; Tasks: fmdlassoc
-; Lists Evans under "Open with" for .fmdl, with its proper name.
+    ValueName: ""; ValueData: """{app}\Evans.exe"" ""%1"""; Tasks: modelassoc
+; Lists Evans under "Open with" for .evx and .fmdl, with its proper name.
 Root: HKA; Subkey: "Software\Classes\Applications\Evans.exe"; ValueType: string; \
     ValueName: "FriendlyAppName"; ValueData: "Evans"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Applications\Evans.exe\SupportedTypes"; \
+    ValueType: string; ValueName: ".evx"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\Evans.exe\SupportedTypes"; \
     ValueType: string; ValueName: ".fmdl"; ValueData: ""
 

@@ -4,4 +4,5 @@
 *.py    text diff=python
 *.md    text
 *.toml  text
+*.evx   text
 *.fmdl  text

@@ -646,7 +646,7 @@ Professional users need this before Evans can be used for paid work.
       from). The baselines autosave now keeps (`SimTab.mark_saved`,
       `LiveScriptEditor.mark_saved`) are the "is it unsaved?" test this needs.
       **S–M**
-- [ ] **Rename the model file extension `.fmdl`** (FauxMatlab model, a leftover of the
+- [x] **Rename the model file extension `.fmdl`** (FauxMatlab model, a leftover of the
       old name). The new extension is `.evx`, chosen
       2026-11-09 after a search found no common program using it (`.evm` was the
       runner-up). Save new files with it,
@@ -668,6 +668,35 @@ Professional users need this before Evans can be used for paid work.
       be saved as `.fmdl`; autosave never converts and never asks; a file already
       in `.evx` never sees the prompt. The patch notes tell users that older
       versions cannot open `.evx`.
+      *Done 2026-11-11:* as decided. `sim/model.py` holds the suffixes and the
+      `.evx`-first lookup, and writes a model to a `.part` file that is then
+      swapped in, so a failed save leaves the old file whole. The Model tab
+      now remembers its file (`SimTab.model_path`): **Save** writes to it and
+      **Save As…** asks, offering `.evx` and `.fmdl`. An example, the starter
+      model and one the console puts on the canvas have no file, so Save asks
+      where. If `name.evx` already exists, Save as .evx opens Save As instead of
+      overwriting it. A recent `.fmdl` with a newer `.evx` beside it opens the
+      `.evx`. The installer task is now `modelassoc`, covering both types.
+      Left for later: the release's patch notes must say older versions
+      cannot open `.evx`. Referenced models and script links do not exist yet;
+      when they are built, use `find_model_file`.
+- [ ] **Full test run crashes in garbage collection (Windows).** Found while
+      doing the `.evx` rename (2026-11-11). With that branch, `python -m
+      pytest` died with "Windows fatal exception: access violation" during
+      garbage collection three times. It was in `test_symbolic.py` twice
+      (`test_numden_and_sym2poly_make_a_tf`, and in `inv`), and once in
+      `test_plot_ui.py::test_a_theme_switch_recolours_a_mesh_without_redrawing`
+      (pyqtgraph `AxisItem.paint`). It follows test-run allocation, not any
+      one test: it needs both updated tests that now run through,
+      `test_sim_editing.py::test_the_examples_show_what_they_promise` and
+      `test_sim_workspace.py::test_save_and_load_by_name`, and neither alone
+      triggers it. Neither makes Qt objects. HEAD without the branch runs the
+      same files clean, and main has crashed like this at least once
+      before. A `gc.collect()` after every test removes it (run time ×2.5);
+      once per file does not. The real app survives opening, running and
+      saving every example and both prompt answers. Likely a PySide6/pyqtgraph
+      wrapper left by an earlier Qt test and collected late: find which
+      test, and delete its widgets properly. **S–M**
 - [ ] A Linux build (AppImage or a `.deb`). CI already tests on Ubuntu. **M**
 - [ ] macOS notarisation, and an Intel build if anyone asks. **M**
 - [ ] Windows code signing (deferred on purpose until there are more users; a Certum

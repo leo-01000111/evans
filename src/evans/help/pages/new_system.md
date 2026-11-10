@@ -8,7 +8,7 @@ Create an empty Simulink model, to build with add_block and add_line.
 
 ## Description
 
-`new_system('name')` makes an empty model called `name`, held in this session until [save_system](save_system) writes it to `name.fmdl`. Add blocks with [add_block](add_block) and wire them with [add_line](add_line); [open_system](open_system) puts it on the Model tab. `close_system('name')` forgets it.
+`new_system('name')` makes an empty model called `name`, held in this session until [save_system](save_system) writes it to `name.evx`. Add blocks with [add_block](add_block) and wire them with [add_line](add_line); [open_system](open_system) puts it on the Model tab. `close_system('name')` forgets it.
 
 ## Example
 

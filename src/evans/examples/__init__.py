@@ -1,7 +1,7 @@
 """
 Example Simulink models, opened from File ▸ Examples.
 
-Each is a ``.fmdl`` file beside this module, built by
+Each is a ``.evx`` file beside this module, built by
 ``tools/build_examples.py`` from the course's own systems, so the files can
 be rebuilt after a format change rather than edited by hand. Every one runs
 as it opens: no workspace variables to define first.
@@ -27,14 +27,14 @@ class Example:
 
 
 EXAMPLES = (
-    Example("dc_motor.fmdl", "DC motor speed control",
+    Example("dc_motor.evx", "DC motor speed control",
             "A PID holding a DC motor's speed, its voltage limited to ±12 V."),
-    Example("cruise_control.fmdl", "Cruise control",
+    Example("cruise_control.evx", "Cruise control",
             "A PI controller on a car's speed, with the engine force limited."),
-    Example("inverted_pendulum.fmdl", "Inverted pendulum",
+    Example("inverted_pendulum.evx", "Inverted pendulum",
             "A pendulum held upright by a PD controller; the nonlinear "
             "dynamics are an Fcn block."),
-    Example("pid_saturation.fmdl", "PID with a saturating actuator",
+    Example("pid_saturation.evx", "PID with a saturating actuator",
             "Integrator windup, and the same loop with anti-windup beside it."),
 )
 

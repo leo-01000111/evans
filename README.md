@@ -16,7 +16,7 @@ On Windows you don't need Python. Both downloads are on the
 **Installer (recommended).** Download `Evans-Setup-<version>.exe` and run it. It installs
 for your account only, into `%LOCALAPPDATA%\Programs\Evans`, so it doesn't need
 administrator rights. You get a Start-menu entry (a desktop shortcut if you tick the box),
-`.fmdl` models open in Evans when you double-click them, and Evans shows up in
+`.evx` models (and older `.fmdl` ones) open in Evans when you double-click them, and Evans shows up in
 *Apps & features* so you can uninstall it there. Evans checks GitHub for a newer release
 once a day and offers to update, either right away or when you close it; *Help ▸ Check for
 updates* asks on demand, and the same menu turns the daily check off. Running a newer
@@ -34,7 +34,7 @@ On a Mac with Apple Silicon (M1 or later) and macOS 13 or newer, download
 Applications. The app isn't notarised by Apple yet, so macOS blocks the first launch
 ("could not verify that Evans is free of malware" on Sequoia, "can't be opened" on 13 and
 14). Close the message, then open **System Settings ▸ Privacy & Security**, scroll down
-and click **Open Anyway**; macOS remembers it. `.fmdl` models open in Evans on a double-click. Updates aren't automatic on a Mac:
+and click **Open Anyway**; macOS remembers it. `.evx` and `.fmdl` models open in Evans on a double-click. Updates aren't automatic on a Mac:
 Evans tells you when there's a newer release. An Intel Mac or an older macOS can run
 Evans from source.
 
@@ -287,7 +287,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-4826 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+4846 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

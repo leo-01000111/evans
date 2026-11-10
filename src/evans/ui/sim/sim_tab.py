@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QProgressBar,
     QProxyStyle,
     QPushButton,
@@ -42,7 +43,7 @@ from PySide6.QtWidgets import (
 
 from ...sim.compile import CompileError, compile_model
 from ...sim.linearize import LinearizationError, linearize, steady_state
-from ...sim.model import ModelError, PortRef, SimModel
+from ...sim.model import LEGACY_SUFFIX, SUFFIX, ModelError, PortRef, SimModel
 from ...sim.solver import SimulationError, resolve_solver, simulate
 from ...sim.workspace import resolve_model
 from .. import iconset, keys, theme
@@ -214,6 +215,13 @@ class SimTab(QWidget, GuardedPanel):
         #: The model as its file holds it (None: unsaved whatever it is).
         self._saved_state: str | None = None
         self.mark_saved()
+        #: The file the model on the canvas came from or was last saved to;
+        #: None for the starter, an example, or one the console put there.
+        self._path: Path | None = None
+        #: Whether this .fmdl's first Save has offered the new format.
+        self._format_asked = False
+        # Any other model on the canvas is not that file's.
+        self._canvas.model_replaced.connect(self._forget_path)
 
     def _build_toolbar(self) -> QWidget:
         """
@@ -256,8 +264,11 @@ class SimTab(QWidget, GuardedPanel):
         # Near the start: a toolbar that runs out of room hides its *last*
         # entries, and at the end these were the ones a narrow window lost.
         for label, icon, slot, tip in (
-            ("Open…", "open", self.open_model, "Open a .fmdl model"),
-            ("Save…", "save", self.save_model, "Save this model as .fmdl"),
+            ("Open…", "open", self.open_model, "Open a model (.evx or .fmdl)"),
+            ("Save", "save", self.save_model, "Save this model to its file"),
+            ("Save As…", "save", self.save_model_as,
+             "Save this model to a new file (.evx, or .fmdl for an older "
+             "Evans)"),
         ):
             action = bar.addAction(label)
             iconset.bind(action, icon)
@@ -706,7 +717,8 @@ class SimTab(QWidget, GuardedPanel):
     @guard("Open model")
     def open_model(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open model", "", "Evans models (*.fmdl *.json)")
+            self, "Open model", "",
+            "Evans models (*.evx *.fmdl);;All files (*)")
         if path:
             self.load_model(path)
 
@@ -725,6 +737,8 @@ class SimTab(QWidget, GuardedPanel):
         self._status.setText(f"Loaded {path}")
         self.mark_saved()
         if remember:
+            # An example's file is inside Evans: Save asks where instead.
+            self._path = Path(path)
             self.file_used.emit(Path(path))
 
     # ── export ──────────────────────────────────────────────────
@@ -762,17 +776,87 @@ class SimTab(QWidget, GuardedPanel):
         self._scope.export(path)
         self._status.setText(f"Exported the signals to {path}")
 
+    @property
+    def model_path(self) -> Path | None:
+        """The file the model on the canvas is saved to, if it has one."""
+        return self._path
+
+    def _forget_path(self) -> None:
+        self._path = None
+        self._format_asked = False
+
     @guard("Save model")
     def save_model(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save model", f"{self._canvas.root_model().name}.fmdl",
-            "Evans models (*.fmdl)")
+        """
+        Save to the model's own file, or ask where when it has none.
+
+        The first Save of a ``.fmdl`` offers the new ``.evx`` once. Yes
+        writes ``name.evx`` beside it and carries on from there; the old
+        file is left exactly as it was. An ``.evx`` is never asked about.
+        """
+        path = self._path
+        if path is None:
+            self.save_model_as()
+            return
+        if path.suffix.lower() == LEGACY_SUFFIX and not self._format_asked:
+            self._format_asked = True
+            if self.ask_new_format():
+                path = path.with_suffix(SUFFIX)
+                if path.exists():
+                    # Someone's .evx is already there: let them choose.
+                    self.save_model_as(path)
+                    return
+        self._write_model(path)
+
+    @guard("Save model")
+    def save_model_as(self, start: Path | None = None) -> None:
+        """Save to a file the user picks: ``.evx``, or ``.fmdl`` for an
+        older Evans."""
+        if not isinstance(start, Path):            # a toolbar click's bool
+            folder = self._path.parent if self._path is not None else None
+            name = f"{self._canvas.root_model().name}{SUFFIX}"
+            start = folder / name if folder is not None else Path(name)
+        new_filter = f"Evans model (*{SUFFIX})"
+        old_filter = f"Older Evans model (*{LEGACY_SUFFIX})"
+        path, chosen = QFileDialog.getSaveFileName(
+            self, "Save model", str(start), f"{new_filter};;{old_filter}")
         if not path:
             return
+        path = Path(path)
+        if path.suffix.lower() not in (SUFFIX, LEGACY_SUFFIX):
+            path = path.with_name(path.name + (
+                LEGACY_SUFFIX if chosen == old_filter else SUFFIX))
+        if path.suffix.lower() == LEGACY_SUFFIX:
+            # Chosen on purpose, for an older Evans: Save does not ask again.
+            self._format_asked = True
+        self._write_model(path)
+
+    def ask_new_format(self) -> bool:
+        """The one-time question on a ``.fmdl``: True to save as ``.evx``."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("Save model")
+        box.setText("Evans is moving to a new model file, .evx. "
+                    "Save this one in the new format?")
+        box.setInformativeText(
+            f"Evans writes {self._path.with_suffix(SUFFIX).name} beside "
+            f"{self._path.name} and leaves the old file as it is. Older "
+            "versions of Evans cannot open .evx files.")
+        new = box.addButton(f"Save as {SUFFIX}", QMessageBox.AcceptRole)
+        keep = box.addButton(f"Keep {LEGACY_SUFFIX} this time",
+                             QMessageBox.RejectRole)
+        box.setDefaultButton(new)
+        box.setEscapeButton(keep)
+        box.exec()
+        return box.clickedButton() is new
+
+    def _write_model(self, path: Path) -> None:
+        # Written in full before the canvas takes the new file as its own.
         self._canvas.root_model().save(path)
+        self._path = path
         self._status.setText(f"Saved {path}")
         self.mark_saved()
-        self.file_used.emit(Path(path))
+        self.file_used.emit(path)
 
     # ── crash recovery ──────────────────────────────────────────
 

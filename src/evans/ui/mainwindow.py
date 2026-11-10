@@ -69,6 +69,7 @@ from ..core.tf_utils import (
     second_order,
     unity,
 )
+from ..sim.model import is_model_file, preferred_file
 from . import help, iconset, keys, persist, recovery, theme, winframe
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
 from .assistant import AssistantDock
@@ -1398,12 +1399,13 @@ class MainWindow(QMainWindow):
         Open a recent file where it belongs: a model on the Model canvas, a
         script in the Console's Script tab. Returns whether it opened.
         """
-        path = Path(path)
+        # A .fmdl since saved as .evx opens as the .evx.
+        path = preferred_file(path)
         if not path.is_file():
             self.recent_files.paths()          # forgets it
             self._status.showMessage(f"{path} no longer exists", 6000)
             return False
-        if path.suffix.lower() == ".fmdl":
+        if is_model_file(path):
             self._sim_tab.load_model(path)
             self._stack.set_current(Workspace.MODEL)
         else:

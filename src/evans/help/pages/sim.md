@@ -11,7 +11,7 @@ Run a Simulink model and return its output: the times, the top-level Outports, a
 
 ## Description
 
-`out = sim('model')` runs the model named `model`: the one on the Model tab if it has that name, one loaded with [load_system](load_system) or [new_system](new_system), or else `model.fmdl` from the current folder or the path. It runs with the model's own settings (stop time, solver, step, tolerances), which the Model tab's toolbar shows and [set_param](set_param) changes. Name-value pairs override them for this run: `StopTime`, `Solver`, `MaxStep` (or `FixedStep`), `RelTol` and `AbsTol`. A number after the name is the stop time.
+`out = sim('model')` runs the model named `model`: the one on the Model tab if it has that name, one loaded with [load_system](load_system) or [new_system](new_system), or else `model.evx` (or the older `model.fmdl`) from the current folder or the path. It runs with the model's own settings (stop time, solver, step, tolerances), which the Model tab's toolbar shows and [set_param](set_param) changes. Name-value pairs override them for this run: `StopTime`, `Solver`, `MaxStep` (or `FixedStep`), `RelTol` and `AbsTol`. A number after the name is the stop time.
 
 Block parameters written as workspace variables or expressions, such as a Gain of `Kp` or a frequency of `2*pi*f`, are evaluated in the workspace when the model runs. A loop that sets `Kp` and calls `sim` is therefore a parameter sweep.
 

@@ -2,7 +2,7 @@
 Evans — a classical and modern control workbench.
 
     evans            open the window          (python app.py from a checkout)
-    evans FILE       open the window with FILE: a .fmdl model on the Model
+    evans FILE       open the window with FILE: a .evx model on the Model
                      canvas, a script in the Console (what double-clicking a
                      file associated with Evans sends)
     evans --check    run the headless self-test and exit
@@ -162,7 +162,7 @@ def main() -> None:
     # Offer back what a crash left, then keep copies of unsaved work.
     win.start_recovery()
 
-    # `Evans.exe model.fmdl`: the file association, or a drop on the exe.
+    # `Evans.exe model.evx`: the file association, or a drop on the exe.
     for path in _file_arguments(app.arguments()[1:]):
         win.open_recent(path)
     # The same on a Mac, where Finder sends an event instead.
