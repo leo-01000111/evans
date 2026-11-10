@@ -36,3 +36,9 @@ trademarks: mention them only to describe compatibility.
   `app.py` and `conftest.py` already do this.
 - The Windows installer is unsigned on purpose until there are more users.
 - `COURSE MATERIAL/` is third-party copyright and must stay out of git.
+
+## Working with an LLM in this repo
+Evans is a large codebase, so coding in it with an LLM is expensive. Work slowly:
+one feature at a time, finished, tested and reviewed before the next starts. Do
+not batch several roadmap items or run parallel feature agents. Read only the
+files the feature needs, and ask before moving on to the next item.
