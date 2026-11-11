@@ -9,6 +9,10 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.23.0 - 2026-11-11
+
+A window for every Scope.
+
 ### Added
 - **A Scope block opens in its own window.** Double-click a Scope block on the
   Model tab and its signals, and only those, are plotted in a window of their
