@@ -78,7 +78,8 @@ def test_versions_compare_as_numbers_not_text():
 
 
 def test_the_installer_is_picked_from_the_release():
-    found = update.release_from_json(api_release())
+    # The Windows installer; each platform's own asset is tested below.
+    found = update.release_from_json(api_release(), "win32")
     assert found == release(
         notes_url="https://github.com/leo-01000111/evans/releases/tag/v9.0.0")
     assert found.label == "9.0.0"
@@ -132,6 +133,10 @@ def test_fetch_latest_reads_the_api(monkeypatch):
         return FakeResponse(json.dumps(api_release()).encode())
 
     monkeypatch.setattr(update, "urlopen", fake)
+    # The canned release has only the Windows installer: read it as Windows
+    # does, whatever machine runs the test (a Mac looks for the .dmg).
+    monkeypatch.setattr(update, "asset_pattern",
+                        lambda platform=None: update.SETUP_ASSET)
     assert update.fetch_latest().tag == "v9.0.0"
     assert seen == [update.LATEST_URL]
 
