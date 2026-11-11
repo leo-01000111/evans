@@ -35,6 +35,8 @@ search rather than read, and which tests cover which area.
 - This machine has PyQt5, PyQt6 and PySide6 installed. pyqtgraph must be pinned
   to PySide6 (`PYQTGRAPH_QT_LIB`) before any Qt import, or the Qt DLLs clash.
   `app.py` and `conftest.py` already do this.
+- A release adds its section to `CHANGELOG.md` as well as to the site's patch
+  notes (`site/pages/patch-notes.html`); `tests/test_changelog.py` checks it.
 - The Windows installer is unsigned on purpose until there are more users.
 - `COURSE MATERIAL/` is third-party copyright and must stay out of git.
 

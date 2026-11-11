@@ -11,7 +11,7 @@ invented the root locus.
 ## Install
 
 On Windows you don't need Python. Both downloads are on the
-[latest release](https://github.com/leo-01000111/evans/releases/latest) page.
+[latest release](https://github.com/leo-01000111/evans/releases/latest) page. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 **Installer (recommended).** Download `Evans-Setup-<version>.exe` and run it. It installs
 for your account only, into `%LOCALAPPDATA%\Programs\Evans`, so it doesn't need

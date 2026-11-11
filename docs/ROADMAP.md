@@ -744,6 +744,11 @@ Professional users need this before Evans can be used for paid work.
       343 MB. **S**
 - [ ] A `CHANGELOG.md` in the repo; patch notes live only on the site now. A stated
       stability policy, and a 1.0 once Phases 1–2 land. **S**
+      - [x] `CHANGELOG.md`, *done 2026-11-11:* every version from 0.9.0 to 0.20.0,
+        a "before 0.9" entry and an Unreleased section. `tests/test_changelog.py`
+        fails when the current `evans.__version__` has no section.
+      - [ ] The stability policy and 1.0: proposal in `docs/1.0-PROPOSAL.md`,
+        waiting for the owner's decisions. Leave open until then.
 - [x] Fix the `pyproject.toml` comment that still says "432 tests". **S**
 - [ ] A profiler (`profile on/off/viewer`), `publish` for plain `.m` files to HTML/PDF,
       and git status in the file browser. **M each**
