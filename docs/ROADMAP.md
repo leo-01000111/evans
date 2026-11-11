@@ -725,9 +725,16 @@ Professional users need this before Evans can be used for paid work.
       rebuilding a 3-D figure with a redraw still queued could hit it too.
       Test: `test_a_redraw_queued_for_a_deleted_canvas_does_nothing`.
 - [ ] A Linux build (AppImage or a `.deb`). CI already tests on Ubuntu. **M**
-- [ ] macOS notarisation, and an Intel build if anyone asks. **M**
-- [ ] Windows code signing (deferred on purpose until there are more users; a Certum
-      cloud certificate is the plan). **S** once bought.
+- [ ] macOS notarisation, and an Intel build if anyone asks. **M** *Decided
+      2026-11-11: not for 1.0.* There is no free route (Apple's programme is $99 a
+      year). Until Evans has real users, the install page explains Open Anyway.
+- [ ] Windows code signing (deferred on purpose until there are more users). *Decided
+      2026-11-11: free only.* Leon applies to the SignPath Foundation (free for
+      OSI-licensed public projects); then wire it into CI. **S–M** If declined,
+      stay unsigned. Paid Certum signing only with real users.
+- [ ] Install page: step-by-step for an unsigned Windows installer (SmartScreen
+      > More info > Run anyway) and an unnotarised Mac app (Privacy & Security >
+      Open Anyway). **S**
 - [ ] Auto-update on macOS (Windows has it). **M** *State, 2026-11-09:* the Mac app
       already checks GitHub at launch (`update.is_packaged`) and offers the release
       page, because it cannot replace itself; the prompt now says to download the
