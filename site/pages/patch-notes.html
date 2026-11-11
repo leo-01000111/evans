@@ -13,10 +13,28 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.19.0">0.19.0</a><a href="#v0.18.0">0.18.0</a><a href="#v0.17.2">0.17.2</a><a href="#v0.17.1">0.17.1</a><a href="#v0.17.0">0.17.0</a><a href="#v0.16.2">0.16.2</a><a href="#v0.16.1">0.16.1</a><a href="#v0.16.0">0.16.0</a><a href="#v0.15.1">0.15.1</a><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.20.0">0.20.0</a><a href="#v0.19.0">0.19.0</a><a href="#v0.18.0">0.18.0</a><a href="#v0.17.2">0.17.2</a><a href="#v0.17.1">0.17.1</a><a href="#v0.17.0">0.17.0</a><a href="#v0.16.2">0.16.2</a><a href="#v0.16.1">0.16.1</a><a href="#v0.16.0">0.16.0</a><a href="#v0.15.1">0.15.1</a><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="issues.html#bugs">known issues</a><a href="issues.html#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.20.0">
+      <div class="card prose notes">
+        <h2>0.20.0 &middot; 11 November 2026</h2>
+        <p>A new model file, and a crash fixed.</p>
+        <h3>Changed</h3>
+        <ul>
+          <li><strong>Models are saved as <code>.evx</code>.</strong> New models get the new extension. Your <code>.fmdl</code> files keep opening as before. The first time you press Save on one, Evans asks once whether to save it in the new format; if you say yes it writes <code>name.evx</code> beside it and never touches the original. Save As offers both types, so you can still save a <code>.fmdl</code> for someone on an older Evans.</li>
+          <li><strong>Older versions of Evans cannot open <code>.evx</code> files.</strong> If you share a model with someone who has not updated yet, use Save As &rsaquo; <code>.fmdl</code>.</li>
+          <li><strong>The Model tab remembers its file.</strong> Save writes to the file the model came from, and Save As asks where. A model is written to a temporary file first and swapped in, so a failed save leaves the old file whole.</li>
+          <li>Opening a model by name (<code>open_system</code>, <code>sim</code>, recent files) looks for <code>.evx</code> first, then <code>.fmdl</code>. Double-clicking either type opens Evans.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li><strong>A crash after closing a 3-D figure.</strong> Closing or redrawing a 3-D plot or pie right after clicking a data tip, turning it or switching theme could make Evans close without warning a little later. A redraw meant for a figure that is gone is now skipped.</li>
+        </ul>
       </div>
     </section>
 
