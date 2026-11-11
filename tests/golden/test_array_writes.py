@@ -459,7 +459,11 @@ def test_filling_a_preallocated_vector_is_linear(it):
 
 
 def _writes_time(it, setup: str, write: str, count: int = 200) -> float:
-    run(it, setup)
+    # The first write copies the array once (it was shared until then), and
+    # on a fresh 16 MB array that copy also pays the OS's first touch of the
+    # pages: about 0.2 s on a macOS CI runner. It is done before the clock
+    # starts, so only the writes that should be in place are timed.
+    run(it, setup + " k = 1; j = 1; " + write + ";")
     t0 = time.perf_counter()
     run(it, f"for k = 1:{count}, j = mod(k - 1, 20) + 1; {write}; end")
     return time.perf_counter() - t0
@@ -479,7 +483,7 @@ def test_a_write_costs_the_same_whatever_the_arrays_size(it, small, large,
     """
     The same 200 writes into a small array and into a 16 MB one. Copying
     the array at each write made the large one take seconds; in place, both
-    are a loop of 200 writes (and one copy, the first write's).
+    are a loop of 200 writes. The first write's one copy is made untimed.
     """
     fast = _writes_time(it, small, write)
     slow = _writes_time(it, large, write)
