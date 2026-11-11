@@ -810,9 +810,10 @@ Professional users need this before Evans can be used for paid work.
       2026-11-11: free only.* Leon applies to the SignPath Foundation (free for
       OSI-licensed public projects); then wire it into CI. **S–M** If declined,
       stay unsigned. Paid Certum signing only with real users.
-- [ ] Install page: step-by-step for an unsigned Windows installer (SmartScreen
+- [x] Install page: step-by-step for an unsigned Windows installer (SmartScreen
       > More info > Run anyway) and an unnotarised Mac app (Privacy & Security >
-      Open Anyway). **S**
+      Open Anyway). **S** *Already there (checked 2026-11-11):*
+      `site/pages/install.html` has `#smartscreen`, `#gatekeeper` and `#unsigned`.
 - [ ] Auto-update on macOS (Windows has it). **M** *State, 2026-11-09:* the Mac app
       already checks GitHub at launch (`update.is_packaged`) and offers the release
       page, because it cannot replace itself; the prompt now says to download the
