@@ -344,6 +344,19 @@ The engine was ahead of the editor and of its links to the console. Tests:
         "reset" button. **M**
       - **Undock:** pop a scope out into its own window (and several at once, one
         per Scope block), keep it live over the next run, and dock it back. **M**
+        *Shaped 2026-11-11 (Leon's idea), and the next scope item to build:*
+        - **Double-click a Scope block → its own window**, as in Simulink,
+          showing only the signals wired into that block. It stays open,
+          redraws on the next run, and several can be open side by side.
+        - **The bottom scope becomes the "global scope"** (every logged
+          signal), collapsed by default behind a **Show global scope**
+          button, with its long list of signal checkboxes inside it. Whether
+          it was open is remembered.
+        - **Double-click on a Scope block opens the plot, not the parameters.**
+          Its settings stay reachable from the inspector that shows when the
+          block is selected. Other blocks keep double-click for parameters.
+        - Copy (Ctrl+C), Export…, and "Compare with earlier runs" work in the
+          pop-out windows too: they share the same plot widget.
       - **Look:** line width, colour and style per channel, markers, legend
         position, grid, and a title, saved in the model like Simulink's scope
         settings. Plain measurement readouts (cursors with a delta between two,
