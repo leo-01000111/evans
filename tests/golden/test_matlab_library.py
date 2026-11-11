@@ -131,6 +131,113 @@ def test_process_folder_when_no_script_folder(it, tmp_path, monkeypatch):
 
 
 # ──────────────────────────────────────────────────────────────
+#  varargout
+# ──────────────────────────────────────────────────────────────
+
+TWO = "function varargout = two()\nvarargout{1} = 1;\nvarargout{2} = 2;\nend\n"
+MIX = ("function [x, varargout] = mix(n)\nx = nargout;\nfor k = 1:n\n"
+       "  varargout{k} = k * 10;\nend\nend\n")
+FWD = "function varargout = fwd(n)\n[varargout{1:nargout}] = mix(n);\nend\n"
+
+
+@pytest.fixture
+def outs(tmp_path):
+    (tmp_path / "two.m").write_text(TWO)
+    (tmp_path / "mix.m").write_text(MIX)
+    (tmp_path / "fwd.m").write_text(FWD)
+    return tmp_path
+
+
+def test_varargout_gives_each_output(it, outs):
+    run(it, "[a, b] = two();\nc = two();\ntwo();", outs)
+    assert (val(it, "a"), val(it, "b"), val(it, "c")) == (1, 2, 1)
+    assert val(it, "ans") == 1
+
+
+def test_varargout_after_named_outputs_and_nargout(it, outs):
+    run(it, "[x, y, z] = mix(2);\nw = mix(0);", outs)
+    assert (val(it, "x"), val(it, "y"), val(it, "z")) == (3, 10, 20)
+    assert val(it, "w") == 1
+
+
+def test_varargout_with_too_few_set_is_matlabs_error(it, outs):
+    run(it, "[a] = two();\n[x, y] = mix(5);", outs)       # fewer is fine
+    error = fails(it, "[a, b, c] = two();", outs)
+    assert ('Output argument "varargout{3}" (and possibly others) not '
+            'assigned a value in the execution with "two" function.') in error
+
+
+def test_varargout_forwarded_with_nargout(it, outs):
+    run(it, "[p, q, r] = fwd(3);\nfwd(3);", outs)
+    assert (val(it, "p"), val(it, "q"), val(it, "r")) == (3, 10, 20)
+    assert val(it, "ans") == 0           # fwd's nargout 0 reaches mix
+
+
+def test_a_cell_list_as_the_assignment_target(it, outs):
+    run(it, "c = cell(2, 2);\n[c{:, 2}] = two();\n[d{1:2}] = deal(7, 8);",
+        outs)
+    assert list(val(it, "c"))[2:] == [1, 2]
+    assert list(val(it, "d")) == [7, 8]
+
+
+def test_varargout_in_local_and_nested_functions(it, tmp_path):
+    run(it, "[a, b] = pair();\n"
+            "function varargout = pair()\n"
+            "varargout = {nargout, 'b'};\nend", tmp_path)
+    assert (val(it, "a"), val(it, "b")) == (2, "b")
+    (tmp_path / "outer.m").write_text(
+        "function [s, t] = outer()\n[s, t] = inner();\n"
+        "  function varargout = inner()\n"
+        "    varargout{1} = 5; varargout{2} = 6;\n  end\nend\n")
+    run(it, "[s, t] = outer();", tmp_path)
+    assert (val(it, "s"), val(it, "t")) == (5, 6)
+
+
+def test_an_anonymous_function_passes_nargout_on(it, outs):
+    run(it, "f = @() two();\n[u, v] = f();\n"
+            "g = @(varargin) mix(varargin{:});\n[a, b, c] = g(2);\n"
+            "h = @(v) max(v);\n[m, i] = h([3 9 1]);\nk = @(x) x + 1;\n"
+            "y = k(2);", outs)
+    assert (val(it, "u"), val(it, "v")) == (1, 2)
+    assert (val(it, "a"), val(it, "b"), val(it, "c")) == (3, 10, 20)
+    assert (val(it, "m"), val(it, "i"), val(it, "y")) == (9, 2, 3)
+
+
+# ──────────────────────────────────────────────────────────────
+#  true and false
+# ──────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("source, shape, fill", [
+    ("true(2)", (2, 2), True), ("false(2, 3)", (2, 3), False),
+    ("true([2 3])", (2, 3), True), ("false(2, 2, 2)", (2, 2, 2), False),
+    ("true(3, 1)", (3, 1), True), ("true(2, 'like', true)", (2, 2), True),
+])
+def test_true_and_false_make_logical_arrays(it, source, shape, fill):
+    run(it, f"t = {source};\nc = class(t);\nn = size(t);")
+    t = val(it, "t")
+    assert t.dtype == bool and (t == fill).all()
+    assert tuple(np.atleast_1d(val(it, "n")).astype(int)) == shape
+    assert val(it, "c") == "logical"
+
+
+def test_plain_true_and_false_stay_scalars(it):
+    run(it, "a = true;\nb = false;\nx = true;\nx(2) = false;\n"
+            "r = true(1, 3);\none = true(1);")
+    assert val(it, "a") is True and val(it, "b") is False
+    assert list(val(it, "x")) == [True, False]
+    assert list(val(it, "r")) == [True, True, True]
+    assert val(it, "one") is True
+
+
+def test_a_variable_named_true_hides_the_function(it):
+    run(it, "true = [5 6];\na = true(2);")
+    run(it, "clear true")
+    run(it, "b = true(2);")
+    assert val(it, "a") == 6
+    assert val(it, "b").shape == (2, 2)
+
+
+# ──────────────────────────────────────────────────────────────
 #  Spectra
 # ──────────────────────────────────────────────────────────────
 
