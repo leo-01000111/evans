@@ -1,7 +1,7 @@
     <section class="proj-hero">
       <p class="label">MATLAB compatibility</p>
       <h1>Running MATLAB scripts</h1>
-      <p class="lede">The console prompt and the Script tab run MATLAB as written, and the Live tab opens MATLAB live scripts. This page lists what MATLAB code can use. It covers what two control courses need, not the whole MATLAB language.</p>
+      <p class="lede">The console prompt and the Script tab run MATLAB as written, and the Live tab opens MATLAB live scripts. This page lists what MATLAB code can use. What is still missing is on the <em>Not in Evans</em> help page in the app, and an unknown MATLAB function says so when you call it.</p>
     </section>
 
     <section class="proj-section" id="language">
@@ -13,7 +13,10 @@
           <li>1-based indexing with <code>end</code>, and <code>a:b:c</code> ranges;</li>
           <li><code>if</code>, <code>for</code>, <code>while</code>, <code>switch</code> and <code>try</code> blocks;</li>
           <li>local functions, and function files in the script's folder, called the way MATLAB calls them, with <code>cd</code>, <code>pwd</code> and <code>addpath</code>;</li>
-          <li>cells, structs and struct arrays;</li>
+          <li>nested functions, <code>varargin</code>, <code>eval</code>, <code>feval</code> and <code>inputParser</code>;</li>
+          <li>cells, structs and struct arrays, <code>containers.Map</code>, tables and timetables;</li>
+          <li>N-D arrays, integer and single types, logical arrays, <code>"…"</code> string arrays and sparse matrices;</li>
+          <li><code>classdef</code> classes: properties, methods, inheritance, handle classes, events and enumerations;</li>
           <li><code>hold on</code>, <code>grid on</code> and <code>close all</code>;</li>
           <li>multiple outputs: <code>[y, t] = step(G)</code> returns MATLAB's outputs in MATLAB's order without plotting.</li>
         </ul>
@@ -28,12 +31,14 @@
         <div class="table-wrap"><table>
           <thead><tr><th>Area</th><th>Functions</th></tr></thead>
           <tbody>
-            <tr><td>Output and formatting</td><td><code>legend</code>, <code>title</code>, <code>axis</code>, <code>bodeoptions</code> with phase matching, <code>fprintf</code>, <code>num2str</code>, <code>struct2table</code>, which behave as in MATLAB</td></tr>
-            <tr><td>Signal processing</td><td><code>fft</code>, <code>ifft</code>, <code>filter</code>, <code>conv</code>, <code>butter</code>, <code>cheby1</code>, <code>ellip</code>, <code>freqz</code>, <code>findpeaks</code></td></tr>
-            <tr><td>Audio</td><td><code>audioread</code>, <code>audiowrite</code>, <code>sound</code></td></tr>
-            <tr><td>Numerics</td><td><code>ode45</code>, <code>fzero</code>, <code>fminsearch</code>, <code>interp1</code>, <code>trapz</code>, <code>meshgrid</code></td></tr>
-            <tr><td>Files</td><td><code>save</code> and <code>load</code> of <code>.mat</code> files</td></tr>
-            <tr><td>Plots</td><td>real <code>subplot</code>, <code>stem</code>, <code>stairs</code>, <code>bar</code> and <code>histogram</code></td></tr>
+            <tr><td>Files and data</td><td><code>readmatrix</code>, <code>readtable</code>, <code>writetable</code> (CSV and <code>.xlsx</code>), <code>fopen</code>, <code>textscan</code>, <code>jsondecode</code>, <code>save</code> and <code>load</code> of <code>.mat</code> files including version 7.3</td></tr>
+            <tr><td>Statistics and linear algebra</td><td><code>mean</code>, <code>var</code>, <code>corrcoef</code>, <code>regress</code>, <code>fitlm</code>, <code>svd</code>, <code>expm</code>, sparse solvers such as <code>pcg</code> and <code>eigs</code></td></tr>
+            <tr><td>Text</td><td><code>sprintf</code>, <code>regexp</code>, <code>strsplit</code>, <code>string</code>, <code>cellfun</code>, <code>arrayfun</code></td></tr>
+            <tr><td>Signal processing</td><td><code>fft</code>, <code>filter</code>, <code>filtfilt</code>, <code>butter</code>, <code>designfilt</code>, <code>pwelch</code>, <code>spectrogram</code>, <code>resample</code>, <code>findpeaks</code></td></tr>
+            <tr><td>Fitting and optimisation</td><td><code>ode45</code>, <code>fzero</code>, <code>fsolve</code>, <code>fmincon</code>, <code>linprog</code>, <code>lsqcurvefit</code>, <code>fit</code>, <code>integral</code>, <code>spline</code>, <code>interp2</code></td></tr>
+            <tr><td>Dates and tables</td><td><code>datetime</code>, <code>table</code>, <code>timetable</code>, <code>groupsummary</code></td></tr>
+            <tr><td>Plots</td><td><code>subplot</code>, <code>tiledlayout</code>, <code>scatter</code>, <code>histogram</code>, 3-D (<code>plot3</code>, <code>surf</code>, <code>contour</code>) and images (<code>imagesc</code>), with PDF and EPS export</td></tr>
+            <tr><td>Audio and dialogs</td><td><code>audioread</code>, <code>sound</code>, <code>inputdlg</code>, <code>uigetfile</code>, <code>input</code></td></tr>
           </tbody>
         </table></div>
       </div>

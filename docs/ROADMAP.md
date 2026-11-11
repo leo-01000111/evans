@@ -89,6 +89,9 @@ Left over from this phase:
       a fill loop that passes the array to a MATLAB function or a library
       function off the list copies once per call (correct, quadratic again);
       a thread reading the workspace while a loop runs could see writes land.
+- [ ] **`varargout` in a function file fails**: `function varargout = f()` with
+      `varargout{1} = …` gives "Too many output arguments" for `[a, b] = f()`.
+      Found 2026-11-11 while checking the site's claims. **S–M**
 - [ ] **`true(n)`, `false(m,n)` fail** with "Index exceeds the number of array
       elements": the name resolves to the constant, which is then indexed.
       `logical(zeros(...))` works meanwhile. Found 2026-11-11 during the array-writes

@@ -23,8 +23,8 @@
         <h2>Known bugs</h2>
         <p>Each is on the <a href="@@repo@@/blob/main/docs/ROADMAP.md">roadmap</a>, with what fixing it involves.</p>
         <ul>
-          <li><strong><code>numel("hello")</code> is 5, not 1.</strong> Text in double quotes is a character array in Evans, because string arrays are not there yet.</li>
-          <li><strong>Writing into a large numeric array in a loop is slow.</strong> Each <code>a(k) = v</code> copies the array, so filling 100,000 elements one at a time takes about a minute. Build the values with vector operations where you can (<code>a = (1:n).^2</code>). Cells and structs no longer have this problem.</li>
+          <li><strong><code>true(n)</code> and <code>false(m,n)</code> fail</strong> with "Index exceeds the number of array elements". Use <code>logical(zeros(m,n))</code> until it is fixed.</li>
+          <li><strong>Growing an array with <code>a(end+1) = v</code> in a loop is slow</strong>, because each step makes a new array. Pre-allocate (<code>a = zeros(1,n)</code>) and fill it, which is fast.</li>
         </ul>
       </div>
     </section>
@@ -34,12 +34,12 @@
         <h2>Not supported yet</h2>
         <p>These stop with an error that names them rather than giving a wrong answer. The <a href="matlab.html">MATLAB compatibility</a> page has the full list.</p>
         <ul>
-          <li><strong>Language:</strong> <code>eval</code>, <code>classdef</code>, nested functions, N-D arrays (<code>zeros(2,2,2)</code>), integer types, string arrays and <code>containers.Map</code>.</li>
-          <li><strong>Data:</strong> the old Excel format (<code>.xls</code>) and <code>.ods</code> (save as <code>.xlsx</code>, which Evans reads and writes), and <code>.mat</code> files saved as version 7.3.</li>
-          <li><strong>Plotting:</strong> 3-D plots, images, and annotations typed on a later line than the plot.</li>
+          <li><strong>Language:</strong> <code>varargout</code> in a function file; arrays of <code>classdef</code> objects, <code>subsref</code>/<code>subsasgn</code> and <code>+package</code> folders; categorical arrays and time zones.</li>
+          <li><strong>Data:</strong> the old Excel format (<code>.xls</code>) and <code>.ods</code>. Save as <code>.xlsx</code>, which Evans reads and writes.</li>
+          <li><strong>Plotting:</strong> graphics handles, as in <code>h = plot(...)</code> and <code>set(h, ...)</code>.</li>
           <li><strong>Simulink:</strong> opening <code>.slx</code> or <code>.mdl</code> files, buses, masks and block libraries, physical (Simscape-style) modelling, and a subsystem that is both enabled and triggered.</li>
           <li><strong>Symbolic maths:</strong> symbolic functions such as <code>syms y(t)</code>, and so <code>dsolve</code>.</li>
-          <li><strong>Platforms:</strong> no Linux build yet, and the Windows installer is not code-signed, so SmartScreen warns the first time. See the <a href="install.html">install notes</a>.</li>
+          <li><strong>Platforms:</strong> no Linux build yet, and the builds are not signed by Microsoft or Apple, so Windows and macOS warn the first time. See the <a href="install.html">install notes</a>.</li>
         </ul>
       </div>
     </section>
@@ -71,6 +71,7 @@
                 <option>Windows, installer</option>
                 <option>Windows, portable zip</option>
                 <option>Windows, from source</option>
+                <option>macOS, app</option>
                 <option>macOS, from source</option>
                 <option>Linux, from source</option>
                 <option>Other</option>

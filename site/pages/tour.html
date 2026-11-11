@@ -1,7 +1,7 @@
     <section class="proj-hero">
       <p class="label">Tour</p>
       <h1>A tour of Evans</h1>
-      <p class="lede">Three workspaces, one live model. What follows is what each part does and how to drive it.</p>
+      <p class="lede">Three workspaces, one live model.</p>
     </section>
 
     <section class="proj-section" id="workspaces">
@@ -84,7 +84,7 @@ bode(G)</code></pre>
     <section class="proj-section" id="simulator">
       <div class="card prose">
         <h2>The simulator</h2>
-        <p>The Model workspace is a block-diagram simulator: @@n_blocks@@ block types (see the <a href="blocks.html">block reference</a>), hierarchical subsystems, a drag-and-drop canvas with undo, RK4, RK45 and Euler solvers, scopes, and a properties inspector that leaves the diagram visible. <code>linearize()</code> pulls a state-space model out of a nonlinear diagram.</p>
+        <p>The Model workspace is a block-diagram simulator: @@n_blocks@@ block types (see the <a href="blocks.html">block reference</a>), hierarchical subsystems, a drag-and-drop canvas with undo, MATLAB's solvers (<code>ode45</code>, <code>ode23</code>, <code>ode113</code>, <code>ode15s</code>, <code>ode23s</code>, <code>ode23t</code> and fixed-step <code>ode1</code> to <code>ode5</code>), scopes, and a properties inspector that leaves the diagram visible. <code>linearize()</code> pulls a state-space model out of a nonlinear diagram.</p>
         <ul>
           <li>Wire two blocks by dragging between ports, or by clicking one and then the other.</li>
           <li>Drag with the middle mouse button to pan.</li>
