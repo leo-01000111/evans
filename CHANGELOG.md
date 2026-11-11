@@ -9,6 +9,20 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+### Added
+- **A Scope block opens in its own window.** Double-click a Scope block on the
+  Model tab and its signals, and only those, are plotted in a window of their
+  own, titled after the block and the model. Several can be open side by side;
+  each redraws when a run finishes, and double-clicking the block again brings
+  its window forward. Copy (Ctrl+C), Export… and "Compare with earlier runs"
+  work there as in the scope below the canvas. The windows close when another
+  model is opened. A Scope block's parameters are in the inspector.
+
+### Changed
+- **The scope below the canvas is now the global scope**, with every logged
+  signal, and is folded away behind a **Show global scope** button. Whether it
+  is open is remembered.
+
 ## 0.22.0 - 2026-11-11
 
 Blocks that look like what they do.

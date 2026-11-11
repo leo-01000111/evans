@@ -9,6 +9,10 @@ run's signals to CSV or ``.mat``, or the plot to PNG, SVG, PDF or EPS (size,
 DPI and theme chosen). Ctrl+C, or "Copy plot and data" in the right-click
 menu, puts the plot as an image and the visible data as tab-separated text on
 the clipboard.
+
+The same widget is the Model tab's global scope (every logged signal) and
+the plot in a Scope block's own window, which is given the signals wired
+into that block and shows only those.
 """
 
 from __future__ import annotations
@@ -57,11 +61,17 @@ class ScopeWidget(QWidget):
 
     Signals are chosen by name (``block.port``), so the same widget shows a
     Scope block's channels or any other signal the run happened to log.
+    ``signals`` limits it to those (a Scope block's window); ``None`` offers
+    every logged signal and the XY Graph views (the global scope).
     """
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, *, title: str = "Scope",
+                 signals: list[str] | None = None) -> None:
         super().__init__(parent)
         self._result = None
+        self._title = title
+        self._only: list[str] | None = None
+        self.set_signals(signals)
         #: Earlier runs, the most recent first.
         self.history: list = []
         self._checks: dict[str, QCheckBox] = {}
@@ -73,6 +83,7 @@ class ScopeWidget(QWidget):
         bar.setContentsMargins(0, 0, 0, 0)
         self._view = QComboBox()
         self._view.addItem(TIME_VIEW)
+        self._view.setVisible(self._only is None)
         self._view.setToolTip("Signals against time, or an XY Graph block's "
                               "y against x")
         self._view.currentTextChanged.connect(lambda _t: self._redraw())
@@ -98,7 +109,7 @@ class ScopeWidget(QWidget):
         bar.addWidget(self._export)
         root.addLayout(bar)
 
-        self._plot = make_plot("Scope", "Time (s)", "Amplitude")
+        self._plot = make_plot(self._title, "Time (s)", "Amplitude")
         self._plot.getPlotItem().addLegend(offset=(-10, 10))
         root.addWidget(self._plot, stretch=1)
 
@@ -134,6 +145,29 @@ class ScopeWidget(QWidget):
 
     # ── data ────────────────────────────────────────────────────
 
+    @property
+    def result(self):
+        """The run on show, or None."""
+        return self._result
+
+    def set_title(self, title: str) -> None:
+        """The plot's title (a Scope block's, in its window)."""
+        self._title = title
+        self._redraw()
+
+    def set_signals(self, signals: list[str] | None) -> None:
+        """
+        Show only ``signals`` (in that order, repeats dropped), or every
+        logged one with ``None``. Takes effect on the next run shown.
+        """
+        self._only = None if signals is None else list(dict.fromkeys(signals))
+
+    def _names(self, result) -> list[str]:
+        """The signals offered in the picker for ``result``."""
+        if self._only is None:
+            return sorted(result.signals)
+        return [n for n in self._only if n in result.signals]
+
     def show_result(self, result, preferred: list[str] | None = None) -> None:
         """
         Display a :class:`~evans.sim.solver.SimResult`.
@@ -150,16 +184,19 @@ class ScopeWidget(QWidget):
             check.setParent(None)
         self._checks.clear()
 
-        names = sorted(result.signals)
+        names = self._names(result)
         if preferred is None:
-            kept = [n for n in previous if n in result.signals]
-            preferred = kept or _default_channels(result, names)
+            kept = [n for n in previous if n in names]
+            if self._only is not None:
+                preferred = kept or names
+            else:
+                preferred = kept or _default_channels(result, names)
 
         view = self._view.currentText()
         self._view.blockSignals(True)
         self._view.clear()
         self._view.addItem(TIME_VIEW)
-        for title in result.xy:
+        for title in (result.xy if self._only is None else ()):
             self._view.addItem(title)
         index = self._view.findText(view)
         self._view.setCurrentIndex(max(index, 0))
@@ -186,10 +223,10 @@ class ScopeWidget(QWidget):
         plot = self._plot.getPlotItem()
         plot.clear()
         view = self._view.currentText()
-        if self._result is not None and view in self._result.xy:
+        if self._in_xy_view():
             self._draw_xy(plot, view)
             return
-        apply_theme(plot, "Scope", "Time (s)", "Amplitude")
+        apply_theme(plot, self._title, "Time (s)", "Amplitude")
         plot.addLegend(offset=(-10, 10))
         if self._result is None:
             return
@@ -242,10 +279,15 @@ class ScopeWidget(QWidget):
         self._readout.setText("")
 
     def export(self, path, names: list[str] | None = None):
-        """Write this run's signals (all, or ``names``) to CSV or .mat."""
+        """
+        Write this run's signals to CSV or .mat: ``names``, else the ones
+        this scope offers (all of them in the global scope).
+        """
         from ...sim.export import export_signals
         if self._result is None:
             raise ValueError("there is no run to export yet")
+        if names is None and self._only is not None:
+            names = self._names(self._result)
         return export_signals(self._result, path, names)
 
     # ── copy and image export ───────────────────────────────────
@@ -268,7 +310,7 @@ class ScopeWidget(QWidget):
         return out
 
     def _in_xy_view(self) -> bool:
-        return (self._result is not None
+        return (self._result is not None and self._only is None
                 and self._view.currentText() in self._result.xy)
 
     def data_text(self, visible_only: bool = True) -> str:
@@ -336,7 +378,7 @@ class ScopeWidget(QWidget):
                      self._result.signals[yn][:, 0], f"{ys} vs {xs}",
                      color=cycle[0])
         else:
-            spec = FigureSpec("time", "Scope", "Time (s)", "Amplitude")
+            spec = FigureSpec("time", self._title, "Time (s)", "Amplitude")
             for i, name, label, channel in self._shown_channels():
                 colour = cycle[i % len(cycle)]
                 for age, old in enumerate(self._earlier(), start=1):

@@ -201,7 +201,9 @@ and Euler solvers, scopes, a properties inspector that leaves the diagram visibl
 `linearize()` to pull a state-space model out of a nonlinear diagram. Wire two blocks by
 dragging between ports, or by clicking one and then the other. Drag with the middle mouse
 button to pan. A dragged block snaps into line with its neighbours' centres and edges
-(hold Alt to place it freely), and the scope opens on `r.out` and `G.out`. Once the blocks
+(hold Alt to place it freely). Double-click a Scope block to plot its signals in a window of
+its own; the global scope under the canvas, behind *Show global scope*, has every logged
+signal and opens on `r.out` and `G.out`. Once the blocks
 are placed, the palette folds away to a strip (Ctrl+B). A PID block's *Tune…*, from the
 right-click menu or the inspector, opens a small tuner on the plant that block sees,
 linearised from the diagram with the loop cut at the PID, and writes the gains back as
@@ -287,7 +289,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-5143 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+5159 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

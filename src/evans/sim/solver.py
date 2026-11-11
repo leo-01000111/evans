@@ -158,6 +158,12 @@ class SimResult:
     #: The names given to wires, by signal key: what a scope shows in its
     #: legend in place of ``"Sum1.out"``.
     labels:   dict[str, str] = field(default_factory=dict)
+    #: Each Scope block's wired signals, in input order, by its block path
+    #: (``"Scope1"``, or ``"Sub/Scope1"`` inside a subsystem): what its own
+    #: window plots. ``scopes`` has the same keyed by title.
+    scope_blocks: dict[str, list[str]] = field(default_factory=dict)
+    #: Each Scope block's title, by the same path.
+    scope_titles: dict[str, str] = field(default_factory=dict)
 
     def label(self, name: str) -> str:
         """The name to show for a signal: its wire's name, else its key."""
@@ -1171,6 +1177,8 @@ def _assemble(compiled, times, states, logged, run_warnings, solver, n_steps):
                  if states else np.zeros((0, compiled.n_states)))
 
     scopes: dict[str, list[str]] = {}
+    scope_blocks: dict[str, list[str]] = {}
+    scope_titles: dict[str, str] = {}
     workspace: dict[str, np.ndarray] = {}
     formats: dict[str, str] = {}
     xy: dict[str, tuple[str, str]] = {}
@@ -1183,6 +1191,8 @@ def _assemble(compiled, times, states, logged, run_warnings, solver, n_steps):
                 if conn is not None:
                     sources.append(str(conn.src))
             scopes[block.params.get("title", bid) or bid] = sources
+            scope_blocks[str(bid)] = sources
+            scope_titles[str(bid)] = str(block.params.get("title") or bid)
         elif block.type_name == "ToWorkspace":
             conn = plan.input_conns[0] if plan.input_conns else None
             if conn is not None and str(conn.src) in signals:
@@ -1206,6 +1216,7 @@ def _assemble(compiled, times, states, logged, run_warnings, solver, n_steps):
         scopes=scopes, workspace=workspace,
         outputs=[src for _order, _bid, src in sorted(outports)],
         formats=formats, xy=xy,
+        scope_blocks=scope_blocks, scope_titles=scope_titles,
         warnings=run_warnings, solver=solver, n_steps=n_steps,
         labels={k: v for k, v in compiled.model.signal_names.items()
                 if k in signals},

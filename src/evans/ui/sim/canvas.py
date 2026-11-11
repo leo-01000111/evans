@@ -45,6 +45,9 @@ class SimCanvas(QGraphicsView):
     selection_changed = Signal(object)      # BlockItem | None
     status = Signal(str)
     path_changed = Signal(list)             # breadcrumb, outermost first
+    #: A Scope block was double-clicked: its path from the top level
+    #: (``"Scope1"``, ``"Sub/Scope1"``), as a run result keys its signals.
+    scope_requested = Signal(str)
 
     def __init__(self, model: SimModel | None = None, parent=None) -> None:
         super().__init__(parent)
@@ -605,10 +608,16 @@ class SimCanvas(QGraphicsView):
     # ── parameters ──────────────────────────────────────────────
 
     def _edit_params(self, block_id: str) -> None:
-        """Double-click: descend into a subsystem, or edit parameters."""
+        """
+        Double-click: descend into a subsystem, open a Scope's window (its
+        parameters are in the inspector), or edit parameters.
+        """
         block = self.model.block(block_id)
         if block.type_name == "Subsystem":
             self.descend(block_id)
+            return
+        if block.type_name == "Scope":
+            self.scope_requested.emit(self.block_path(block_id))
             return
 
         from .params import ParamDialog
@@ -701,6 +710,11 @@ class SimCanvas(QGraphicsView):
         """Names from the top level down to what is on screen."""
         names = [parent.name for parent, _bid, _stack in self._stack]
         return names + [self.model.name]
+
+    def block_path(self, block_id: str) -> str:
+        """A block on screen, named from the top level: ``"Sub/Scope1"``."""
+        return "/".join([bid for _parent, bid, _stack in self._stack]
+                        + [block_id])
 
     @property
     def inside_subsystem(self) -> bool:

@@ -251,3 +251,16 @@ def classic_block_boxes() -> bool:
 
 def set_classic_block_boxes(on: bool) -> None:
     settings().setValue(CLASSIC_BLOCK_BOXES_KEY, bool(on))
+
+
+#: The Model tab's global scope (every logged signal): shown or folded away.
+#: Folded by default; a Scope block's own window is the usual way in.
+GLOBAL_SCOPE_KEY = "model/globalScopeOpen"
+
+
+def global_scope_open() -> bool:
+    return _bool(settings().value(GLOBAL_SCOPE_KEY), False)
+
+
+def set_global_scope_open(on: bool) -> None:
+    settings().setValue(GLOBAL_SCOPE_KEY, bool(on))

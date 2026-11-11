@@ -46,7 +46,7 @@ from ...sim.linearize import LinearizationError, linearize, steady_state
 from ...sim.model import LEGACY_SUFFIX, SUFFIX, ModelError, PortRef, SimModel
 from ...sim.solver import SimulationError, resolve_solver, simulate
 from ...sim.workspace import resolve_model
-from .. import iconset, keys, theme
+from .. import iconset, keys, persist, theme
 from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
 from ..unsaved import ask_to_save, marked
@@ -55,6 +55,7 @@ from .canvas import SimCanvas
 from .inspector import BlockInspector
 from .palette import STRIP_WIDTH, PaletteDock
 from .scope import ScopeWidget
+from .scope_window import ScopeWindow
 
 #: The solver combo, group by group with a separator between: Simulink's
 #: variable-step names, the fixed-step ones, then the scipy names they map to.
@@ -170,11 +171,42 @@ class SimTab(QWidget, GuardedPanel):
         centre.addWidget(self._canvas)
         self._arrange = ArrangePanel(self._canvas, self._align,
                                      self._distribute)
+        # The global scope: every logged signal, folded away behind a button
+        # until asked for. A Scope block's own window (double-click it) is
+        # the usual way to look at a run.
+        self._centre = centre
         self._scope = ScopeWidget()
-        centre.addWidget(self._scope)
+        self._global = QWidget()
+        global_layout = QVBoxLayout(self._global)
+        global_layout.setContentsMargins(0, 0, 0, 0)
+        global_layout.setSpacing(0)
+        self._global_bar = QWidget()
+        bar = QHBoxLayout(self._global_bar)
+        bar.setContentsMargins(4, 0, 4, 0)
+        self._global_button = QToolButton()
+        self._global_button.setCheckable(True)
+        self._global_button.setAutoRaise(True)
+        self._global_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._global_button.setToolTip(
+            "Every signal the run logged, in one plot")
+        self._global_button.toggled.connect(self.set_global_scope_visible)
+        bar.addWidget(self._global_button)
+        scope_note = QLabel("Double-click a Scope block to open its own "
+                            "window.")
+        scope_note.setStyleSheet("color: palette(mid);")
+        # A hint, not a floor: it must not widen the window's minimum.
+        scope_note.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        bar.addWidget(scope_note)
+        bar.addStretch()
+        global_layout.addWidget(self._global_bar)
+        global_layout.addWidget(self._scope, stretch=1)
+        centre.addWidget(self._global)
+        centre.setCollapsible(1, False)
         centre.setStretchFactor(0, 3)
         centre.setStretchFactor(1, 2)
         splitter.addWidget(centre)
+        #: Each open Scope block window, by the block's path.
+        self._scope_windows: dict[str, ScopeWindow] = {}
 
         # The inspector, so parameters can be edited with the diagram still
         # visible. They used to be a modal dialog on double-click: you could
@@ -192,7 +224,7 @@ class SimTab(QWidget, GuardedPanel):
         self._hint = QLabel(
             "Drag between two ports to wire them, or click one port and then "
             "the other. Drag on empty canvas to select. Double-click a block "
-            "for its parameters.")
+            "for its parameters, or a Scope block for its plot.")
         self._hint.setWordWrap(True)
         self._hint.setStyleSheet("color: palette(mid);")
         root.addWidget(self._hint)
@@ -221,6 +253,9 @@ class SimTab(QWidget, GuardedPanel):
         self._inspector.tune_requested.connect(
             lambda block_id: self._canvas.tune_pid(block_id))
         self._palette_dock.toggled.connect(self._on_palette_toggled)
+        self._canvas.scope_requested.connect(self.open_scope_window)
+        self._canvas.model_replaced.connect(self.close_scope_windows)
+        self._show_global_scope(persist.global_scope_open())
         self._restoring_palette = False
         self._restore_palette_state()
         #: The model as its file holds it (None: unsaved whatever it is).
@@ -491,6 +526,77 @@ class SimTab(QWidget, GuardedPanel):
         finally:
             self._restoring_palette = False
 
+    # ── scopes ──────────────────────────────────────────────────
+
+    def global_scope_visible(self) -> bool:
+        return self._global_button.isChecked()
+
+    def set_global_scope_visible(self, visible: bool) -> None:
+        """Show or fold away the global scope, and remember which."""
+        self._show_global_scope(visible)
+        persist.set_global_scope_open(visible)
+
+    def _show_global_scope(self, visible: bool) -> None:
+        self._global_button.blockSignals(True)
+        self._global_button.setChecked(visible)
+        self._global_button.blockSignals(False)
+        self._global_button.setArrowType(
+            Qt.DownArrow if visible else Qt.RightArrow)
+        self._global_button.setText(
+            "Hide global scope" if visible else "Show global scope")
+        self._scope.setVisible(visible)
+        if visible:
+            self._global.setMaximumHeight(16777215)    # QWIDGETSIZE_MAX
+            total = sum(self._centre.sizes())
+            if total > 0:
+                self._centre.setSizes([total * 3 // 5, total - total * 3 // 5])
+        else:
+            self._global.setMaximumHeight(
+                self._global_bar.sizeHint().height())
+
+    def scope_windows(self) -> dict[str, ScopeWindow]:
+        """The open Scope block windows, by block path."""
+        return dict(self._scope_windows)
+
+    def open_scope_window(self, key: str) -> ScopeWindow:
+        """
+        Open (or raise) the window of the Scope block at path ``key``:
+        what a double-click on the block does.
+        """
+        window = self._scope_windows.get(key)
+        if window is None:
+            model_name = self._canvas.root_model().name
+            window = ScopeWindow(key, self._scope_title(key), model_name,
+                                 self)
+            window.closed.connect(self._forget_scope_window)
+            self._scope_windows[key] = window
+            window.show_result(self._result, model_name,
+                               history=self._scope.history)
+        window.show()
+        window.raise_()
+        window.activateWindow()
+        return window
+
+    def _scope_title(self, key: str) -> str:
+        """A Scope block's title, read off the level on screen if it is there."""
+        block_id = key.rsplit("/", 1)[-1]
+        try:
+            block = self._canvas.model.block(block_id)
+        except ModelError:
+            return block_id
+        return str(block.params.get("title") or block_id)
+
+    def _forget_scope_window(self, key: str) -> None:
+        window = self.sender()
+        if self._scope_windows.get(key) is window:
+            del self._scope_windows[key]
+
+    def close_scope_windows(self) -> None:
+        """Close every Scope block window: another model is on the canvas."""
+        windows, self._scope_windows = self._scope_windows, {}
+        for window in windows.values():
+            window.close()
+
     # ── the workspace ───────────────────────────────────────────
 
     @property
@@ -628,6 +734,9 @@ class SimTab(QWidget, GuardedPanel):
         self._teardown_thread()
         self._result = result
         self._scope.show_result(result)
+        model_name = self._canvas.root_model().name
+        for window in self._scope_windows.values():
+            window.show_result(result, model_name)
         self.simulated.emit(result)
         note = f"Done — {len(result.t)} samples, {result.solver}"
         if result.warnings:

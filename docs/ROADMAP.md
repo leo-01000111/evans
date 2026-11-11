@@ -357,6 +357,11 @@ The engine was ahead of the editor and of its links to the console. Tests:
           block is selected. Other blocks keep double-click for parameters.
         - Copy (Ctrl+C), Export…, and "Compare with earlier runs" work in the
           pop-out windows too: they share the same plot widget.
+        *Done: double-click a Scope block for its window (only its wired
+        signals, one per block, redrawn after each run, closed with the
+        model); the bottom scope is the global scope behind Show global
+        scope, remembered. Docking a window back is not built: the global
+        scope covers it.*
       - **Look:** line width, colour and style per channel, markers, legend
         position, grid, and a title, saved in the model like Simulink's scope
         settings. Plain measurement readouts (cursors with a delta between two,
