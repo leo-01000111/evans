@@ -1185,6 +1185,9 @@ class ConsolePanel(QWidget):
     def show_script(self) -> None:
         self._tabs.setCurrentWidget(self.editor)
 
+    def show_live(self) -> None:
+        self._tabs.setCurrentWidget(self.live)
+
     # ── outside access ──────────────────────────────────────────
 
     def push(self, **variables) -> None:

@@ -492,6 +492,9 @@ class MainWindow(QMainWindow):
 
     def _on_console_model(self, name: str, model) -> None:
         """A Simulink model was double-clicked: open it on the canvas."""
+        replacing = model is not self._sim_tab._canvas.root_model()
+        if replacing and not self._settle_model():
+            return
         self._sim_tab._canvas.set_model(model)
         self._sim_tab._canvas.fit_all()
         self._stack.set_current(Workspace.MODEL)
@@ -620,13 +623,33 @@ class MainWindow(QMainWindow):
 
     def confirm_quit(self) -> bool:
         """
-        Settle scripts with unsaved changes before Evans closes: save,
-        discard or cancel each. False means stay open. Asked once, so a
-        restart that asks first does not ask again as the window closes.
+        Settle unsaved work before Evans closes: each script tab, the live
+        script and the model, one at a time, saved, discarded or cancelled.
+        False means stay open. Asked once, so a restart that asks first
+        does not ask again as the window closes.
         """
         if not self._quit_confirmed:
-            self._quit_confirmed = self._console.editor.confirm_close_all()
+            self._quit_confirmed = (
+                self._console.editor.confirm_close_all()
+                and self._settle_live()
+                and self._settle_model())
         return self._quit_confirmed
+
+    def _settle_live(self) -> bool:
+        """The live script's unsaved changes, with its tab in view."""
+        live = self._console.live
+        if not live.is_unsaved():
+            return True
+        self._stack.set_current(Workspace.CONSOLE)
+        self._console.show_live()
+        return live.settle_unsaved()
+
+    def _settle_model(self) -> bool:
+        """The model's unsaved changes, with the Model tab in view."""
+        if not self._sim_tab.is_unsaved():
+            return True
+        self._stack.set_current(Workspace.MODEL)
+        return self._sim_tab.settle_unsaved()
 
     def reopen_scripts(self) -> int:
         """The scripts open when Evans last closed, in their tabs again."""
@@ -1361,11 +1384,17 @@ class MainWindow(QMainWindow):
             empty.setEnabled(False)
             menu.addAction(empty)
 
-    def open_example(self, example) -> None:
-        """Open an example model on the Model tab, as a copy to change."""
+    def open_example(self, example) -> bool:
+        """
+        Open an example model on the Model tab, as a copy to change.
+        False when the user kept the unsaved model on the canvas instead.
+        """
+        if not self._settle_model():
+            return False
         self._sim_tab.load_model(example.path, remember=False)
         self._stack.set_current(Workspace.MODEL)
         self._status.showMessage(f"{example.title}: {example.summary}", 8000)
+        return True
 
     def _fill_recent_menu(self) -> None:
         """
@@ -1406,6 +1435,8 @@ class MainWindow(QMainWindow):
             self._status.showMessage(f"{path} no longer exists", 6000)
             return False
         if is_model_file(path):
+            if not self._settle_model():
+                return False
             self._sim_tab.load_model(path)
             self._stack.set_current(Workspace.MODEL)
         else:

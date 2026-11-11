@@ -638,7 +638,7 @@ Professional users need this before Evans can be used for paid work.
       earlier model copies from the dialog (they stay in the folder only until
       the user answers). The console history was already saved after every
       command.
-- [ ] **Ask before quitting with an unsaved model or live script.** Found while
+- [x] **Ask before quitting with an unsaved model or live script.** Found while
       doing autosave: only the script editor's tabs are settled on quit
       (`confirm_close_all`). The Model tab and the Live editor have no unsaved
       mark and no prompt, so a quit drops their changes silently, and the Model
@@ -646,6 +646,18 @@ Professional users need this before Evans can be used for paid work.
       from). The baselines autosave now keeps (`SimTab.mark_saved`,
       `LiveScriptEditor.mark_saved`) are the "is it unsaved?" test this needs.
       **S–M**
+      Done: the Live tab's file name and a new file label at the Model tab's
+      bottom right carry the `●` mark, kept current from the cells' edits
+      and the canvas's `model_changed` (no polling). Quit settles script
+      tabs, then the live script, then the model (Save / Discard / Cancel,
+      shared helper `ui/unsaved.py`); a Save whose file dialog is cancelled
+      counts as Cancel. Open, Open Recent, File ▸ Examples and double-clicking
+      a workspace model ask before replacing unsaved content. Running cells
+      or a simulation never counts as a change: the comparison is the live
+      .m text (no outputs) and the model's JSON (a run uses a compiled
+      copy). Left as it was: a console Simulink command that puts another
+      model on the canvas does not ask (a script should not stop on a
+      dialog), and a model shown from the workspace counts as unsaved.
 - [x] **Rename the model file extension `.fmdl`** (FauxMatlab model, a leftover of the
       old name). The new extension is `.evx`, chosen
       2026-11-09 after a search found no common program using it (`.evm` was the

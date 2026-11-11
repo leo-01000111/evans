@@ -585,7 +585,10 @@ def test_opening_a_script_records_it_and_reopens_it(app, win, tmp_path,
     win._console._tabs.setCurrentIndex(0)
 
 
-def test_a_recent_model_opens_on_the_canvas(app, win, tmp_path, recent):
+def test_a_recent_model_opens_on_the_canvas(app, win, tmp_path, recent,
+                                            monkeypatch):
+    # Earlier tests leave the canvas edited: opening asks, and this drops it.
+    monkeypatch.setattr(win._sim_tab, "_ask_to_save", lambda: "discard")
     path = tmp_path / "loop.fmdl"
     win._sim_tab._canvas.root_model().save(path)
     recent.add(path)

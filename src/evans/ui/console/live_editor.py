@@ -30,7 +30,7 @@ import weakref
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, Qt, QUrl, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QGuiApplication,
     QImage,
@@ -88,6 +88,7 @@ from ..code.completion import code_request
 from ..code.latex import labels_in, latex_request
 from ..code.popup import CompletionController
 from ..design import NORMAL, TIGHT
+from ..unsaved import ask_to_save, marked
 from . import report_template
 from .figure_view import FigureView
 
@@ -267,6 +268,8 @@ class CellWidget(QFrame):
 
     #: (cell widget, action) — action: run, up, down, delete, focus.
     action = Signal(object, str)
+    #: Something saved with the script was typed or chosen in the cell.
+    edited = Signal()
 
     def __init__(self, cell: Cell, parent=None) -> None:
         super().__init__(parent)
@@ -351,6 +354,7 @@ class CodeCellWidget(CellWidget):
         self.editor.run_requested.connect(lambda: self.action.emit(self, "run"))
         self.editor.focused.connect(lambda: self.action.emit(self, "focus"))
         self.editor.textChanged.connect(self.sync_to_cell)
+        self.editor.textChanged.connect(self.edited)
         self.body.addWidget(self.editor)
 
         self.output = QPlainTextEdit()
@@ -461,6 +465,7 @@ class CodeCellWidget(CellWidget):
         caption.setToolTip("The figure's caption in the PDF report")
         caption.textEdited.connect(
             lambda text, i=index: setattr(self.cell.meta(i), "caption", text))
+        caption.textEdited.connect(self.edited)
         label = QLineEdit(meta.label if meta else "")
         label.setPlaceholderText(f"fig:{index + 1}")
         label.setToolTip("\\label for \\ref{…} in text cells; empty: the "
@@ -469,6 +474,7 @@ class CodeCellWidget(CellWidget):
         label.textEdited.connect(
             lambda text, i=index: setattr(self.cell.meta(i), "label",
                                           text.strip()))
+        label.textEdited.connect(self.edited)
         row.addWidget(caption, stretch=1)
         row.addWidget(label)
         self.figure_fields.append((caption, label))
@@ -518,6 +524,7 @@ class TextCellWidget(CellWidget):
         self.editor.run_requested.connect(self._render_requested)
         self.editor.focused.connect(lambda: self.action.emit(self, "focus"))
         self.editor.textChanged.connect(self.sync_to_cell)
+        self.editor.textChanged.connect(self.edited)
         # Both live in the body; only one is shown, and a hidden widget
         # takes no room, so the cell is always as tall as what it shows.
         self.body.addWidget(self.view)
@@ -549,6 +556,7 @@ class TextCellWidget(CellWidget):
     def _kind_changed(self) -> None:
         self.cell.kind = CellKind(self.kind_box.currentData())
         self.refresh(self._evaluate)
+        self.edited.emit()
 
     def sync_to_cell(self) -> None:
         self.cell.source = self.editor.toPlainText()
@@ -653,6 +661,12 @@ class LiveScriptEditor(QWidget):
         preview.activated.connect(self.preview_button.toggle)
         #: The script as its file holds it (None: never matches, unsaved).
         self._baseline: str | None = None
+        # Typing is checked against the file a moment after it stops, not
+        # on every key: the check writes out the whole script.
+        self._unsaved_check = QTimer(self)
+        self._unsaved_check.setSingleShot(True)
+        self._unsaved_check.setInterval(250)
+        self._unsaved_check.timeout.connect(self._show_unsaved)
         self._rebuild()
         self.mark_saved()
 
@@ -729,8 +743,14 @@ class LiveScriptEditor(QWidget):
         row.addWidget(self._path_label, stretch=1)
         return row
 
-    def _show_path(self, path: Path | None) -> None:
-        self._path_label.setText(path.name if path else "untitled")
+    def _show_unsaved(self) -> None:
+        """The file name, marked when the script differs from its file."""
+        if not hasattr(self, "_unsaved_check"):        # still building
+            return
+        self._unsaved_check.stop()
+        path = self.path
+        self._path_label.setText(
+            marked(path.name if path else "untitled", self.is_unsaved()))
         self._path_label.setToolTip(str(path) if path else "")
 
     # ── document ↔ widgets ──────────────────────────────────────
@@ -750,7 +770,6 @@ class LiveScriptEditor(QWidget):
         if not document.cells:
             document.append(Cell.code(""))
         self._current = document.cells[0]
-        self._show_path(document.path)
         self._rebuild()
         self._update_auto_labels()
         self.mark_saved()
@@ -776,6 +795,7 @@ class LiveScriptEditor(QWidget):
             widget = TextCellWidget(cell, evaluate=self._evaluator())
             widget.set_completion(self.reference_labels)
         widget.action.connect(self._on_action)
+        widget.edited.connect(self._unsaved_check.start)
         return widget
 
     def _rebuild(self) -> None:
@@ -837,6 +857,39 @@ class LiveScriptEditor(QWidget):
     def mark_saved(self) -> None:
         """What is on screen now is what the file holds."""
         self._baseline = self._as_text()
+        self._show_unsaved()
+
+    # ── unsaved changes ─────────────────────────────────────────
+    #
+    # Unsaved means the script differs from its baseline (`mark_saved`),
+    # compared as the live .m text. That text has the cells, captions,
+    # labels and template but no outputs, so running cells never makes a
+    # script unsaved.
+
+    def is_unsaved(self) -> bool:
+        """Whether the script differs from its file (or has none to match)."""
+        return self._as_text() != self._baseline
+
+    def _ask_to_save(self) -> str:
+        """'save', 'discard' or 'cancel'. A method so tests can answer it."""
+        name = self.path.name if self.path else "The untitled live script"
+        return ask_to_save(self, "Save live script?",
+                           f"{name} has changes that are not saved.")
+
+    def settle_unsaved(self) -> bool:
+        """
+        Before the script is replaced or Evans quits: save, discard or
+        cancel its changes. True unless the user cancelled, which includes
+        cancelling Save's file dialog. Nothing unsaved asks nothing.
+        """
+        if not self.is_unsaved():
+            return True
+        choice = self._ask_to_save()
+        if choice == "cancel":
+            return False
+        if choice == "save":
+            return self.save() is not None and not self.is_unsaved()
+        return True
 
     def recovery_items(self) -> list:
         """The live script, when it differs from its file, for recovery."""
@@ -852,6 +905,7 @@ class LiveScriptEditor(QWidget):
         """A recovered copy on screen, unsaved; Save writes it to ``path``."""
         self.set_document(parse_live_document(text, path))
         self._baseline = None
+        self._show_unsaved()
 
     # ── selection ───────────────────────────────────────────────
 
@@ -900,6 +954,7 @@ class LiveScriptEditor(QWidget):
             widget.set_editing(True)
         else:
             widget.editor.setFocus()
+        self._unsaved_check.start()
         return cell
 
     def delete_cell(self, cell: Cell) -> None:
@@ -910,6 +965,7 @@ class LiveScriptEditor(QWidget):
         self._column.removeWidget(widget)
         widget.setParent(None)
         widget.deleteLater()
+        self._unsaved_check.start()
         if not self.document.cells:
             self.document.append(Cell.code(""))
             self._rebuild()
@@ -925,6 +981,7 @@ class LiveScriptEditor(QWidget):
         self._column.removeWidget(widget)
         self._column.insertWidget(index, widget)
         self.select(cell)
+        self._unsaved_check.start()
 
     # ── running ─────────────────────────────────────────────────
 
@@ -1044,6 +1101,7 @@ class LiveScriptEditor(QWidget):
         dialog.commit()
         self.document.template = dialog.document_template
         report_template.set_user_template(dialog.user_template)
+        self._show_unsaved()
         self.rebuild_preview()
         return True
 
@@ -1071,7 +1129,7 @@ class LiveScriptEditor(QWidget):
 
     def open(self, path: str | Path | None = None) -> bool:
         path = path or self._ask_open_path()
-        if not path:
+        if not path or not self.settle_unsaved():
             return False
         try:
             document = load(path)
@@ -1140,7 +1198,6 @@ class LiveScriptEditor(QWidget):
         except OSError as exc:
             self._inform("Could not save", str(exc), warning=True)
             return None
-        self._show_path(written)
         self._status.setText(f"Saved {written.name}")
         self.mark_saved()
         return written

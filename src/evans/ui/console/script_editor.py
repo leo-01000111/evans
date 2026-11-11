@@ -41,9 +41,7 @@ from ...console.matlab import looks_like_matlab
 from ...console.tracer import file_key
 from .. import iconset, keys, persist
 from ..code import CodeEditor, section_source
-
-#: Shown on a tab whose text differs from its file.
-UNSAVED_MARK = " ●"
+from ..unsaved import UNSAVED_MARK, ask_to_save
 
 #: Where the open tabs are remembered between sessions.
 OPEN_KEY = "scripts/open"
@@ -339,14 +337,8 @@ class ScriptEditor(QWidget):
 
     def _ask_to_save(self, document: ScriptDocument) -> str:
         """'save', 'discard' or 'cancel'. A method so tests can answer it."""
-        box = QMessageBox(
-            QMessageBox.Question, "Save script?",
-            f"{document.name} has changes that are not saved.",
-            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, self)
-        box.setDefaultButton(QMessageBox.Save)
-        answer = box.exec()
-        return {QMessageBox.Save: "save",
-                QMessageBox.Discard: "discard"}.get(answer, "cancel")
+        return ask_to_save(self, "Save script?",
+                           f"{document.name} has changes that are not saved.")
 
     def confirm_close_all(self) -> bool:
         """

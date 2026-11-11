@@ -49,6 +49,7 @@ from ...sim.workspace import resolve_model
 from .. import iconset, keys, theme
 from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
+from ..unsaved import ask_to_save, marked
 from .arrange import ArrangePanel, hidden_actions
 from .canvas import SimCanvas
 from .inspector import BlockInspector
@@ -198,7 +199,17 @@ class SimTab(QWidget, GuardedPanel):
 
         self._status = QLabel("")
         self._status.setWordWrap(True)
-        root.addWidget(self._status)
+        # The model's file, marked when the diagram differs from it — as
+        # the Live tab shows its script's. Bottom right, out of the
+        # toolbar, which has no room to spare.
+        self._file_label = QLabel("")
+        self._file_label.setStyleSheet("color: palette(mid);")
+        self._file_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.addWidget(self._status, stretch=1)
+        status_row.addWidget(self._file_label)
+        root.addLayout(status_row)
 
         self._palette.block_chosen.connect(self._canvas.add_block)
         self._canvas.status.connect(self._status.setText)
@@ -222,6 +233,7 @@ class SimTab(QWidget, GuardedPanel):
         self._format_asked = False
         # Any other model on the canvas is not that file's.
         self._canvas.model_replaced.connect(self._forget_path)
+        self._show_unsaved()
 
     def _build_toolbar(self) -> QWidget:
         """
@@ -526,6 +538,9 @@ class SimTab(QWidget, GuardedPanel):
         if getattr(self, "_syncing", False) or not hasattr(self, "_canvas"):
             return
         self._canvas.root_model().settings[name] = value
+        # The run settings are saved with the model, but are not on the
+        # undo stack, so the canvas does not report them.
+        self._show_unsaved()
 
     # ── inspector ───────────────────────────────────────────────
 
@@ -719,7 +734,7 @@ class SimTab(QWidget, GuardedPanel):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open model", "",
             "Evans models (*.evx *.fmdl);;All files (*)")
-        if path:
+        if path and self.settle_unsaved():
             self.load_model(path)
 
     @guard("Open model")
@@ -735,10 +750,11 @@ class SimTab(QWidget, GuardedPanel):
         self._scope.clear()
         self._result = None
         self._status.setText(f"Loaded {path}")
-        self.mark_saved()
         if remember:
             # An example's file is inside Evans: Save asks where instead.
             self._path = Path(path)
+        self.mark_saved()
+        if remember:
             self.file_used.emit(Path(path))
 
     # ── export ──────────────────────────────────────────────────
@@ -784,6 +800,7 @@ class SimTab(QWidget, GuardedPanel):
     def _forget_path(self) -> None:
         self._path = None
         self._format_asked = False
+        self._show_unsaved()
 
     @guard("Save model")
     def save_model(self) -> None:
@@ -867,6 +884,54 @@ class SimTab(QWidget, GuardedPanel):
     def mark_saved(self) -> None:
         """The diagram on screen is the one its file holds."""
         self._saved_state = self._model_text()
+        self._show_unsaved()
+
+    # ── unsaved changes ─────────────────────────────────────────
+    #
+    # Unsaved means the diagram differs from its baseline (`mark_saved`):
+    # the starter and an example opened unchanged are not. A run does not
+    # touch the model (the solver gets a compiled copy, the result lives
+    # on the tab), so running never makes it unsaved.
+
+    def is_unsaved(self) -> bool:
+        """Whether the diagram differs from its file (or has none to match)."""
+        return self._model_text() != self._saved_state
+
+    def _show_unsaved(self) -> None:
+        """The file label: the model's file name, marked when unsaved."""
+        if not hasattr(self, "_format_asked"):     # still building
+            return
+        path = self._path
+        if path is not None:
+            name = path.name
+        else:
+            name = self._canvas.root_model().name or "untitled"
+        self._file_label.setText(marked(name, self.is_unsaved()))
+        self._file_label.setToolTip(
+            str(path) if path is not None else "Not saved to a file yet")
+
+    def _ask_to_save(self) -> str:
+        """'save', 'discard' or 'cancel'. A method so tests can answer it."""
+        return ask_to_save(
+            self, "Save model?",
+            f"The model {self._canvas.root_model().name} has changes "
+            "that are not saved.")
+
+    def settle_unsaved(self) -> bool:
+        """
+        Before the diagram is replaced or Evans quits: save, discard or
+        cancel its changes. True unless the user cancelled, which includes
+        cancelling Save's file dialog. Nothing unsaved asks nothing.
+        """
+        if not self.is_unsaved():
+            return True
+        choice = self._ask_to_save()
+        if choice == "cancel":
+            return False
+        if choice == "save":
+            self.save_model()
+            return not self.is_unsaved()
+        return True
 
     def recovery_items(self) -> list:
         """The diagram, when it differs from its file, for recovery."""
@@ -883,6 +948,7 @@ class SimTab(QWidget, GuardedPanel):
         self._scope.clear()
         self._result = None
         self._saved_state = None
+        self._show_unsaved()
         self._status.setText("Restored a recovered model; save it to keep it.")
 
     # ── misc ────────────────────────────────────────────────────
@@ -893,6 +959,7 @@ class SimTab(QWidget, GuardedPanel):
         self._crumb.setText(" ▸ ".join(crumbs) if inside else "")
 
     def _on_model_changed(self) -> None:
+        self._show_unsaved()
         problem = self._canvas.validate()
         if problem:
             self._status.setText(problem.splitlines()[0])
