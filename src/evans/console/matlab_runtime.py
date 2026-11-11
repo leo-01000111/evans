@@ -36,6 +36,7 @@ import struct
 import sys
 import time
 import types
+import weakref
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -586,12 +587,17 @@ def share(*values):
 
     The mark is deep, and stops at what is marked already: nothing inside a
     marked value is ever written in place, so everything inside it stays
-    marked. Returns the first value, so a store can wrap its right side.
+    marked. A numeric array met on the way loses its owner (see
+    :data:`_OWNED`). Returns the first value, so a store can wrap its right
+    side.
     """
     stack = list(values)
     while stack:
         v = stack.pop()
-        if isinstance(v, _CONTAINERS):
+        if isinstance(v, np.ndarray):
+            if _OWNED:
+                _disown(v)
+        elif isinstance(v, _CONTAINERS):
             if v._shared:
                 continue
             object.__setattr__(v, "_shared", True)
@@ -603,6 +609,128 @@ def share(*values):
         elif type(v) in (list, tuple):              # varargin, a capture
             stack.extend(v)
     return values[0] if values else None
+
+
+# ── numeric arrays written in place ─────────────────────────────
+#
+# A cell or struct carries its own "shared" mark; an ndarray cannot, and NumPy
+# views share memory (``b = a(:)``, ``a'`` and ``reshape(a, …)`` may all be
+# views of ``a``). So ownership is tracked the other way round: a registry of
+# the arrays a translated write may change in place.
+#
+# * Only ``Runtime.assign`` adds to it, and only an array it has just made
+#   itself (the copy of a first write, a grown array) — so nothing else can
+#   hold it or a view of it yet. It is keyed by the memory's owner (the root
+#   of ``.base``), so a view anywhere of the same memory counts as a holder.
+# * It holds weak references: an entry dies with its array, and a new array
+#   that gets the same ``id`` is not taken for it.
+# * Every place a second reference can appear removes the entry: ``share()``
+#   (every plain store, parameters, loop variables, captures, ``ans``,
+#   containers, a Python chunk's locals) disowns the root of each array it
+#   meets, view or not. A call to a library function (other than the plain
+#   arithmetic ones in ``_KEEPS_NOTHING``) or to any Python callable clears
+#   the whole registry, since it may keep what it was given or read the
+#   workspace. So do the start and end of each chunk of console input and
+#   each turn the event loop gets mid-run (the tracer's poll and pause), for
+#   whatever reads the workspace then (plots, the workspace pane, the
+#   debugger, a model's parameters).
+#
+# Losing an entry only costs speed: the next write copies, and the copy is
+# owned again. What this cannot see is a reference made behind the console's
+# back while code runs — another thread reading the workspace mid-loop.
+
+_OWNED: dict[int, weakref.ref] = {}
+
+
+def _root(a: np.ndarray) -> np.ndarray:
+    """The array that owns ``a``'s memory: ``a`` itself, or a view's base."""
+    while isinstance(a.base, np.ndarray):
+        a = a.base
+    return a
+
+
+def _owned(a) -> bool:
+    """Whether a write may change ``a`` in place (see :data:`_OWNED`)."""
+    if not isinstance(a, np.ndarray) or not a.flags.writeable:
+        return False
+    root = _root(a)
+    ref = _OWNED.get(id(root))
+    return ref is not None and ref() is root
+
+
+def _disown(a: np.ndarray) -> None:
+    _OWNED.pop(id(_root(a)), None)
+
+
+def disown_all() -> None:
+    """Forget every owned array: the next write to each copies it."""
+    _OWNED.clear()
+
+
+def _take(a) -> None:
+    """Record ``a``, an array a write has just made, as owned."""
+    if not isinstance(a, np.ndarray):
+        return
+    root = _root(a)
+    if root.base is not None or not root.flags.writeable:
+        return                          # memory from elsewhere: never ours
+    key = id(root)
+
+    def forget(ref, key=key):
+        if _OWNED.get(key) is ref:
+            del _OWNED[key]
+
+    _OWNED[key] = weakref.ref(root, forget)
+
+
+_REAL = (int, float, np.float64)
+
+
+def _subscript(k, n: int) -> int:
+    """``k``, a 1-based subscript, 0-based if it is a whole number within
+    ``1..n``; else -1."""
+    t = type(k)
+    if t is int:
+        return k - 1 if 1 <= k <= n else -1
+    if (t is float or t is np.float64) and k.is_integer() and 1 <= k <= n:
+        return int(k) - 1
+    return -1
+
+
+def _poke(a: np.ndarray, key: tuple, value) -> bool:
+    """
+    ``a(i) = v``, ``a(i, j) = v`` or ``a(i, j, k, …) = v`` written straight
+    into ``a``, an owned double (or complex) array, when ``v`` is a real
+    double scalar and every subscript a whole number inside ``a``: the loop
+    filling a pre-allocated array. False, with ``a`` untouched, for anything
+    else (growing, ``end``, ranges, logical or integer values …), which takes
+    the general route.
+    """
+    if a.dtype != np.float64 and a.dtype != np.complex128:
+        return False
+    if type(value) not in _REAL or (type(value) is int
+                                    and abs(value) > 2 ** 53):
+        return False
+    if len(key) == 1:
+        i = _subscript(key[0], a.size)
+        if i < 0:
+            return False
+        if a.ndim == 1:
+            a[i] = value
+        else:
+            a[np.unravel_index(i, a.shape, order="F")] = value
+        return True
+    if len(key) == 2 and a.ndim == 1:               # a row: x(1, k)
+        if _subscript(key[0], 1) != 0:
+            return False
+        key = key[1:]
+    elif len(key) != a.ndim:
+        return False
+    at = tuple(_subscript(k, n) for k, n in zip(key, a.shape))
+    if min(at) < 0:
+        return False
+    a[at] = value
+    return True
 
 
 def _own(obj):
@@ -1991,6 +2119,14 @@ class Runtime:
             if getattr(f, "__self__", None) is self.lib:
                 name = self.lib.func_names.get(id(f.__func__))
             library = name is not None
+            if library:
+                if name not in _KEEPS_NOTHING:
+                    disown_all()            # it may keep what it is given
+            elif not (getattr(f, "_ml_function", False)
+                      or getattr(f, "_ml_text", None) is not None):
+                # Not MATLAB code (which shares its parameters itself):
+                # Python may keep its arguments or read the workspace.
+                disown_all()
             typed_args = args
             if library:
                 if name in _nt.COMPUTE and any(_nt.is_typed(a) for a in args):
@@ -2217,26 +2353,34 @@ class Runtime:
         read ``obj`` from. Then a level nobody else can reach — not marked
         by :func:`share` — is written in place, so growing a cell in a loop
         costs nothing per step. Everyone else gets a copy at every level.
+        A numeric array is written in place the same way when the variable
+        owns it (see :data:`_OWNED`).
+
+        Below a level that had to be copied, nothing is written in place:
+        whatever it holds is held by the original too.
         """
         if not path:
             return value
+        if owned:
+            share(value)                    # it now lives inside obj too
         if hasattr(obj, "_ml_assign"):
             return obj._ml_assign(self, path[0][0], path[0][1], path[1:],
                                   value)
-        if owned and len(path) == 1:
-            share(value)                    # it now lives inside obj too
         if isinstance(obj, _cls.ClassObject):
             return _cls.assign_object(self, obj, path, value, owned)
         (kind, key), rest = path[0], path[1:]
         if isinstance(obj, (Mapping, Cell, StructArray)) and not (
                 owned and isinstance(obj, _CONTAINERS) and not obj._shared):
             obj = _own(obj)
+            owned = False
         if kind == ".":
             if obj is None or (isinstance(obj, np.ndarray) and obj.size == 0):
                 obj = Struct()
             if isinstance(obj, StructArray) and len(obj) == 1:
-                obj = (obj[0] if owned and not obj[0]._shared
-                       else _own(obj[0]))
+                if owned and not obj[0]._shared:
+                    obj = obj[0]
+                else:
+                    obj, owned = _own(obj[0]), False
             if isinstance(obj, Mapping):
                 current = obj.get(key)
                 obj[key] = self.assign(current, rest, value, owned)
@@ -2254,7 +2398,7 @@ class Runtime:
         if kind == "{}":
             cell = Cell() if obj is None else obj
             if type(cell) is list:                       # varargin
-                cell = Cell(cell)
+                cell, owned = Cell(cell), False
             if not isinstance(cell, Cell):
                 raise MatlabError("Brace assignment needs a cell array.")
             k = self._cell_slot(cell, key)
@@ -2293,7 +2437,26 @@ class Runtime:
             obj[k] = value[0] if isinstance(value, Cell) and len(value) == 1 \
                 else value
             return obj
-        return self._assign_array(obj, key, value)
+        if not owned:
+            return self._assign_array(obj, key, value)
+        in_place = _owned(obj)
+        given = value
+        if in_place and isinstance(value, np.ndarray) and \
+                np.may_share_memory(obj, value):
+            value = value.copy()            # a(2:5) = a(1:4)
+        if in_place and _poke(obj, key, value):
+            return obj
+        result = self._assign_array(obj, key, value, in_place)
+        # The result is the variable's alone — obj's copy, a new array, or
+        # obj itself if it was owned — unless it somehow shares memory with
+        # what it was made from: then it stays unowned.
+        if isinstance(result, np.ndarray) and not (
+                isinstance(given, np.ndarray)
+                and np.may_share_memory(result, given)) and (
+                in_place or not (isinstance(obj, np.ndarray)
+                                 and np.may_share_memory(result, obj))):
+            _take(result)
+        return result
 
     def _cell_slot(self, cell: Cell, key: tuple,
                    empty: Callable[[], Any] = lambda: np.zeros((0, 0))) -> int:
@@ -2365,7 +2528,13 @@ class Runtime:
             raise MatlabError("Array indices must be positive integers.")
         return int(k) - 1
 
-    def _assign_array(self, obj, key: tuple, value):
+    def _assign_array(self, obj, key: tuple, value, in_place: bool = False):
+        """
+        ``obj(key) = value``. ``obj`` is copied first, unless ``in_place``:
+        then the write goes into ``obj``'s memory where it can (no growing,
+        deleting or change of class), and nothing is written before every
+        check has passed, so a failed write leaves ``obj`` as it was.
+        """
         was_row = obj is None or (isinstance(obj, np.ndarray) and obj.ndim
                                   == 1) or _is_number(obj)
         if obj is None:
@@ -2373,7 +2542,7 @@ class Runtime:
         elif _is_number(obj):
             a = np.array([obj])
         else:
-            a = np.array(obj, copy=True)
+            a = obj if in_place else np.array(obj, copy=True)
         v = value
         delete = isinstance(v, np.ndarray) and v.size == 0
         if not delete:
@@ -3237,6 +3406,21 @@ def _power(a, b):
     with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
         return np.power(a_arr, b_arr)
 
+
+# Library functions that neither keep their arguments nor read the workspace,
+# so a call to one leaves the arrays written in place as they are (see
+# _OWNED). Anything not listed forgets them all, which is always safe.
+_KEEPS_NOTHING = frozenset("""
+    numel length size isempty ndims isrow iscolumn isvector isscalar
+    isnumeric islogical isreal isfloat isinteger ischar iscell isstruct
+    class isa isequal nnz any all isnan isinf isfinite
+    abs sqrt exp log log2 log10 sin cos tan asin acos atan atan2 sinh cosh
+    tanh floor ceil round fix mod rem sign hypot real imag conj angle
+    max min sum prod mean cumsum cumprod norm dot
+    zeros ones eye rand randn randi linspace
+    double single int8 int16 int32 int64 uint8 uint16 uint32 uint64 logical
+    num2str int2str mat2str sprintf fprintf disp
+""".split())
 
 #: Text functions that give a string back when they are given one.
 _STRING_KEEP = frozenset("""

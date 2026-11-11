@@ -116,6 +116,16 @@ class _Watched:
         return self.lines[-1] if self.lines else pyline
 
 
+def _let_go_of_arrays() -> None:
+    """
+    The event loop is about to run with MATLAB code stopped part-way: the
+    workspace pane, a figure or the debugger may read the arrays it is
+    writing. Make the next write to each one copy it first.
+    """
+    from .matlab_runtime import disown_all
+    disown_all()
+
+
 class Tracer:
     """
     The line hook, and the debugger state it drives.
@@ -273,6 +283,7 @@ class Tracer:
         now = time.monotonic()
         if self.poll is not None and now - self._polled >= self.poll_interval:
             self._polled = now
+            _let_go_of_arrays()
             self.poll()
             if self._stop:
                 raise Interrupted(line, watched.file)
@@ -312,6 +323,7 @@ class Tracer:
     def _pause(self, frame: FrameType, line: int, debuggable: bool,
                file: str | None = None) -> None:
         self.paused = Pause(frame, line, debuggable, file)
+        _let_go_of_arrays()
         try:
             action = self.on_pause(self.paused) if self.on_pause else CONTINUE
         finally:

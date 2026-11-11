@@ -9,6 +9,17 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+### Changed
+- **Writing into a numeric array no longer copies it.** `a(k) = v`, `A(i,j) = v`,
+  `A(:,k) = col` and `A(i,j,k) = v` change the array in place when no other
+  variable, container, function or view holds it, so filling a pre-allocated
+  array in a loop takes time in proportion to its length: 10⁵ writes went from
+  about 16.5 s to 1.9 s. The array is still copied whenever MATLAB's value
+  semantics need it (`b = a`, `c = {a}`, `s.f = a`, function arguments,
+  anonymous-function captures, `ans`, `for v = a`, maps, tables, object
+  properties, and views such as `a(:)`, `a'` and `reshape(a, …)`). Growing past
+  the end, deleting with `= []` and a change of class still make a new array.
+
 ## 0.23.0 - 2026-11-11
 
 A window for every Scope.

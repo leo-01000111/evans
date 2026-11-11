@@ -65,10 +65,30 @@ Left over from this phase:
       write an unmarked level in place; library callers still always copy.
       Writing the marked tests turned up a second liar: anonymous functions
       read their variables when called. They now capture them when made.
-- [ ] The same for numeric arrays: `a(k) = v` copies the array, about 0.4 s for
+- [x] The same for numeric arrays: `a(k) = v` copies the array, about 0.4 s for
       10⁴ writes and quadratic past that. **M** An ndarray cannot carry the
       mark, and NumPy views share memory (`b = a(:)` may be a view), so
       in-place writes need their own tracking and tests.
+      *Done 2026-11-11:* the runtime keeps a registry, `_OWNED`, of the
+      arrays a translated write may change in place: weak references keyed
+      by the memory's owner (a view's `.base`), and only arrays `assign`
+      has just made itself (the first write's copy, a grown array) are
+      entered. `share()` drops the owner of every array it meets, view or
+      not, so every place a cell already got marked covers arrays too; a call
+      to a library function outside a short list of arithmetic ones, or to
+      any Python callable, drops them all, and so do the start and end of
+      each console chunk and every turn the event loop gets (poll, pause).
+      Dropping only costs one copy. A level of a container that had to be
+      copied is no longer written in place below it, and a property with a
+      `set.` method never is. Scalar writes into an owned double array take a
+      short route (`_poke`). Fill of `zeros(1,n)` by `a(k) = k^2`, this
+      machine, before → after: 10³ 0.11 → 0.02 s, 10⁴ 1.25 → 0.24 s,
+      10⁵ 16.5 → 1.9 s (a bare loop of 10⁵ is 1.3 s); `A(i,j)` over a
+      316×316 matrix 25.9 → 2.6 s. Tests: `tests/golden/test_array_writes.py`.
+      *Left:* growing (`a(end+1) = v`) still reallocates each time;
+      a fill loop that passes the array to a MATLAB function or a library
+      function off the list copies once per call (correct, quadratic again);
+      a thread reading the workspace while a loop runs could see writes land.
 - [ ] Search the rest of the language for more of these, with a probe script of
       MATLAB lines run against known MATLAB answers (see Phase 6, reference
       corpus). **M** *Deferred to Phase 6:* the known answers need a MATLAB

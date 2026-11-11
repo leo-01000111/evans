@@ -141,6 +141,10 @@ class Interpreter:
         # Decided now: reading f_locals again would refresh it from the
         # frame and lose what the command assigned before it is written back.
         in_function = loc is not glob
+        # Arrays the last run wrote in place may since have been read from
+        # outside the console (a plot, the workspace pane): own none of them.
+        from .matlab_runtime import disown_all
+        disown_all()
         buffer = io.StringIO()
         self._buffers.append(buffer)
         try:
@@ -179,6 +183,7 @@ class Interpreter:
             # marked: mark everything Python could have touched.
             from .matlab_runtime import share
             share(*loc.values())
+            disown_all()
             if in_function:
                 write_back(paused.frame)
 
@@ -327,7 +332,7 @@ class Interpreter:
         the debugger holds one, and is already in the history.
         """
         from .matlab import MatlabSyntaxError, translate
-        from .matlab_runtime import ScriptReturn
+        from .matlab_runtime import ScriptReturn, disown_all
 
         try:
             if chunks is None:
@@ -377,6 +382,10 @@ class Interpreter:
                     self.history.append(chunk.matlab)
                 buffer = io.StringIO()
                 self._buffers.append(buffer)
+                # Between chunks the workspace is anyone's to read (the
+                # workspace pane, a figure, on_result): arrays written in
+                # place before must be copied before they are written again.
+                disown_all()
                 try:
                     code = compile(chunk.python, filename, "exec")
                     self.tracer.watch(code, chunk.lines,
@@ -417,6 +426,7 @@ class Interpreter:
                     done(result)
                     break
                 finally:
+                    disown_all()
                     self._buffers.remove(buffer)
                     if paused is not None and loc is not glob:
                         write_back(paused.frame)

@@ -407,9 +407,12 @@ def assign_object(rt, obj: ClassObject, path: list, value, owned: bool):
     _check(rt, p.set_access, p, "set")
     if not cls.handle and not (owned and not obj._shared):
         obj = copy.copy(obj)
+        owned = False                   # its properties are the original's
+    setter = cls.find_method("set." + key)
+    if setter is not None:
+        owned = False                   # set.key must see the old value
     if rest:
         value = rt.assign(obj.props.get(key), rest, value, owned)
-    setter = cls.find_method("set." + key)
     busy = (cls.name, key, "set")
     if setter is not None and busy not in rt.class_busy:
         rt.class_busy.add(busy)
