@@ -56,7 +56,7 @@ AppPublisher=Leon Gorecki
 AppPublisherURL=https://github.com/leo-01000111/evans
 AppSupportURL=https://github.com/leo-01000111/evans/issues
 AppUpdatesURL=https://github.com/leo-01000111/evans/releases
-AppCopyright=Copyright (c) Leon Gorecki. MIT licence.
+AppCopyright=Copyright (c) Leon Gorecki. GNU GPL v3 or later.
 VersionInfoVersion={#AppVersion}
 VersionInfoProductName=Evans
 

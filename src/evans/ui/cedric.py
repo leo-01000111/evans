@@ -1,7 +1,7 @@
 """
 Cedric the shrimp, at the foot of the navigation rail, asking "need help?".
 
-Cedric is not under the MIT licence: his name, drawing and the design data in
+Cedric is not under the GNU GPL: his name, drawing and the design data in
 this file are all rights reserved (Leon Gorecki). See LICENSE-CEDRIC.
 
 The same Cedric as on leongorecki.eu and in the Cedric app: the shape is the

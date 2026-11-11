@@ -10,6 +10,10 @@ is on `main` but not released yet goes under Unreleased.
 ## Unreleased
 
 ### Changed
+- **Evans is now licensed under the GNU GPL, version 3 or later** (it was MIT).
+  You can still use, share, change and sell it; anything distributed that is
+  built on Evans must stay open under the same licence. Releases up to 0.20.0
+  remain available under MIT. Cedric stays all rights reserved.
 - **Evans asks before quitting or replacing an unsaved model or live script.**
   The Model tab and the Live editor now show an unsaved mark (the live script's
   file name; a file label at the Model tab's bottom right). Quit settles script

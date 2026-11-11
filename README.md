@@ -371,10 +371,14 @@ clean `pip install` is all it takes.
 
 ## License
 
-[MIT](LICENSE). The bundled typefaces (Archivo, Martian Mono) keep their own SIL Open
-Font License, shipped beside them in `src/evans/ui/fonts/`.
+Copyright © 2026 Leon Górecki. Evans is free software under the [GNU General Public License, version 3 or later](LICENSE)
+(GPL-3.0-or-later): you may use, study, share and change it, and sell copies too, but
+anything you distribute that is built on Evans must stay open under the same licence, with
+its source. Versions up to 0.20.0 were released under the MIT licence and stay so. The
+bundled typefaces (Archivo, Martian Mono) keep their own SIL Open Font License, shipped
+beside them in `src/evans/ui/fonts/`.
 
-Cedric, the shrimp on the splash and at the foot of the rail, is not MIT: his name,
+Cedric, the shrimp on the splash and at the foot of the rail, is not under the GPL: his name,
 drawing and design data (`src/evans/ui/cedric.py`) are all rights reserved, see
 [LICENSE-CEDRIC](LICENSE-CEDRIC). A fork that ships needs its own character.
 

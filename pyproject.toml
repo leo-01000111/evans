@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "A control-systems workbench: classical and modern control, plus a working block-diagram simulator."
 readme = "README.md"
 requires-python = ">=3.12"
-license = "MIT"
+license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "Leon Gorecki" }]
 

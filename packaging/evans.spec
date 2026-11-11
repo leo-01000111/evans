@@ -115,7 +115,7 @@ a = Analysis(
            # File ▸ Examples' models, read by path like the help pages.
            (str(ROOT / "src" / "evans" / "examples" / "*.evx"),
             "evans/examples"),
-           # The licences travel with the build: MIT for the code, and
+           # The licences travel with the build: GPL v3 for the code, and
            # Cedric's all-rights-reserved notice for the character it shows.
            (str(ROOT / "LICENSE"), "."),
            (str(ROOT / "LICENSE-CEDRIC"), ".")],
