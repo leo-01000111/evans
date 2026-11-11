@@ -270,11 +270,24 @@ The engine was ahead of the editor and of its links to the console. Tests:
         - **Overwrite original `name.evx`:** the edit goes back to the source
           file, so every model that uses it picks it up.
 
-        Open questions: does an inserted one follow later changes to its file
-        (a live link, refreshed on open) or stay a snapshot until edited? Show
-        the source file's name on the block, and say when the file is
-        missing. Saving the model keeps the link by path, relative to the
-        model where possible, as script links will. This is a simpler,
+        *Decided 2026-11-11:*
+        - **Live link.** A change to the source `.evx` reaches every model
+          that uses it the next time that model is opened.
+        - **Warn when editing a source.** Opening the source `.evx` itself and
+          changing it shows "This model is a subsystem in `name.evx`,
+          `name2.evx`, … Are you sure you want to change it?". That needs Evans
+          to know who uses a file: keep an index of links (written whenever a
+          model with linked subsystems is saved, in app data), since a source
+          file cannot know its users by itself. Say "used by models Evans has
+          seen" if the list may be incomplete.
+        - **Missing source.** The block shows a large, unmistakable "Subsystem
+          source missing" error (the model refuses to run), and its
+          properties give the full path it was last found at and the file's
+          name, so it can be found or relinked.
+
+        Saving the model keeps the link by path, relative to the model where
+        possible, as script links will. Show the source file's name on the
+        block. This is a simpler,
         file-based take on the two items above (linked library blocks,
         referenced models), so build it with them in mind, or instead of the
         library half. **M–L**
