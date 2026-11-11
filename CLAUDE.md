@@ -41,13 +41,15 @@ search rather than read, and which tests cover which area.
 - `COURSE MATERIAL/` is third-party copyright and must stay out of git.
 
 ## Working with an LLM in this repo
-Evans is a large codebase, so coding in it with an LLM is expensive. Work slowly:
-one feature at a time, finished, tested and reviewed before the next starts. Do
-not batch several roadmap items or run parallel feature agents. Read only the
-files the feature needs, and ask before moving on to the next item.
+Evans is a large codebase, so coding in it with an LLM is expensive. Keep few
+things in flight: at most about two sessions at once, never a fan-out of many.
+A big or risky feature gets its own session; small related tasks (a test, a
+docs section, a few-line fix) are batched into one. Run the full suite once
+per batch before committing, not once per tiny task. Read only the files the
+work needs, and ask before starting the next big item.
 
-- One session per feature: a fresh context reads less and drifts less than a
-  long one. Decisions and leftovers go in `docs/ROADMAP.md`, not only in chat.
+- A fresh session per big feature reads less and drifts less than a long one.
+  Decisions and leftovers go in `docs/ROADMAP.md`, not only in chat.
 - Navigate with go-to-definition and find-references (the Pyright language
   server; `[tool.pyright]` in `pyproject.toml`) before reading whole files.
 - Hand broad searches to a cheap read-only subagent (`scout`, on Haiku) and
