@@ -259,6 +259,25 @@ The engine was ahead of the editor and of its links to the console. Tests:
         changes, and break a link. **M–L**
       - **Referenced models** (Model block): run another `.fmdl` as a block, with
         its own run settings and a normal-mode/accelerated choice. **L**
+      - **Insert subsystem from `.evx`** (Leon's idea, 2026-11-11). Build a
+        subsystem in its own `.evx` file, then insert it into other models
+        (e.g. *Insert ▸ Subsystem from file…*). It arrives **read-only**: it
+        runs and can be opened to look inside, but editing it is blocked. The
+        first attempt to change it (a parameter, a block, a wire inside) shows
+        a popup with two choices:
+        - **Modify in place:** the inserted copy becomes this model's own
+          subsystem, cut loose from the file, and the edit goes ahead.
+        - **Overwrite original `name.evx`:** the edit goes back to the source
+          file, so every model that uses it picks it up.
+
+        Open questions: does an inserted one follow later changes to its file
+        (a live link, refreshed on open) or stay a snapshot until edited? Show
+        the source file's name on the block, and say when the file is
+        missing. Saving the model keeps the link by path, relative to the
+        model where possible, as script links will. This is a simpler,
+        file-based take on the two items above (linked library blocks,
+        referenced models), so build it with them in mind, or instead of the
+        library half. **M–L**
       - **Atomic subsystems** and a subsystem-level sample time, which Simulink
         has and Evans flattens away. **M**
       - **Variant subsystems** and **function-call subsystems.** **M each**
