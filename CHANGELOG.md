@@ -9,6 +9,10 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.22.0 - 2026-11-11
+
+Blocks that look like what they do.
+
 ### Added
 - **Blocks on the Model tab look like what they are.** Gain is a triangle
   pointing along the signal, Sum a circle with its signs at the ports, Product a
