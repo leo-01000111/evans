@@ -1,0 +1,209 @@
+{
+  "format": "evans-model",
+  "version": 1,
+  "name": "pid_saturation",
+  "settings": {
+    "StopTime": 20.0,
+    "Solver": "ode45",
+    "MaxStep": 0.0,
+    "RelTol": 1e-06,
+    "AbsTol": 1e-09
+  },
+  "blocks": [
+    {
+      "id": "r",
+      "type": "Step",
+      "params": {
+        "step_time": 0.0,
+        "initial": 0.0,
+        "final": 1.0
+      },
+      "x": -440,
+      "y": 100
+    },
+    {
+      "id": "e_w",
+      "type": "Sum",
+      "params": {
+        "signs": "+-"
+      },
+      "x": -220,
+      "y": 0
+    },
+    {
+      "id": "C_w",
+      "type": "PID",
+      "params": {
+        "Kp": 2.0,
+        "Ki": 4.0,
+        "Kd": 0.0,
+        "Tf": 0.01,
+        "limit": false,
+        "upper": 1.0,
+        "lower": -1.0
+      },
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "u_w",
+      "type": "Saturation",
+      "params": {
+        "upper": 1.5,
+        "lower": -1.5
+      },
+      "x": 220,
+      "y": 0
+    },
+    {
+      "id": "G_w",
+      "type": "TransferFcn",
+      "params": {
+        "num": "1",
+        "den": "1, 2, 1",
+        "x0": 0.0
+      },
+      "x": 440,
+      "y": 0
+    },
+    {
+      "id": "e_a",
+      "type": "Sum",
+      "params": {
+        "signs": "+-"
+      },
+      "x": -220,
+      "y": 300
+    },
+    {
+      "id": "Kp_a",
+      "type": "Gain",
+      "params": {
+        "gain": 2.0
+      },
+      "x": 0,
+      "y": 240
+    },
+    {
+      "id": "Ki_a",
+      "type": "Gain",
+      "params": {
+        "gain": 4.0
+      },
+      "x": 0,
+      "y": 360
+    },
+    {
+      "id": "I_a",
+      "type": "Integrator",
+      "params": {
+        "x0": 0.0,
+        "limit": true,
+        "upper": 1.5,
+        "lower": -1.5,
+        "reset": "none"
+      },
+      "x": 220,
+      "y": 360
+    },
+    {
+      "id": "pi_a",
+      "type": "Sum",
+      "params": {
+        "signs": "++"
+      },
+      "x": 440,
+      "y": 300
+    },
+    {
+      "id": "u_a",
+      "type": "Saturation",
+      "params": {
+        "upper": 1.5,
+        "lower": -1.5
+      },
+      "x": 660,
+      "y": 300
+    },
+    {
+      "id": "G_a",
+      "type": "TransferFcn",
+      "params": {
+        "num": "1",
+        "den": "1, 2, 1",
+        "x0": 0.0
+      },
+      "x": 880,
+      "y": 300
+    }
+  ],
+  "connections": [
+    {
+      "src": "r.out",
+      "dst": "e_w.in1"
+    },
+    {
+      "src": "e_w.out",
+      "dst": "C_w.in"
+    },
+    {
+      "src": "C_w.out",
+      "dst": "u_w.in"
+    },
+    {
+      "src": "u_w.out",
+      "dst": "G_w.in"
+    },
+    {
+      "src": "G_w.out",
+      "dst": "e_w.in2"
+    },
+    {
+      "src": "r.out",
+      "dst": "e_a.in1"
+    },
+    {
+      "src": "e_a.out",
+      "dst": "Kp_a.in"
+    },
+    {
+      "src": "e_a.out",
+      "dst": "Ki_a.in"
+    },
+    {
+      "src": "Ki_a.out",
+      "dst": "I_a.in"
+    },
+    {
+      "src": "Kp_a.out",
+      "dst": "pi_a.in1"
+    },
+    {
+      "src": "I_a.out",
+      "dst": "pi_a.in2"
+    },
+    {
+      "src": "pi_a.out",
+      "dst": "u_a.in"
+    },
+    {
+      "src": "u_a.out",
+      "dst": "G_a.in"
+    },
+    {
+      "src": "G_a.out",
+      "dst": "e_a.in2"
+    }
+  ],
+  "annotations": [
+    {
+      "text": "Top: the clip after the PI; its integrator winds up and the output overshoots. Bottom: the integral is limited to the clip's range, so it does not.",
+      "x": -440,
+      "y": -120
+    }
+  ],
+  "signal_names": {
+    "G_w.out": "windup",
+    "G_a.out": "anti-windup"
+  }
+}

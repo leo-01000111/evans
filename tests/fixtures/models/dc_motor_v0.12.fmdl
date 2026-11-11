@@ -1,0 +1,117 @@
+{
+  "format": "evans-model",
+  "version": 1,
+  "name": "dc_motor",
+  "settings": {
+    "StopTime": 3.0,
+    "Solver": "ode45",
+    "MaxStep": 0.0,
+    "RelTol": 1e-06,
+    "AbsTol": 1e-09
+  },
+  "blocks": [
+    {
+      "id": "r",
+      "type": "Step",
+      "params": {
+        "step_time": 0.0,
+        "initial": 0.0,
+        "final": 1.0
+      },
+      "x": -440,
+      "y": 0
+    },
+    {
+      "id": "e",
+      "type": "Sum",
+      "params": {
+        "signs": "+-"
+      },
+      "x": -220,
+      "y": 0
+    },
+    {
+      "id": "C",
+      "type": "PID",
+      "params": {
+        "Kp": 100.0,
+        "Ki": 200.0,
+        "Kd": 10.0,
+        "Tf": 0.01,
+        "limit": false,
+        "upper": 1.0,
+        "lower": -1.0
+      },
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "V",
+      "type": "Saturation",
+      "params": {
+        "upper": 12.0,
+        "lower": -12.0
+      },
+      "x": 220,
+      "y": 0
+    },
+    {
+      "id": "G",
+      "type": "TransferFcn",
+      "params": {
+        "num": "0.01",
+        "den": "0.005, 0.06, 0.1001",
+        "x0": 0.0
+      },
+      "x": 440,
+      "y": 0
+    },
+    {
+      "id": "speed",
+      "type": "Scope",
+      "params": {
+        "n_inputs": 1,
+        "title": "Speed"
+      },
+      "x": 660,
+      "y": 0
+    }
+  ],
+  "connections": [
+    {
+      "src": "r.out",
+      "dst": "e.in1"
+    },
+    {
+      "src": "e.out",
+      "dst": "C.in"
+    },
+    {
+      "src": "C.out",
+      "dst": "V.in"
+    },
+    {
+      "src": "V.out",
+      "dst": "G.in"
+    },
+    {
+      "src": "G.out",
+      "dst": "e.in2"
+    },
+    {
+      "src": "G.out",
+      "dst": "speed.in1"
+    }
+  ],
+  "annotations": [
+    {
+      "text": "PID from the DC motor tutorial; the supply limits the voltage to \u00b112 V.",
+      "x": -440,
+      "y": -110
+    }
+  ],
+  "signal_names": {
+    "G.out": "speed (rad/s)",
+    "V.out": "voltage (V)"
+  }
+}

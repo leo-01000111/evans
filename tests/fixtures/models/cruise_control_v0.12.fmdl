@@ -1,0 +1,117 @@
+{
+  "format": "evans-model",
+  "version": 1,
+  "name": "cruise_control",
+  "settings": {
+    "StopTime": 40.0,
+    "Solver": "ode45",
+    "MaxStep": 0.0,
+    "RelTol": 1e-06,
+    "AbsTol": 1e-09
+  },
+  "blocks": [
+    {
+      "id": "r",
+      "type": "Step",
+      "params": {
+        "step_time": 1.0,
+        "initial": 0.0,
+        "final": 10.0
+      },
+      "x": -440,
+      "y": 0
+    },
+    {
+      "id": "e",
+      "type": "Sum",
+      "params": {
+        "signs": "+-"
+      },
+      "x": -220,
+      "y": 0
+    },
+    {
+      "id": "C",
+      "type": "PID",
+      "params": {
+        "Kp": 800.0,
+        "Ki": 40.0,
+        "Kd": 0.0,
+        "Tf": 0.01,
+        "limit": false,
+        "upper": 1.0,
+        "lower": -1.0
+      },
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "F",
+      "type": "Saturation",
+      "params": {
+        "upper": 3000.0,
+        "lower": -3000.0
+      },
+      "x": 220,
+      "y": 0
+    },
+    {
+      "id": "G",
+      "type": "TransferFcn",
+      "params": {
+        "num": "1",
+        "den": "1000, 50",
+        "x0": 0.0
+      },
+      "x": 440,
+      "y": 0
+    },
+    {
+      "id": "v",
+      "type": "ToWorkspace",
+      "params": {
+        "name": "speed",
+        "format": "Array"
+      },
+      "x": 660,
+      "y": 0
+    }
+  ],
+  "connections": [
+    {
+      "src": "r.out",
+      "dst": "e.in1"
+    },
+    {
+      "src": "e.out",
+      "dst": "C.in"
+    },
+    {
+      "src": "C.out",
+      "dst": "F.in"
+    },
+    {
+      "src": "F.out",
+      "dst": "G.in"
+    },
+    {
+      "src": "G.out",
+      "dst": "e.in2"
+    },
+    {
+      "src": "G.out",
+      "dst": "v.in"
+    }
+  ],
+  "annotations": [
+    {
+      "text": "Engine force limited to \u00b13000 N. After a run, the speed is out.speed at the console.",
+      "x": -440,
+      "y": -110
+    }
+  ],
+  "signal_names": {
+    "G.out": "speed (m/s)",
+    "F.out": "force (N)"
+  }
+}

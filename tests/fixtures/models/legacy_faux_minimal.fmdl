@@ -1,0 +1,42 @@
+{
+  "format": "fakematlab-model",
+  "name": "legacy_minimal",
+  "settings": {
+    "StopTime": 2.0
+  },
+  "blocks": [
+    {
+      "id": "r",
+      "type": "Step",
+      "params": {},
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "k",
+      "type": "Gain",
+      "params": {
+        "gain": 2.0
+      },
+      "x": 100,
+      "y": 0
+    },
+    {
+      "id": "s",
+      "type": "Scope",
+      "params": {},
+      "x": 200,
+      "y": 0
+    }
+  ],
+  "connections": [
+    {
+      "src": "r",
+      "dst": "k"
+    },
+    {
+      "src": "k",
+      "dst": "s"
+    }
+  ]
+}

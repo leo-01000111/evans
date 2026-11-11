@@ -289,7 +289,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-5225 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+5246 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.
@@ -326,6 +326,33 @@ exact: ωc = √(2^⅔ − 1) with PM = 180° − 3·arctan ωc for 2/(s+1)³, a
 exactly 8 at ω = √3 for 1/(s+1)³, the overshoot a damping ratio predicts, and the waterbed integral. A
 pass means the numbers agree with the theory, which says more than that nothing raised.
 CI runs it on every build, Windows and macOS, before anything is released.
+
+## Stability
+
+From 1.0, Evans keeps these promises through every 1.x release. Until then 0.x is
+working towards them, and a 0.x release may still break any of it (the
+[changelog](CHANGELOG.md) says when).
+
+- **Model files.** A `.evx` file written by any 1.x opens in every later 1.x. A
+  `.fmdl` file written by 0.9 or later opens in all of 1.x. A file from a newer
+  format is refused with a message, never misread. Old files are kept as
+  fixtures in `tests/fixtures/models/` and opened by a test on every build.
+- **The console.** A script that gives MATLAB's answer keeps giving it. A change
+  to a result is made only to match MATLAB, and the changelog lists the old and
+  new answer. Commands in the help index stay, with their argument order, and
+  where Evans differs from MATLAB on purpose the help page says so.
+- **Settings.** Settings saved by any 1.x are read by every later 1.x. One that
+  can no longer be honoured falls back to its default; it never stops Evans
+  starting. Autosave recovery files only survive a crash of the same version.
+
+Patch releases (1.0.x) fix bugs and add help. Minor releases (1.x.0) add
+commands, blocks, panes and file-format fields. Only a major release (2.0) may
+break a promise above, and the changelog announces it a minor release earlier
+where it can.
+
+Not promised: the wording of error messages and warnings, how plots look
+(colours, fonts, layout), the Python-side API (`evans.*`), and anything the
+"Not in Evans" help page lists.
 
 ## Status
 

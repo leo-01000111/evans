@@ -9,6 +9,18 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+### Added
+- **A written stability promise.** The README and the home page have a
+  Stability section: what 1.x keeps (model files, the console's
+  MATLAB-compatible results, saved settings), what patch, minor and major
+  releases may change, and what is not promised. It takes effect from 1.0.
+- **Old model files are tested on every build.** `tests/fixtures/models/` holds
+  the four examples as 0.12.1 shipped them (`.fmdl`, taken from git history)
+  and a minimal file in the format used before 0.9. New tests load, compile and
+  simulate each one, check the old examples simulate like the current `.evx`
+  ones, round-trip every example through `.evx` and `.fmdl`, and check that a
+  file from a newer format is refused.
+
 ## 0.24.0 - 2026-11-11
 
 Fast loops over arrays.
