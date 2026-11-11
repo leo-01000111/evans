@@ -107,6 +107,12 @@ jobs:
             throw "windowed build failed its self-test (exit $($p.ExitCode))"
           }
 
+      # Size budget: the 0.24.0 release plus 15%. dist/Evans was 343 MB, so
+      # 395 MB. A dependency that quietly doubles the download fails here.
+      - name: size budget
+        shell: bash
+        run: python tools/check_size.py dist/Evans 395
+
       - uses: actions/upload-artifact@v4
         with:
           name: Evans-windows
@@ -126,6 +132,11 @@ jobs:
           }
           & $iscc packaging/evans.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed (exit $LASTEXITCODE)" }
+
+      # 0.24.0's installer was 121.7 MB; plus 15% is 140 MB.
+      - name: installer size budget
+        shell: bash
+        run: python tools/check_size.py dist/Evans-Setup-*.exe 140
 
       - uses: actions/upload-artifact@v4
         with:
@@ -182,6 +193,10 @@ jobs:
           ln -s /Applications dmg/Applications
           hdiutil create -volname "Evans $version" -srcfolder dmg -ov \
             -format UDZO "dist/Evans-$version-macos-arm64.dmg"
+
+      # Size budget: the 0.24.0 disk image was 109.8 MB; plus 15% is 126 MB.
+      - name: size budget
+        run: python tools/check_size.py dist/Evans-*-macos-arm64.dmg 126
 
       - uses: actions/upload-artifact@v4
         with:

@@ -32,6 +32,12 @@ LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 #: refused, whatever the API answered.
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
 SETUP_ASSET = re.compile(r"^Evans-Setup-[\w.+-]+\.exe$")
+DMG_ASSET = re.compile(r"^Evans-[\w.+-]+\.dmg$")
+
+
+def asset_pattern(platform: str | None = None) -> re.Pattern[str]:
+    """The release file this platform installs: the ``.dmg`` on a Mac, else the installer."""
+    return DMG_ASSET if (platform or sys.platform) == "darwin" else SETUP_ASSET
 
 
 class UpdateError(Exception):
@@ -66,14 +72,17 @@ def current_version() -> tuple[int, ...]:
     return parse_version(__version__) or (0,)
 
 
-def release_from_json(data: dict) -> Release | None:
+def release_from_json(data: dict, platform: str | None = None) -> Release | None:
     """
     The release the API described, or None if there is nothing to install.
 
     Drafts, pre-releases, a tag that is not a version and a release without
     an installer all come back as None rather than as an error: none of them
-    is something to offer.
+    is something to offer. The installer is the platform's own file (the
+    ``.dmg`` on macOS, the ``.exe`` elsewhere), so a release missing the other
+    platform's build is still offered here.
     """
+    wanted = asset_pattern(platform)
     if data.get("draft") or data.get("prerelease"):
         return None
     tag = str(data.get("tag_name", ""))
@@ -83,7 +92,7 @@ def release_from_json(data: dict) -> Release | None:
     for asset in data.get("assets") or ():
         name = str(asset.get("name", ""))
         url = str(asset.get("browser_download_url", ""))
-        if not SETUP_ASSET.match(name) or not url.startswith(DOWNLOAD_PREFIX):
+        if not wanted.match(name) or not url.startswith(DOWNLOAD_PREFIX):
             continue
         digest = str(asset.get("digest") or "")
         return Release(
