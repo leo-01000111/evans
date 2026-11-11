@@ -89,13 +89,17 @@ Left over from this phase:
       a fill loop that passes the array to a MATLAB function or a library
       function off the list copies once per call (correct, quadratic again);
       a thread reading the workspace while a loop runs could see writes land.
-- [ ] **`varargout` in a function file fails**: `function varargout = f()` with
+- [x] **`varargout` in a function file fails**: `function varargout = f()` with
       `varargout{1} = …` gives "Too many output arguments" for `[a, b] = f()`.
-      Found 2026-11-11 while checking the site's claims. **S–M**
-- [ ] **`true(n)`, `false(m,n)` fail** with "Index exceeds the number of array
+      Found 2026-11-11 while checking the site's claims. **S–M** *Done 2026-11-11:
+      varargout's elements are returned after the named outputs, `[c{k}] = f()`
+      asks for as many outputs as `c{k}` names, and anonymous functions pass
+      nargout on. Left: a cs-list mixed with other targets, `[a, c{:}] = f()`.*
+- [x] **`true(n)`, `false(m,n)` fail** with "Index exceeds the number of array
       elements": the name resolves to the constant, which is then indexed.
       `logical(zeros(...))` works meanwhile. Found 2026-11-11 during the array-writes
-      work; it predates it. **S**
+      work; it predates it. **S** *Done 2026-11-11: `true`/`false` are functions
+      now, scalar with no arguments.*
 - [ ] Search the rest of the language for more of these, with a probe script of
       MATLAB lines run against known MATLAB answers (see Phase 6, reference
       corpus). **M** *Deferred to Phase 6:* the known answers need a MATLAB
@@ -547,7 +551,7 @@ the cheap items are done; the large types are not.
       are tests in `tests/golden/test_lib_lang.py`. **M** *Done 2026-11-09: the
       translator splices `c{:}` into argument lists and matrix rows
       (`cell_list` in the runtime), and `@(a, varargin)` lambdas take any number
-      of arguments. `[varargout{1:nargout}] = f(...)` was not checked.*
+      of arguments. `[varargout{1:nargout}] = f(...)` works since 2026-11-11.*
 - [x] **MATLAB-style errors for user functions.** Too many arguments should say
       `Too many input arguments.`, and a missing parameter that is used should say
       `Not enough input arguments.` or name the variable, not `NoneType` arithmetic.

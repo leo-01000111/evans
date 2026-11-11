@@ -1501,6 +1501,7 @@ class _Emitter:
         self.lines: list[tuple[int, str, int]] = []   # indent, text, mline
         self._switch_count = 0
         self._outputs: list[str] | None = None        # inside a function
+        self._fname = ""                              # ... named this
         #: The class whose method is being translated, for ``name@Super``.
         self.klass: str | None = None
         #: Names declared ``global`` or ``persistent``: read from, and
@@ -1592,6 +1593,11 @@ class _Emitter:
             return f"raise {_RT}.ScriptReturn()"
         if not self._outputs:
             return "return None"
+        if self._outputs[-1] == "varargout":
+            # varargout's elements are the outputs after the named ones.
+            names = "".join(f"{_py_name(o)}, " for o in self._outputs[:-1])
+            return (f"return {_RT}.outputs_var(({names}), varargout, "
+                    f"nargout, {self._fname!r})")
         names = ", ".join(_py_name(o) for o in self._outputs)
         return f"return {_RT}.outputs(({names},), nargout)"
 
@@ -1602,6 +1608,7 @@ class _Emitter:
                 | {c.name for c in f.nested})
         inner = _Emitter(mine | {f.name} | set(outer))
         inner._outputs = f.outputs
+        inner._fname = f.name
         inner.klass = self.klass
         params = [p for p in f.params if p != "varargin"]
         sig = [f"{_py_name(p)}=None" for p in params]
@@ -1696,6 +1703,11 @@ class _Emitter:
                      f"{c.events!r})", c.line)
 
     def _assign(self, s: _Assign, i: int) -> None:
+        if (s.multi and len(s.targets) == 1
+                and isinstance(s.targets[0], _CellIndex)
+                and isinstance(s.targets[0].target, _Name)):
+            self._assign_list(s, i)
+            return
         if s.multi:
             n = len(s.targets)
             value = self.expr(s.value, nargout=n)
@@ -1711,6 +1723,23 @@ class _Emitter:
             return
         target = s.targets[0]
         self._store(target, self.expr(s.value, nargout=1), i, s.line)
+        if s.echo:
+            self._echo(target, i, s.line)
+
+    def _assign_list(self, s: _Assign, i: int) -> None:
+        """``[c{k}] = f(...)``: as many outputs as ``c{k}`` names."""
+        target = s.targets[0]
+        name = target.target.name
+        current = (self._linked_read(name) if name in self.linked
+                   else f"{_RT}.existing({name!r}, locals())")
+        args = self._arglist(target.args)
+        self._put(i, f"_csn = {_RT}.list_count({current}, ({args}))",
+                  s.line)
+        value = self.expr(s.value, nargout="_csn")
+        self.vars.add(name)
+        self._put(i, f"{_py_name(name)} = {_RT}.list_store({current}, "
+                     f"({args}), {value}, _csn)", s.line)
+        self._write_back(name, i, s.line)
         if s.echo:
             self._echo(target, i, s.line)
 
@@ -1916,13 +1945,17 @@ class _Emitter:
             inner = _Emitter(self.vars | set(node.params))
             inner.klass = self.klass
             params = ", ".join(_py_name(p) for p in node.params)
+            # The caller's nargout reaches the call the body makes, as in
+            # MATLAB: [a, b] = h() with h = @() f() asks f for two.
+            expr = inner.expr(node.body, nargout="_nargout")
             if node.params and node.params[-1] == "varargin":
                 fixed = ", ".join(_py_name(p) for p in node.params[:-1])
                 lead = fixed + ", " if fixed else ""
-                body = (f"(lambda {lead}*_va: (lambda varargin: "
-                        f"{inner.expr(node.body)})(list(_va)))")
+                body = (f"(lambda {lead}*_va, _nargout=1: (lambda varargin: "
+                        f"{expr})(list(_va)))")
             else:
-                body = f"(lambda {params}: {inner.expr(node.body)})"
+                lead = params + ", " if params else ""
+                body = f"(lambda {lead}*, _nargout=1: {expr})"
             text = repr(node.text)
             # MATLAB captures the variables' values when the handle is made;
             # a Python lambda would read them when called.

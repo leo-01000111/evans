@@ -29,6 +29,7 @@ from __future__ import annotations
 import copy
 import fnmatch
 import functools
+import itertools
 import math
 import os
 import re
@@ -2090,6 +2091,22 @@ class Runtime:
             return values[0] if values else None
         return values[:nargout]
 
+    @staticmethod
+    def outputs_var(named: tuple, varargout, nargout: int, name: str):
+        """Outputs of a function whose last output is ``varargout``."""
+        rest = list(varargout) if isinstance(varargout, Cell) else (
+            [] if varargout is None else [varargout])
+        values = named + tuple(rest)
+        if len(values) < nargout:
+            missing = nargout - len(named)
+            raise MatlabError(
+                f'Output argument "varargout{{{missing}}}" (and possibly '
+                f'others) not assigned a value in the execution with '
+                f'"{name}" function.')
+        if nargout <= 1:
+            return values[0] if values else None
+        return values[:nargout]
+
     # ── calls and indexing ──────────────────────────────────────
 
     def call(self, f, args: tuple, nargout: int = 1, names=None):
@@ -2113,6 +2130,8 @@ class Runtime:
             kwargs = {}
             if getattr(f, "_ml_nargout", False):
                 kwargs["nargout"] = nargout
+            elif getattr(f, "_ml_text", None) is not None and nargout != 1:
+                kwargs["_nargout"] = nargout     # an anonymous function's
             if names is not None and getattr(f, "_ml_names", False):
                 kwargs["names"] = names
             name = None
@@ -2312,6 +2331,48 @@ class Runtime:
             return tuple(picked)
         raise MatlabError("Brace indexing is only for cell arrays; use "
                           "() for this value.")
+
+    @staticmethod
+    def _list_slots(c, args: tuple) -> list[tuple]:
+        """The subscripts ``c{args}`` names as an assignment target, in
+        MATLAB's order (the first subscript varies fastest)."""
+        if c is None:
+            dims = (0, 0)
+        elif isinstance(c, (Cell, StructArray)):
+            dims = c.dims
+        else:
+            dims = (1, 1)
+        sizes = ([dims[0] * dims[1]] if len(args) == 1
+                 else [dims[0], dims[1]] + [1] * (len(args) - 2))
+        picks = []
+        for arg, size in zip(args, sizes):
+            if arg is COLON:
+                picks.append(range(1, size + 1))
+                continue
+            arg = np.asarray(_resolve(arg, size))
+            if arg.dtype == bool:
+                picks.append([int(k) + 1 for k in np.flatnonzero(arg)])
+            else:
+                picks.append([int(k) for k in arg.ravel(order="F")])
+        return [tuple(reversed(p))
+                for p in itertools.product(*reversed(picks))]
+
+    def list_count(self, c, args: tuple) -> int:
+        """How many elements ``c{args}`` names, as an assignment target."""
+        return len(self._list_slots(c, args))
+
+    def list_store(self, c, args: tuple, value, n: int):
+        """Store a call's outputs into ``c{args}`` (see :meth:`list_count`).
+        With nothing named, a returned value still lands in ``c{1}``, as
+        MATLAB's ``[varargout{1:nargout}] = f(...)`` relies on."""
+        if n == 0:
+            if value is None:
+                return c
+            return self.assign(c, [("{}", (1,))], value, owned=True)
+        values = self.unpack(value, n)
+        for slot, v in zip(self._list_slots(c, args), values):
+            c = self.assign(c, [("{}", slot)], v, owned=True)
+        return c
 
     def field(self, obj, name, call=True):
         if isinstance(obj, _cls.ClassObject):
@@ -3553,8 +3614,29 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
     f_NaN = f_nan = math.nan
     f_eps = float(np.finfo(float).eps)
     f_i = f_j = 1j
-    f_true = True
-    f_false = False
+
+    # true and false are functions, as in MATLAB: plain ``true`` is the
+    # scalar, ``true(2, 3)`` a logical array.
+    def _logical_filled(self, value: bool, dims):
+        dims = list(dims)
+        for k, d in enumerate(dims):
+            if isinstance(d, str) and d.lower() == "like" and k + 1 < len(
+                    dims):
+                del dims[k:k + 2]
+                break
+        if any(isinstance(d, str) for d in dims):
+            raise MatlabError("Use true(m, n) or true(m, n, 'like', p); "
+                              "a class name is not accepted.")
+        if not dims:
+            return value
+        out = self._filled(lambda s: np.full(s, value, dtype=bool), dims)
+        return bool(out.flat[0]) if out.size == 1 else out
+
+    def f_true(self, *dims):
+        return self._logical_filled(True, dims)
+
+    def f_false(self, *dims):
+        return self._logical_filled(False, dims)
 
     # ── workspace and session ───────────────────────────────────
 

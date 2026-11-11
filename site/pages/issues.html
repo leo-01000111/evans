@@ -23,7 +23,6 @@
         <h2>Known bugs</h2>
         <p>Each is on the <a href="@@repo@@/blob/main/docs/ROADMAP.md">roadmap</a>, with what fixing it involves.</p>
         <ul>
-          <li><strong><code>true(n)</code> and <code>false(m,n)</code> fail</strong> with "Index exceeds the number of array elements". Use <code>logical(zeros(m,n))</code> until it is fixed.</li>
           <li><strong>Growing an array with <code>a(end+1) = v</code> in a loop is slow</strong>, because each step makes a new array. Pre-allocate (<code>a = zeros(1,n)</code>) and fill it, which is fast.</li>
         </ul>
       </div>
@@ -34,7 +33,7 @@
         <h2>Not supported yet</h2>
         <p>These stop with an error that names them rather than giving a wrong answer. The <a href="matlab.html">MATLAB compatibility</a> page has the full list.</p>
         <ul>
-          <li><strong>Language:</strong> <code>varargout</code> in a function file; arrays of <code>classdef</code> objects, <code>subsref</code>/<code>subsasgn</code> and <code>+package</code> folders; categorical arrays and time zones.</li>
+          <li><strong>Language:</strong> arrays of <code>classdef</code> objects, <code>subsref</code>/<code>subsasgn</code> and <code>+package</code> folders; categorical arrays and time zones.</li>
           <li><strong>Data:</strong> the old Excel format (<code>.xls</code>) and <code>.ods</code>. Save as <code>.xlsx</code>, which Evans reads and writes.</li>
           <li><strong>Plotting:</strong> graphics handles, as in <code>h = plot(...)</code> and <code>set(h, ...)</code>.</li>
           <li><strong>Simulink:</strong> opening <code>.slx</code> or <code>.mdl</code> files, buses, masks and block libraries, physical (Simscape-style) modelling, and a subsystem that is both enabled and triggered.</li>

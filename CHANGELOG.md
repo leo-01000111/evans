@@ -9,6 +9,15 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+### Fixed
+- **`varargout` works.** `function varargout = f()` returns each element as
+  its own output, after any named ones, and asking for more than were set
+  gives MATLAB's "Output argument ... not assigned" error. The forwarding
+  idiom `[varargout{1:nargout}] = g(...)` works, as does `[c{:}] = f()` in
+  general, and an anonymous function passes the number of outputs on.
+- **`true(n)` and `false(m, n)`** make logical arrays, as `zeros` and `ones`
+  make numeric ones. Plain `true` and `false` are still scalars.
+
 ## 0.25.0 - 2026-11-11
 
 A stability promise, and groundwork for 1.0.

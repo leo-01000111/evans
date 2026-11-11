@@ -71,7 +71,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
                    "isstable"),
     "Plot options": ("bodeoptions", "nyquistoptions", "timeoptions",
                      "pzoptions"),
-    "Arrays": ("zeros", "ones", "eye", "rand", "linspace", "logspace", "size",
+    "Arrays": ("zeros", "ones", "true", "false", "eye", "rand", "linspace", "logspace", "size",
                "length", "numel", "reshape", "repmat", "magic", "cat",
                "permute", "squeeze", "ndgrid", "ndims"),
     "Maths": ("abs", "sqrt", "exp", "sum", "mean", "max", "min", "sort",
