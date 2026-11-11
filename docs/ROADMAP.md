@@ -313,7 +313,7 @@ The engine was ahead of the editor and of its links to the console. Tests:
       `PortCandidate`s (wired pair, then ports of connected blocks, then any
       opposite port); it overrides edge/centre snapping per axis and draws a guide
       through the two ports. Rotated blocks align in x, Alt turns it off.
-- [ ] **Better block shapes.** Every block is a rectangle today (`BlockItem` in
+- [x] **Better block shapes.** Every block is a rectangle today (`BlockItem` in
       `ui/sim/items.py`). Some should look like what they are, as in Simulink's
       library: a triangle for Gain, a circle or rounded Sum with its signs at the
       ports, a round Product, a rounded Integrator box with 1/s, a Saturation and
@@ -322,7 +322,11 @@ The engine was ahead of the editor and of its links to the console. Tests:
       blocks, and a distinct outline for Subsystem. The ports must stay where the
       router expects them and the hit area must follow the shape. Rotate and flip
       must work, and the shapes must read in both themes and in exports. Keep the
-      rectangle as a fallback and add a "classic boxes" setting. **M**
+      rectangle as a fallback and add a "classic boxes" setting. **M** *Done:
+      `ui/sim/shapes.py`, one `Shape` per type chosen by `shape_for`, the box as
+      fallback; ports, sizes and routing unchanged. View ▸ Classic block boxes
+      (persisted). Turned shaped blocks write their id beside the wire. A linked
+      subsystem can later be `SubsystemShape(dashed=True)` or another band.*
 - [ ] **Scope and graph overhaul in the Model tab** (`ui/sim/scope.py`). It is a basic
       pyqtgraph plot with a channel list and a CSV/`.mat` export today. Wanted:
       - **Copy straight from the plot:** Ctrl+C or a right-click menu entry copies

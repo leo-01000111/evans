@@ -1137,6 +1137,14 @@ class MainWindow(QMainWindow):
 
         view_menu.addSeparator()
         view_menu.addMenu(self._build_theme_menu())
+        from .sim import shapes as block_shapes
+        act_classic = QAction("&Classic block boxes", self, checkable=True)
+        act_classic.setStatusTip(
+            "Draw every block on the Model tab as a plain rectangle")
+        act_classic.setChecked(block_shapes.classic())
+        act_classic.toggled.connect(block_shapes.set_classic)
+        self._act_classic_boxes = act_classic
+        view_menu.addAction(act_classic)
         act_title_bar = QAction("Integrated &title bar", self, checkable=True)
         act_title_bar.setStatusTip(
             "Menus and window buttons in one strip (Windows)" if

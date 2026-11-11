@@ -238,3 +238,16 @@ def update_skipped() -> str:
 
 def set_update_skipped(tag: str) -> None:
     settings().setValue(UPDATE_SKIPPED_KEY, tag)
+
+
+#: View ▸ Classic block boxes: draw every block on the Model tab as the plain
+#: rectangle instead of its shape (a triangle for Gain, a circle for Sum…).
+CLASSIC_BLOCK_BOXES_KEY = "model/classicBlockBoxes"
+
+
+def classic_block_boxes() -> bool:
+    return _bool(settings().value(CLASSIC_BLOCK_BOXES_KEY), False)
+
+
+def set_classic_block_boxes(on: bool) -> None:
+    settings().setValue(CLASSIC_BLOCK_BOXES_KEY, bool(on))

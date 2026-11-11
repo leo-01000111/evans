@@ -78,6 +78,8 @@ class SimCanvas(QGraphicsView):
 
         self._scene.selectionChanged.connect(self._on_selection)
         theme.notifier().changed.connect(lambda *_: self._scene.update())
+        from . import shapes
+        shapes.notifier().changed.connect(lambda *_: self._scene.update())
         self.rebuild()
 
     # ── model ↔ scene ───────────────────────────────────────────

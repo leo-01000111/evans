@@ -9,6 +9,17 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+### Added
+- **Blocks on the Model tab look like what they are.** Gain is a triangle
+  pointing along the signal, Sum a circle with its signs at the ports, Product a
+  circle with × or ÷, Integrator a rounded box with 1/s. Saturation and Switch
+  show their characteristic, Step, Ramp and Sine their waveform. Mux and Demux
+  are a narrow bar, Goto and From flags, Inport and Outport pills, and a
+  Subsystem has its name on a plate across the top. Ports stay where they were,
+  so wiring and existing models are unchanged; rotate, flip, selection and the
+  diagram exports all follow the shape. **View ▸ Classic block boxes** brings
+  back the plain rectangles and is remembered.
+
 ## 0.21.0 - 2026-11-11
 
 No more lost work on quit, and a new licence.

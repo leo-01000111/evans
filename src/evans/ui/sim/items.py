@@ -353,8 +353,10 @@ class BlockItem(QGraphicsObject):
         return (h, BLOCK_W) if self.rotation in (90, 270) else (BLOCK_W, h)
 
     def boundingRect(self) -> QRectF:
+        # Room round the body for the selection shadow, and below and beside
+        # it for the block id that a shaped block writes under itself.
         w, h = self.size()
-        return QRectF(-w / 2 - 8, -h / 2 - 8, w + 16, h + 16)
+        return QRectF(-w / 2 - 30, -h / 2 - 8, w + 60, h + 30)
 
     def body_rect(self) -> QRectF:
         w, h = self.size()
@@ -404,39 +406,16 @@ class BlockItem(QGraphicsObject):
     # ── painting ────────────────────────────────────────────────
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
-        painter.setRenderHint(QPainter.Antialiasing, False)
-        rect = self.body_rect()
+        # The body is the shape's business (``shapes.py``); the item keeps
+        # the geometry, so a shape never moves a port.
+        from . import shapes
         selected = bool(option.state & QStyle.State_Selected)
+        shapes.shape_for(self.block).paint(painter, self, selected)
 
-        if selected and not self._error:
-            # Lifted: the brand's hard offset slab, never a blur.
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(theme.tokens().shadow))
-            painter.drawRect(rect.translated(4, 4))
-
-        border = error_colour() if self._error else block_border()
-        painter.setPen(QPen(border, 2.0, Qt.SolidLine, Qt.SquareCap, Qt.MiterJoin))
-        painter.setBrush(QBrush(block_bg()))
-        painter.drawRect(rect)
-        if selected:
-            painter.setPen(QPen(sel_colour(), 3.0, Qt.SolidLine,
-                                Qt.SquareCap, Qt.MiterJoin))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRect(rect.adjusted(4, 4, -4, -4))
-
-        painter.setPen(QPen(block_text()))
-        self._draw_label(painter, rect.adjusted(8, 4, -8, -16))
-
-        painter.setFont(theme.label_font(6.5))
-        painter.setPen(QPen(theme.tokens().ink_muted))
-        painter.drawText(rect.adjusted(4, rect.height() - 16, -4, -2),
-                         Qt.AlignCenter, self.block_id)
-
-        if self._error:
-            painter.setPen(QPen(error_colour(), 2.0))
-            painter.setFont(theme.data_font(11, 700))
-            painter.drawText(QRectF(rect.right() - 16, rect.top() - 2, 20, 18),
-                             Qt.AlignCenter, "!")
+    def shape(self) -> QPainterPath:
+        """The clickable body: the drawn shape, not the whole box."""
+        from . import shapes
+        return shapes.shape_for(self.block).hit_area(self)
 
     def _draw_label(self, painter: QPainter, area: QRectF) -> None:
         """
