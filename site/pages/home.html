@@ -8,7 +8,7 @@
             <a class="hp-btn hp-btn--primary" href="install.html" data-download><span>Download Evans</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(90 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
             <a class="hp-btn hp-btn--ghost" href="@@repo@@"><span>Source on GitHub</span><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(315 12 12)" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M3.5 12H18.5"></path><path d="M12 5.2L18.8 12L12 18.8"></path></g></svg></a>
           </div>
-          <p class="cta-note">Free and open source (GPL v3). On Windows, run the installer (no administrator rights needed) or take the portable zip; on an Apple Silicon Mac, open the disk image. <a href="install.html">Install notes</a> · <a href="patch-notes.html">What's new</a> · <a href="issues.html">Known issues</a> · <a href="issues.html#report">Report an issue</a></p>
+          <p class="cta-note">Free and open source (GPL v3). On Windows, run the installer (no administrator rights needed) or take the portable zip; on an Apple Silicon Mac, open the disk image. <a href="install.html">Install notes</a> · <a href="patch-notes.html">What's new</a> · <a href="issues.html">Known issues</a> · <a href="issues.html#report">Report an issue</a> · <a href="#stability">Stability promise</a></p>
         </div>
         <div class="hp-plate" aria-label="At a glance">
           <div class="hp-plate__head"><span class="hp-plate__title">At a glance</span><span class="hp-plate__ref">v@@version@@</span></div>
@@ -86,6 +86,20 @@ python -m venv .venv
 pip install -e ".[dev]"
 python app.py</code></pre>
         <p><code>python app.py --check</code> runs a headless self-test whose exit code is the number of failures. <a href="install.html#source">More on running from source</a></p>
+      </div>
+    </section>
+
+    <section class="proj-section" id="stability">
+      <div class="card prose">
+        <h2>Stability</h2>
+        <p>From 1.0, Evans keeps these promises through every 1.x release. Until then 0.x is working towards them, and a 0.x release may still break any of it. The <a href="@@repo@@/blob/main/CHANGELOG.md">changelog</a> says when.</p>
+        <ul>
+          <li><strong>Model files.</strong> A <code>.evx</code> file written by any 1.x opens in every later 1.x. A <code>.fmdl</code> file written by 0.9 or later opens in all of 1.x. A file from a newer format is refused with a message, never misread. Old files are kept as test fixtures and opened on every build.</li>
+          <li><strong>The console.</strong> A script that gives MATLAB's answer keeps giving it. A change to a result is made only to match MATLAB, and the changelog lists the old and new answer. Commands in the help index stay, with their argument order, and where Evans differs from MATLAB on purpose the help page says so.</li>
+          <li><strong>Settings.</strong> Settings saved by any 1.x are read by every later 1.x. One that can no longer be honoured falls back to its default; it never stops Evans starting. Autosave recovery files only survive a crash of the same version.</li>
+        </ul>
+        <p>Patch releases (1.0.x) fix bugs and add help. Minor releases (1.x.0) add commands, blocks, panes and file-format fields. Only a major release (2.0) may break a promise above, and the changelog announces it a minor release earlier where it can.</p>
+        <p>Not promised: the wording of error messages and warnings, how plots look (colours, fonts, layout), the Python-side API (<code>evans.*</code>), and anything the Not in Evans help page lists.</p>
       </div>
     </section>
 

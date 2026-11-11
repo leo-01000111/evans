@@ -38,6 +38,9 @@ search rather than read, and which tests cover which area.
 - A release adds its section to `CHANGELOG.md` as well as to the site's patch
   notes (`site/pages/patch-notes.html`); `tests/test_changelog.py` checks it.
 - The Windows installer is unsigned on purpose until there are more users.
+- The model files in `tests/fixtures/models/` are frozen: never edit or delete
+  one. A format change adds fixtures for the new format and must keep the old
+  ones loading (`tests/golden/test_model_compat.py`).
 - `COURSE MATERIAL/` is third-party copyright and must stay out of git.
 
 ## Working with an LLM in this repo
