@@ -113,7 +113,10 @@ class Updater(QObject):
             # From a checkout there is no installed copy to replace, and the
             # Mac app cannot replace itself yet: both get the release page.
             if self._ask_open_page(release):
-                QDesktopServices.openUrl(QUrl(release.notes_url))
+                # The Mac app goes straight to the disk image.
+                dmg = release.asset_name.endswith(".dmg")
+                QDesktopServices.openUrl(QUrl(
+                    release.asset_url if dmg else release.notes_url))
             return
         choice, skip = self._ask(release)
         if skip:
@@ -168,8 +171,7 @@ class Updater(QObject):
             # The Mac app: it cannot replace itself yet, but it is not a
             # checkout, so say what to do instead of blaming the source.
             how = ("The Mac app cannot update itself yet: download the new "
-                   "disk image from the release page and drag Evans to "
-                   "Applications.")
+                   "disk image and drag Evans to Applications.")
         else:
             how = "This copy runs from source, so it cannot update itself."
         answer = QMessageBox.question(

@@ -9,6 +9,16 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+### Changed
+- **The Mac update check reads the `.dmg`.** Evans on a Mac now looks for the
+  disk image in a release, not the Windows installer, so a release without a
+  Windows build still reaches Macs, and the prompt links straight to the
+  download.
+
+### Internal
+- A startup-time test (cold window build against a budget) and size budgets for
+  the Windows folder, the installer and the Mac disk image, checked in CI.
+
 ## 0.24.0 - 2026-11-11
 
 Fast loops over arrays.

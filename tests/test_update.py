@@ -84,6 +84,33 @@ def test_the_installer_is_picked_from_the_release():
     assert found.label == "9.0.0"
 
 
+DMG_URL = update.DOWNLOAD_PREFIX + "v9.0.0/Evans-9.0.0-macos-arm64.dmg"
+DMG_ASSET = {"name": "Evans-9.0.0-macos-arm64.dmg", "size": 7,
+             "digest": "sha256:ab", "browser_download_url": DMG_URL}
+EXE_ASSET = api_release()["assets"][1]
+
+
+@pytest.mark.parametrize("assets, platform, expected", [
+    ([DMG_ASSET], "darwin", "Evans-9.0.0-macos-arm64.dmg"),   # no Windows build
+    ([EXE_ASSET], "win32", "Evans-Setup-9.0.0.exe"),          # no Mac build
+    ([EXE_ASSET, DMG_ASSET], "darwin", "Evans-9.0.0-macos-arm64.dmg"),
+    ([EXE_ASSET, DMG_ASSET], "win32", "Evans-Setup-9.0.0.exe"),
+    ([EXE_ASSET], "darwin", None),      # a Mac is not offered the .exe
+    ([DMG_ASSET], "win32", None),       # nor Windows the .dmg
+])
+def test_each_platform_reads_its_own_asset(assets, platform, expected):
+    found = update.release_from_json(api_release(assets=assets), platform)
+    assert (found.asset_name if found else None) == expected
+    if found and platform == "darwin":
+        assert found.asset_url == DMG_URL and found.sha256 == "ab"
+
+
+def test_the_platform_defaults_to_the_running_one(monkeypatch):
+    monkeypatch.setattr(update.sys, "platform", "darwin")
+    found = update.release_from_json(api_release(assets=[DMG_ASSET]))
+    assert found and found.asset_name.endswith(".dmg")
+
+
 @pytest.mark.parametrize("overrides", [
     {"draft": True},
     {"prerelease": True},

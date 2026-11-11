@@ -814,7 +814,7 @@ Professional users need this before Evans can be used for paid work.
       > More info > Run anyway) and an unnotarised Mac app (Privacy & Security >
       Open Anyway). **S** *Already there (checked 2026-11-11):*
       `site/pages/install.html` has `#smartscreen`, `#gatekeeper` and `#unsigned`.
-- [ ] Auto-update on macOS (Windows has it). **M** *State, 2026-11-09:* the Mac app
+- [ ] Auto-update on macOS (Windows has it). **M** *Done 2026-11-11: the update check now reads the `.dmg` asset on a Mac and the installer `.exe` elsewhere (`update.asset_pattern`), and the Mac prompt opens the `.dmg` download; self-update still waits on notarisation.* *State, 2026-11-09:* the Mac app
       already checks GitHub at launch (`update.is_packaged`) and offers the release
       page, because it cannot replace itself; the prompt now says to download the
       disk image (`ui/updater.py`). That reads the Windows `.exe` asset's
@@ -826,8 +826,11 @@ Professional users need this before Evans can be used for paid work.
       the helper, then the `.dmg` checksum check.
 - [ ] A reference corpus of real MATLAB outputs (inputs and saved results, run once
       on a MATLAB licence) checked in CI, beside the closed-form golden tests. **M**
-- [ ] A startup-time test and budget, and a size budget. The `dist/Evans` folder is
-      343 MB. **S**
+- [x] A startup-time test and budget, and a size budget. The `dist/Evans` folder is
+      343 MB. **S** *Done 2026-11-11:* `tests/test_startup_budget.py` (cold window
+      build, median 9.3 s here, budget 20 s, `EVANS_STARTUP_BUDGET_S` to override);
+      CI runs `tools/check_size.py` on `dist/Evans` (395 MB), the installer (140 MB)
+      and the `.dmg` (126 MB): 0.24.0 plus 15%.
 - [ ] A `CHANGELOG.md` in the repo; patch notes live only on the site now. A stated
       stability policy, and a 1.0 once Phases 1–2 land. **S**
       - [x] `CHANGELOG.md`, *done 2026-11-11:* every version from 0.9.0 to 0.20.0,
