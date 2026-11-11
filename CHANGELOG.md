@@ -9,6 +9,10 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.21.0 - 2026-11-11
+
+No more lost work on quit, and a new licence.
+
 ### Changed
 - **Evans is now licensed under the GNU GPL, version 3 or later** (it was MIT).
   You can still use, share, change and sell it; anything distributed that is
