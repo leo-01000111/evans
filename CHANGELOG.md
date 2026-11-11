@@ -9,6 +9,10 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.25.0 - 2026-11-11
+
+A stability promise, and groundwork for 1.0.
+
 ### Added
 - **A written stability promise.** The README and the home page have a
   Stability section: what 1.x keeps (model files, the console's
