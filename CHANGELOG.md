@@ -9,6 +9,10 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.24.0 - 2026-11-11
+
+Fast loops over arrays.
+
 ### Changed
 - **Writing into a numeric array no longer copies it.** `a(k) = v`, `A(i,j) = v`,
   `A(:,k) = col` and `A(i,j,k) = v` change the array in place when no other
