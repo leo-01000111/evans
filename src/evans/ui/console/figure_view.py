@@ -266,11 +266,10 @@ class FigureView(QWidget):
 
     def _matplotlib(self, layout) -> None:
         """3-D axes or a pie: a matplotlib canvas, with a coordinate readout."""
-        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
         from matplotlib.figure import Figure
 
         figure = Figure(figsize=(5, 4))
-        canvas = FigureCanvasQTAgg(figure)
+        canvas = _canvas_class()(figure)
         self._look = screen_look()
         axes = figure_mpl.draw(figure, self.spec, self._look)
         self.canvases.append(canvas)
@@ -1216,6 +1215,39 @@ def _arrow_head(painter: QPainter, start: QPointF, tip: QPointF,
     painter.setPen(Qt.NoPen)
     painter.drawPolygon(QPolygonF([tip, left, right]))
     painter.restore()
+
+
+_CANVAS = None
+
+
+def _canvas_class():
+    """
+    matplotlib's Qt canvas, made safe to delete with a redraw queued.
+
+    ``draw_idle`` (a data tip, a theme switch, a rotation) queues
+    ``_draw_idle`` on a zero-length timer. When the figure is closed or
+    rebuilt before the timer fires, the call reaches a canvas whose Qt side
+    is gone, ``height()`` raises from inside the timer, and PySide6 6.10
+    then releases a Python object it does not own: the canvas class's own
+    ``paintEvent``. The next garbage collection or paint read freed memory
+    ("access violation" midway through the Windows test run). A queued
+    redraw of a deleted canvas now does nothing. Built on first use, so
+    matplotlib's Qt backend loads only with the first 3-D figure.
+    """
+    global _CANVAS
+    if _CANVAS is None:
+        import shiboken6
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+
+        class Canvas(FigureCanvasQTAgg):
+            def _draw_idle(self) -> None:
+                if not shiboken6.isValid(self):
+                    self._draw_pending = False
+                    return
+                super()._draw_idle()
+
+        _CANVAS = Canvas
+    return _CANVAS
 
 
 def _clear_layout(layout) -> None:

@@ -218,6 +218,28 @@ def test_a_3d_tip_ignores_a_drag_and_reads_a_surface(app, spec_of):
     view.close()
 
 
+def test_a_redraw_queued_for_a_deleted_canvas_does_nothing(app, spec_of):
+    """
+    A 3-D view deleted before the redraw a data tip queued has run.
+
+    The redraw used to reach the dead canvas and raise inside Qt's timer,
+    and PySide6 then released an object it did not own (the canvas class's
+    ``paintEvent``): a later paint or garbage collection read freed memory
+    and crashed the Windows test run.
+    """
+    import shiboken6
+
+    view = _view(app, spec_of("plot3([0 1 2], [0 1 4], [0 2 1])"))
+    canvas = view.canvases[0]
+    view.tips3d[0].pin((1.0, 1.0, 2.0))
+    view.tips3d[0].clear()                       # queues a redraw
+    assert canvas._draw_pending
+    shiboken6.delete(view)
+    assert not shiboken6.isValid(canvas)
+    canvas._draw_idle()                          # the timer fires: no error
+    assert not canvas._draw_pending
+
+
 def _rows(colours):
     """Colour rows in a fixed order (a 3-D collection sorts them by depth)."""
     a = np.asarray(colours)

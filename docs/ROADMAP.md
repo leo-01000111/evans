@@ -680,7 +680,7 @@ Professional users need this before Evans can be used for paid work.
       Left for later: the release's patch notes must say older versions
       cannot open `.evx`. Referenced models and script links do not exist yet;
       when they are built, use `find_model_file`.
-- [ ] **Full test run crashes in garbage collection (Windows).** Found while
+- [x] **Full test run crashes in garbage collection (Windows).** Found while
       doing the `.evx` rename (2026-11-11). With that branch, `python -m
       pytest` died with "Windows fatal exception: access violation" during
       garbage collection three times. It was in `test_symbolic.py` twice
@@ -697,6 +697,21 @@ Professional users need this before Evans can be used for paid work.
       saving every example and both prompt answers. Likely a PySide6/pyqtgraph
       wrapper left by an earlier Qt test and collected late: find which
       test, and delete its widgets properly. **S–M**
+      *Fixed, 2026-11-11:* not a leftover widget. matplotlib's Qt canvas
+      queues its redraw (`draw_idle`: a data tip, a theme switch, a rotation)
+      on a zero-length timer. `test_plot_ui.py`'s 3-D tests closed and
+      dropped a view before that timer fired, so the redraw ran on a canvas
+      whose Qt side was gone. `height()` raised inside the timer callback,
+      and PySide6 6.10 then released an object it did not own, the canvas
+      class's own `paintEvent` function. Whatever touched that freed memory
+      next crashed: a paint, or the next garbage collection, wherever the
+      run happened to be. Found with a probe that collected after every
+      module, then a walk over `gc.get_referents` that stopped on the
+      dangling pointer. The figure view now builds its canvases from a
+      subclass whose queued redraw does nothing once the canvas is deleted
+      (`figure_view._canvas_class`). App code, not a test: closing or
+      rebuilding a 3-D figure with a redraw still queued could hit it too.
+      Test: `test_a_redraw_queued_for_a_deleted_canvas_does_nothing`.
 - [ ] A Linux build (AppImage or a `.deb`). CI already tests on Ubuntu. **M**
 - [ ] macOS notarisation, and an Intel build if anyone asks. **M**
 - [ ] Windows code signing (deferred on purpose until there are more users; a Certum
