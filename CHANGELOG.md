@@ -9,6 +9,10 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.25.1 - 2026-11-12
+
+Two console fixes.
+
 ### Fixed
 - **`varargout` works.** `function varargout = f()` returns each element as
   its own output, after any named ones, and asking for more than were set
