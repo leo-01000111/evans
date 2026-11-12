@@ -264,3 +264,20 @@ def global_scope_open() -> bool:
 
 def set_global_scope_open(on: bool) -> None:
     settings().setValue(GLOBAL_SCOPE_KEY, bool(on))
+
+
+#: Model files whose scripts run without asking: the ones saved from Evans
+#: and the ones the user chose to trust (see ``sim/scripts.py``).
+TRUSTED_MODELS_KEY = "model/trustedModels"
+
+
+def trusted_models() -> list[str]:
+    return _string_list(settings().value(TRUSTED_MODELS_KEY))
+
+
+def trust_model(path: str | Path) -> None:
+    """Remember ``path`` as trusted; kept once, newest last."""
+    from ..sim.scripts import path_key
+    key = path_key(path)
+    items = [p for p in trusted_models() if os.path.normcase(p) != key]
+    settings().setValue(TRUSTED_MODELS_KEY, [*items, key][-500:])

@@ -419,12 +419,12 @@ The engine was ahead of the editor and of its links to the console. Tests:
       - **Hand-off to the console:** send the plotted channels to the workspace as a
         `timeseries` or struct, and "open as a figure" to continue editing it with
         console plot commands. **S–M**
-- [ ] **Script pre-run for a model.** Link one or more `.m` files to an `.evx`, run
+- [x] **Script pre-run for a model.** Link one or more `.m` files to an `.evx`, run
       in order when the model opens and/or before each run, so a model's
       parameters (`Kp`, `Ts`, plant matrices) are set up by the script that
       defines them, as a Simulink model's PreLoadFcn/InitFcn do. Wanted:
       - A "Model scripts" dialog on the Model tab: an ordered list of `.m` files
-        (relative to the `.fmdl` where possible), each ticked for *on open*,
+        (relative to the `.evx` where possible), each ticked for *on open*,
         *before every run*, or both, with move up/down and a Run now button. **M**
       - The paths and flags saved in the `.evx`; a missing file is a warning that
         names it, not a failed open. Older files without the field open with no
@@ -437,8 +437,23 @@ The engine was ahead of the editor and of its links to the console. Tests:
         just opened from a file the user did not create (like MATLAB's callback
         warning), with a "trust this model" choice remembered per path. **S**
       - MATLAB-side parity: the `set_param(model, 'PreLoadFcn', …)` and
-        `'InitFcn'` forms in `console/lib_sim.py`, and loading a `.slx`'s
-        callbacks once import exists (Phase 7). **S**
+        `'InitFcn'` forms in `console/lib_sim.py`. Loading a `.slx`'s callbacks
+        belongs to `.slx` import (Phase 7). **S**
+
+      *Done 2026-11-12:* `sim/scripts.py` (Qt-free: entries, paths, run order,
+      the trust rule, the callback mapping); a `scripts` field in the `.evx`,
+      written only when there are any, so the format version stays 1; *Scripts…*
+      on the Model tab (`ui/sim/scripts_dialog.py`). Decisions: a script that is
+      missing *before a run* stops the run (on open it is a warning), since the
+      run would only fail later on the variable it defines; new rows are ticked
+      for both; *Run now* runs the selected rows with no trust prompt, since the
+      user asked for them by name. Trusted means a model built in Evans, an
+      example, a file saved from a trusted model, or one the user chose to trust;
+      Save does not make a stranger's model trusted. `InitFcn`/`PreLoadFcn` take
+      script names only (`'setup; gains'`), not code, and the help pages say so.
+      `load_system` runs the on-open scripts and `sim` the before-run ones, with
+      the same trust check when the app is there. Fixture:
+      `tests/fixtures/models/model_scripts.evx`.
 
 Found while doing this phase, not fixed in it:
 
@@ -886,7 +901,8 @@ Each of these is a project of its own. Decide whether each is in scope before st
 - [ ] **FMU import/export (FMI 2/3).** FMU import would let Modelica plants run on the
       canvas. **L**
 - [ ] **`.slx`/`.mdl` import.** Even a partial import of the common blocks would let
-      a colleague's model open. **L**
+      a colleague's model open. Its PreLoadFcn/InitFcn callbacks map onto model
+      scripts (Phase 2) when they only call scripts. **L**
 - [ ] **Code-first models** (`m = Model(); m.add(…)`), round-tripping with the canvas
       (PLAN Part 6 backlog). **M–L**
 - [ ] **A browser build** through Pyodide (PLAN Part 6 backlog). **L**

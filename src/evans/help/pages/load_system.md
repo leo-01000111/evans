@@ -11,6 +11,8 @@ Load a Simulink model from its file without showing it.
 
 `load_system('name')` reads `name.evx` (or, failing that, the older `name.fmdl`) from the current folder or the path, so that [get_param](get_param), [set_param](set_param) and [sim](sim) can use it by name. A model is named after its file. Loading is also what `sim('name')` does by itself when the model is not loaded yet. `close_system('name')` forgets the loaded copy; the file is not touched.
 
+Loading runs the model's on-open scripts (its `PreLoadFcn`; see [set_param](set_param)) in the base workspace. A script that is missing or fails is reported, and the model loads anyway.
+
 ## Example
 
 ```matlab

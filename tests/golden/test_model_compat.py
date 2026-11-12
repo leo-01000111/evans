@@ -11,6 +11,9 @@ were taken from git history, not written by hand, except where noted:
   pre-0.9 format (the old program's format tag, no ``version`` key). No such
   file exists in git history, so it is built by hand to match what that
   format's reader accepted.
+* ``model_scripts.evx`` (with ``model_scripts_setup.m``): the first file with
+  model scripts, one that exists and one that does not. Written by the
+  version that added them.
 
 THE FIXTURES MUST NEVER BE EDITED OR DELETED WITHIN 1.x. When the format
 changes, add fixtures for the new format and keep the old ones loading.
@@ -87,6 +90,29 @@ def test_every_example_round_trips(example, suffix, tmp_path):
     path2 = tmp_path / f"copy2{suffix}"
     again.save(path2)
     assert SimModel.load(path2).to_dict() == {**again.to_dict(), "name": "copy2"}
+
+
+def test_old_files_open_with_no_scripts():
+    for path in OLD_FILES:
+        assert SimModel.load(path).scripts == [], path.name
+
+
+def test_the_scripts_fixture_keeps_loading_and_running():
+    from evans.console import Interpreter
+    from evans.sim.scripts import ModelScript
+
+    model = SimModel.load(FIXTURES / "model_scripts.evx")
+    assert model.scripts == [
+        ModelScript("model_scripts_setup.m", on_open=True, before_run=True),
+        ModelScript("gone/missing.m", on_open=True, before_run=False)]
+    # What its script sets, the blocks read.
+    it = Interpreter()
+    it.run_script((FIXTURES / "model_scripts_setup.m").read_text(
+        encoding="utf-8"), "matlab")
+    result = simulate(model, t_end=float(model.settings["StopTime"]),
+                      n_points=400, evaluate=it.evaluate)
+    np.testing.assert_allclose(result.trace("G")[-1],
+                               4 * (1 - np.exp(-5.0)), rtol=1e-3)
 
 
 def test_a_newer_format_version_is_refused_with_a_message(tmp_path):

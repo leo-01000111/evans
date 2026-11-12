@@ -380,6 +380,10 @@ class MainWindow(QMainWindow):
         self._console = ConsolePanel(self._figures,
                                      extra=self._console_state())
         self._sim_tab.set_evaluator(self._console.interpreter.evaluate)
+        runtime = self._console.interpreter._matlab_runtime
+        self._sim_tab.set_script_console(
+            self._console.console,
+            lambda: [runtime().folder, *runtime().path])
         self._console.interpreter.simulink = self._sim_tab.bridge(
             lambda model: self._on_console_model(model.name, model))
         self._sim_tab.simulated.connect(self._on_simulated)

@@ -1,0 +1,67 @@
+{
+  "format": "evans-model",
+  "version": 1,
+  "name": "model_scripts",
+  "settings": {
+    "StopTime": 5.0,
+    "Solver": "ode45",
+    "MaxStep": 0.0,
+    "RelTol": 1e-06,
+    "AbsTol": 1e-09
+  },
+  "blocks": [
+    {
+      "id": "r",
+      "type": "Step",
+      "params": {
+        "step_time": 0.0,
+        "initial": 0.0,
+        "final": 1.0
+      },
+      "x": -220,
+      "y": 0
+    },
+    {
+      "id": "K",
+      "type": "Gain",
+      "params": {
+        "gain": "Kp"
+      },
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "G",
+      "type": "TransferFcn",
+      "params": {
+        "num": "1",
+        "den": "1, 1",
+        "x0": 0.0
+      },
+      "x": 220,
+      "y": 0
+    }
+  ],
+  "connections": [
+    {
+      "src": "r.out",
+      "dst": "K.in"
+    },
+    {
+      "src": "K.out",
+      "dst": "G.in"
+    }
+  ],
+  "scripts": [
+    {
+      "path": "model_scripts_setup.m",
+      "on_open": true,
+      "before_run": true
+    },
+    {
+      "path": "gone/missing.m",
+      "on_open": true,
+      "before_run": false
+    }
+  ]
+}

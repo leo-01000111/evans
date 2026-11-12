@@ -13,6 +13,8 @@ Read a block's parameter or a model's setting, as text.
 
 On a model, `get_param` reads the run settings: `StopTime`, `Solver`, `MaxStep` (`FixedStep`), `RelTol` and `AbsTol`.
 
+`get_param('model', 'PreLoadFcn')` and `get_param('model', 'InitFcn')` give the model's scripts that run when it opens and before every run, as MATLAB would call them: `'setup; gains'`. They are the list in the Model tab's *Scripts…* dialog; see [set_param](set_param).
+
 ## Example
 
 ```matlab

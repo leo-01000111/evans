@@ -9,6 +9,20 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+### Added
+- **Model scripts.** A model can name `.m` files to run in the console's
+  workspace when it opens, before every run, or both, as a Simulink model's
+  PreLoadFcn and InitFcn do: set `Kp`, `Ts` or a plant's matrices in a script
+  and the blocks read them. *Scripts…* on the Model tab lists them in run order
+  (add, remove, move, tick, Run now); the list is saved in the `.evx`, with
+  paths relative to the model file. A missing script is a warning when the model
+  opens; before a run, a missing or failing script stops the run and the console
+  names the script and line. A model opened from a file you did not save from
+  Evans asks before running its scripts, with a *Trust this model* choice that
+  is remembered. `set_param(model, 'PreLoadFcn' / 'InitFcn', 'setup; gains')`
+  and `get_param` edit and read the same list, and `load_system` and `sim` run
+  them. Older files open with no scripts.
+
 ## 0.25.1 - 2026-11-12
 
 Two console fixes.

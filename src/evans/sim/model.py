@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .block import Block, BlockError, create
+from .scripts import ModelScript, rebase
 
 FORMAT = "evans-model"
 #: What the same format was called before the program was renamed (0.9).
@@ -143,6 +144,12 @@ class SimModel:
         #: of its vertical run (a forward wire), or the y of its return run
         #: (a feedback wire).
         self.bends: dict[str, float] = {}
+        #: The ``.m`` files the model runs on open and before each run, in
+        #: order (:mod:`.scripts`). Saved only when there are any.
+        self.scripts: list[ModelScript] = []
+        #: The file the model was loaded from or last saved to; not saved in
+        #: it. Script paths are relative to it.
+        self.path: Path | None = None
 
     # ── blocks ──────────────────────────────────────────────────
 
@@ -329,6 +336,8 @@ class SimModel:
                if self.annotations else {}),
             **({"signal_names": dict(self.signal_names)}
                if self.signal_names else {}),
+            **({"scripts": [s.to_entry() for s in self.scripts]}
+               if self.scripts else {}),
         }
 
     def _block_entry(self, b: Block) -> dict[str, Any]:
@@ -390,12 +399,20 @@ class SimModel:
             for a in data.get("annotations", [])]
         model.signal_names = {str(k): str(v) for k, v in
                               (data.get("signal_names") or {}).items()}
+        # Files from before model scripts have none; an entry without a path is
+        # dropped rather than failing the open.
+        scripts = data.get("scripts") or []
+        model.scripts = [s for s in (ModelScript.from_entry(e) for e in
+                                     (scripts if isinstance(scripts, list)
+                                      else [])) if s is not None]
         return model
 
     def save(self, path: str | Path) -> None:
         """Write the model; as in Simulink, it takes the file's name."""
         path = Path(path)
         self.name = path.stem
+        # Saved somewhere else: relative script paths follow the files.
+        rebase(self.scripts, self.path, path)
         text = json.dumps(self.to_dict(), indent=2)
         # Written whole beside the target, then swapped in: a failure part
         # way leaves the old file as it was, never a half-written one.
@@ -405,15 +422,19 @@ class SimModel:
             os.replace(part, path)
         finally:
             part.unlink(missing_ok=True)
+        self.path = path
 
     @classmethod
     def load(cls, path: str | Path) -> SimModel:
         model = cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
         model.name = Path(path).stem
+        model.path = Path(path)
         return model
 
     def copy(self) -> SimModel:
-        return SimModel.from_dict(self.to_dict())
+        model = SimModel.from_dict(self.to_dict())
+        model.path = self.path
+        return model
 
 
 def _jsonable(params: dict[str, Any]) -> dict[str, Any]:

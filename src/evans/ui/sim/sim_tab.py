@@ -44,6 +44,16 @@ from PySide6.QtWidgets import (
 from ...sim.compile import CompileError, compile_model
 from ...sim.linearize import LinearizationError, linearize, steady_state
 from ...sim.model import LEGACY_SUFFIX, SUFFIX, ModelError, PortRef, SimModel
+from ...sim.scripts import (
+    BEFORE_RUN,
+    ON_OPEN,
+    WHEN_TEXT,
+    ScriptError,
+    due,
+    needs_trust,
+    path_key,
+    run_scripts,
+)
 from ...sim.solver import SimulationError, resolve_solver, simulate
 from ...sim.workspace import resolve_model
 from .. import iconset, keys, persist, theme
@@ -256,6 +266,12 @@ class SimTab(QWidget, GuardedPanel):
         self._format_asked = False
         # Any other model on the canvas is not that file's.
         self._canvas.model_replaced.connect(self._forget_path)
+        #: The console that runs model scripts (None: scripts cannot run),
+        #: and where it looks for a script named without a folder.
+        self._script_console = None
+        self._script_search = list
+        #: Untrusted models whose scripts the user let run this session.
+        self._allowed_once: set[str] = set()
         self._show_unsaved()
 
     def _build_toolbar(self) -> QWidget:
@@ -309,6 +325,12 @@ class SimTab(QWidget, GuardedPanel):
             iconset.bind(action, icon)
             action.setToolTip(tip)
             action.triggered.connect(slot)
+        self._scripts_action = bar.addAction("Scripts…")
+        iconset.bind(self._scripts_action, "edit")
+        self._scripts_action.setToolTip(
+            "Model scripts: .m files this model runs when it opens and "
+            "before every run, to set the variables its blocks use")
+        self._scripts_action.triggered.connect(self.edit_model_scripts)
         bar.addSeparator()
 
         # ── run ──
@@ -672,6 +694,8 @@ class SimTab(QWidget, GuardedPanel):
     def run_simulation(self) -> None:
         if self._thread is not None:
             return
+        # Before anything reads the workspace: they define what it reads.
+        self.run_model_scripts(self._canvas.root_model(), BEFORE_RUN)
         problem = self._canvas.validate()
         if problem and "Algebraic loop" not in problem:
             raise CompileError(problem)
@@ -842,7 +866,10 @@ class SimTab(QWidget, GuardedPanel):
         ``remember`` puts it on the recent-files list; an example opened
         from the menu is not a file of the user's, so it stays off.
         """
-        self._canvas.set_model(SimModel.load(path))
+        model = SimModel.load(path)
+        # As PreLoadFcn does: before the canvas checks the parameters.
+        self.run_model_scripts(model, ON_OPEN)
+        self._canvas.set_model(model)
         self._canvas.fit_all()
         self._scope.clear()
         self._result = None
@@ -853,6 +880,142 @@ class SimTab(QWidget, GuardedPanel):
         self.mark_saved()
         if remember:
             self.file_used.emit(Path(path))
+
+    # ── model scripts ───────────────────────────────────────────
+    #
+    # A model's .m files, run in the console's workspace on open and before
+    # each run (see sim/scripts.py). The console is the one runner, so their
+    # output and errors land where everything else's do.
+
+    def set_script_console(self, console, search=list) -> None:
+        """``console`` runs scripts (``run_model_script``, ``note``);
+        ``search()`` lists the folders a bare script name is looked for in."""
+        self._script_console = console
+        self._script_search = search
+
+    @staticmethod
+    def _is_trusted(path) -> bool:
+        """A model built here, an example, or a file on the trusted list."""
+        if path is None:
+            return True
+        from ...examples import FOLDER
+        if Path(path).resolve().parent == FOLDER:
+            return True
+        return path_key(path) in set(persist.trusted_models())
+
+    def scripts_allowed(self, model: SimModel, when: str) -> bool:
+        """
+        Whether ``model``'s scripts due ``when`` may run: yes for a trusted
+        model, else whatever the user answers (asked once a session).
+        """
+        if self._is_trusted(model.path) or not needs_trust(
+                model.scripts, when, model.path, []):
+            return True
+        key = path_key(model.path)
+        if key in self._allowed_once:
+            return True
+        answer = self._ask_trust(model, when)
+        if answer == "trust":
+            persist.trust_model(model.path)
+        elif answer == "run":
+            self._allowed_once.add(key)
+        return answer in ("trust", "run")
+
+    def _ask_trust(self, model: SimModel, when: str) -> str:
+        """``"run"`` (this session), ``"trust"`` (from now on) or ``"skip"``."""
+        names = ", ".join(s.name for s in due(model.scripts, when))
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("Run the model's scripts?")
+        box.setText(f"{Path(model.path).name} runs MATLAB code "
+                    f"{WHEN_TEXT[when]}: {names}.")
+        box.setInformativeText(
+            "A script can do anything your account can: read and write "
+            "files, run programs. Run it only if you trust where this model "
+            "came from.")
+        run = box.addButton("Run this time", QMessageBox.AcceptRole)
+        trust = box.addButton("Trust this model", QMessageBox.YesRole)
+        skip = box.addButton("Don't run", QMessageBox.RejectRole)
+        box.setDefaultButton(skip)
+        box.setEscapeButton(skip)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is run:
+            return "run"
+        return "trust" if clicked is trust else "skip"
+
+    def run_model_scripts(self, model: SimModel, when: str) -> int:
+        """
+        Run ``model``'s scripts due ``when``; returns how many ran.
+
+        Before a run, a missing, failing or refused script raises
+        :class:`ScriptError`, which stops the run. On open, the model opens
+        whatever happens and the console says what did.
+        """
+        scripts = due(model.scripts, when)
+        if not scripts:
+            return 0
+        console = self._script_console
+        if console is None:
+            if when == BEFORE_RUN:
+                raise ScriptError(scripts[0].name,
+                                  "there is no console to run it in")
+            return 0
+        if not self.scripts_allowed(model, when):
+            if when == BEFORE_RUN:
+                raise ScriptError(
+                    scripts[0].name,
+                    "not run, since this model is not trusted, so the run "
+                    "stopped; Scripts… runs it, or trust the model to")
+            console.note(f"{model.name}: its scripts on open did not run "
+                         f"(the model is not trusted). Scripts… runs them.")
+            return 0
+
+        def warn(text: str) -> None:
+            console.note(text)
+            self._status.setText(text)
+
+        return run_scripts(
+            model.scripts, when,
+            lambda path, _script: console.run_model_script(
+                path, WHEN_TEXT[when]),
+            model_path=model.path, search=self._script_search(), warn=warn)
+
+    @guard("Model scripts")
+    def edit_model_scripts(self) -> None:
+        """The Model scripts dialog, for the model on the canvas."""
+        from .scripts_dialog import ModelScriptsDialog
+
+        model = self._canvas.root_model()
+        dialog = ModelScriptsDialog(model, self, run_now=self.run_scripts_now,
+                                    search=self._script_search)
+        if dialog.exec():
+            model.scripts = dialog.scripts()
+            self._show_unsaved()
+
+    @guard("Model scripts")
+    def run_scripts_now(self, scripts) -> int:
+        """
+        The dialog's Run now: the scripts given, in order, whatever they are
+        ticked for. Asked for by name, so there is no trust prompt; a failing
+        one stops the rest.
+        """
+        from ...sim.scripts import ModelScript
+
+        if not scripts:
+            return 0
+        console = self._script_console
+        if console is None:
+            raise ScriptError(scripts[0].name,
+                              "there is no console to run it in")
+        model = self._canvas.root_model()
+        chosen = [ModelScript(s.path, before_run=True) for s in scripts]
+        count = run_scripts(
+            chosen, BEFORE_RUN,
+            lambda path, _s: console.run_model_script(path, "run now"),
+            model_path=model.path, search=self._script_search())
+        self._canvas.validate()
+        return count
 
     # ── export ──────────────────────────────────────────────────
 
@@ -965,8 +1128,14 @@ class SimTab(QWidget, GuardedPanel):
         return box.clickedButton() is new
 
     def _write_model(self, path: Path) -> None:
+        model = self._canvas.root_model()
+        # The user's own model stays trusted under its new name; one opened
+        # from someone else's file does not become trusted by a Save.
+        own = self._is_trusted(model.path)
         # Written in full before the canvas takes the new file as its own.
-        self._canvas.root_model().save(path)
+        model.save(path)
+        if own:
+            persist.trust_model(path)
         self._path = path
         self._status.setText(f"Saved {path}")
         self.mark_saved()
@@ -1086,6 +1255,10 @@ class CanvasBridge:
 
     def changed(self, model: SimModel) -> None:
         self._tab.model_edited(model)
+
+    def scripts_allowed(self, model: SimModel, when: str) -> bool:
+        """The Model tab's trust check, so the console asks the same way."""
+        return self._tab.scripts_allowed(model, when)
 
 
 # ──────────────────────────────────────────────────────────────

@@ -13,6 +13,10 @@ Change block parameters or a model's run settings.
 
 On a model, `set_param` changes the run settings `StopTime`, `Solver`, `MaxStep`, `RelTol` and `AbsTol`, which the Model tab's toolbar shows.
 
+`set_param('model', 'InitFcn', 'setup')` makes the script `setup.m` run before every run of the model, and `'PreLoadFcn'` makes it run when the model is opened (by [load_system](load_system), [open_system](open_system), or File > Open). Several scripts are separated by `;` and run in that order: `'params; gains'`. The scripts run in the base workspace, so the variables they set are what the blocks read. A script is looked for beside the model file, then in the current folder and on the path. Unlike Simulink, Evans runs script files here, not code: `set_param('m', 'InitFcn', 'Kp = 2;')` is refused; put the line in a `.m` file and name that. `''` clears the list. These are the same scripts as the Model tab's *Scripts…* dialog, and they are saved in the `.evx`.
+
+An error in an `InitFcn` script stops [sim](sim) and says which script and line. A model opened from a file you did not save from Evans asks before running its scripts, in the app.
+
 ## Example
 
 ```matlab

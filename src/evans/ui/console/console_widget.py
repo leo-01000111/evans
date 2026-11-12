@@ -17,6 +17,7 @@ is entered; Escape drops it — but the common case stays one keystroke.
 
 from __future__ import annotations
 
+import re
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -373,6 +374,49 @@ class ConsoleWidget(QWidget):
                 source, language, on_result=show, debuggable=debuggable)
         self.executed.emit(results[-1] if results else None)
         return results
+
+    def run_model_script(self, path, label: str):
+        """
+        Run a model's ``.m`` script in the workspace, echoed here under its
+        name (``label`` says when: "on open", "before the run").
+
+        Returns ``(message, line)`` if it failed, else None. The current
+        folder is left as the user had it: a model opening is not a ``cd``.
+        """
+        path = Path(path)
+        if self.busy:
+            self._busy_note()
+            return "the console is busy running something else", None
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            source = path.read_text(encoding="cp1252", errors="replace")
+        except OSError as exc:
+            return f"cannot read it: {exc}", None
+        self.note(f"Model script {path.name} ({label})")
+
+        def show(result: Result) -> None:
+            shown = result.display()
+            if shown:
+                self._echo(shown, "error" if result.error else "output")
+
+        runtime = self.interpreter._matlab_runtime()
+        folder, cwd = runtime.script_folder, runtime._cwd
+        try:
+            with self.running():
+                results = self.interpreter.run_matlab(
+                    source, str(path.parent), on_result=show)
+        finally:
+            runtime.script_folder, runtime._cwd = folder, cwd
+        self.executed.emit(results[-1] if results else None)
+        failed = next((r for r in results if r.error), None)
+        if failed is None:
+            return None
+        where = f", line {failed.line}" if failed.line else ""
+        self._echo(f"… in model script {path.name}{where}", "error")
+        message = failed.error.strip().splitlines()[0]
+        message = re.sub(r"^Error( in line \d+)?:\s*", "", message)
+        return message, failed.line
 
     def show_output(self, text: str) -> None:
         """Printed output from code that has not finished (a paused run)."""

@@ -42,6 +42,7 @@ import re
 
 import numpy as np
 
+from ..sim.scripts import CALLBACKS, callback_text, set_callback
 from . import matlab_runtime as _mr  # noqa: F401
 from .matlab_runtime import Cell, MatlabError, Struct, _as_text, _nargout
 
@@ -246,6 +247,10 @@ class SimulinkLibrary:
             if _stop_requested(self.rt):
                 raise SimulationError("stopped")
 
+        # InitFcn: the model's before-run scripts set up what it reads.
+        from ..sim.scripts import BEFORE_RUN
+        self._run_model_scripts(target, BEFORE_RUN, "sim")
+
         step = float(settings.get("MaxStep") or 0.0)
         try:
             result = simulate(
@@ -351,12 +356,14 @@ class SimulinkLibrary:
                 return _param_text(model.settings[_SETTINGS[key]])
             if key == "name":
                 return model.name
+            if key in CALLBACKS:
+                return callback_text(model.scripts, CALLBACKS[key])
             if key in ("blocks", "objectparameters"):
                 return Cell([b.block_id for b in model], rows=len(model))
             raise MatlabError(
                 f"get_param: a model has no parameter '{_as_text(name)}'. "
-                f"Evans models have StopTime, Solver, MaxStep, RelTol and "
-                f"AbsTol.")
+                f"Evans models have StopTime, Solver, MaxStep, RelTol, "
+                f"AbsTol, PreLoadFcn and InitFcn.")
         block = _block_at(model, parts)
         if key == "blocktype":
             return block.type_name
@@ -385,6 +392,13 @@ class SimulinkLibrary:
                 key = _norm(_as_text(name))
                 if key == "simulationcommand":
                     raise MatlabError("set_param: run a model with sim.")
+                if key in CALLBACKS:
+                    try:
+                        set_callback(model.scripts, CALLBACKS[key],
+                                     _as_text(value))
+                    except ValueError as exc:
+                        raise MatlabError(f"set_param: {exc}") from None
+                    continue
                 if key not in _SETTINGS:
                     raise MatlabError(
                         f"set_param: a model has no parameter "
@@ -553,7 +567,52 @@ class SimulinkLibrary:
         except (ModelError, OSError, ValueError) as exc:
             raise MatlabError(f"Cannot load {path}: {exc}") from None
         self.rt.models[model.name] = model
+        # PreLoadFcn: the model's on-open scripts.
+        from ..sim.scripts import ON_OPEN
+        self._run_model_scripts(model, ON_OPEN, "load_system")
         return model
+
+    def _run_model_scripts(self, model, when: str, who: str) -> None:
+        """
+        Run ``model``'s scripts due ``when`` in the base workspace, as the
+        Model tab does. On open, a missing or failing script is reported and
+        loading goes on; before a run, either stops ``sim``. With the app
+        around, an untrusted model's scripts ask first.
+        """
+        from ..sim.scripts import BEFORE_RUN, ScriptError, due, run_scripts
+        if not due(model.scripts, when):
+            return
+        bridge = self._bridge()
+        allowed = getattr(bridge, "scripts_allowed", None)
+        if allowed is not None and not allowed(model, when):
+            if when == BEFORE_RUN:
+                raise MatlabError(
+                    f"{who}: the model's scripts were not run (the model is "
+                    f"not trusted), so the run stopped.")
+            print(f"{model.name}: its scripts on open did not run (the "
+                  f"model is not trusted).")
+            return
+
+        def run_one(path, script):
+            fn = self.rt._file_function(path.stem, str(path))
+            try:
+                fn()
+            except Exception as exc:                       # noqa: BLE001
+                line = _script_line(exc, self.rt, path.stem)
+                message = str(exc) or type(exc).__name__
+                if when != BEFORE_RUN:
+                    where = f", line {line}" if line else ""
+                    print(f"Error in model script {script.name}{where}: "
+                          f"{message}")
+                return message, line
+            return None
+
+        try:
+            run_scripts(model.scripts, when, run_one, model_path=model.path,
+                        search=[self.rt.folder, *self.rt.path], warn=print)
+        except ScriptError as exc:
+            text = str(exc).rstrip(".")
+            raise MatlabError(f"{who}: {text}. The run stopped.") from None
 
     def _split(self, obj):
         """``(model, [block, …])`` from a path such as ``'m/sub/Gain1'``."""
@@ -608,6 +667,14 @@ def _saved(name: str, values, t, fmt: str):
 # ──────────────────────────────────────────────────────────────
 #  Names, paths and values
 # ──────────────────────────────────────────────────────────────
+
+def _script_line(exc: BaseException, rt, stem: str) -> int | None:
+    """The line of model script ``stem`` that ``exc`` came from, if known."""
+    from .interpreter import _matlab_frames
+    frames = _matlab_frames(exc, {}, rt, [])
+    lines = [line for label, line, _text in frames if label == stem]
+    return lines[-1] if lines else None
+
 
 def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", str(text).lower())

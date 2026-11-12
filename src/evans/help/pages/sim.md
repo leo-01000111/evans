@@ -15,6 +15,8 @@ Run a Simulink model and return its output: the times, the top-level Outports, a
 
 Block parameters written as workspace variables or expressions, such as a Gain of `Kp` or a frequency of `2*pi*f`, are evaluated in the workspace when the model runs. A loop that sets `Kp` and calls `sim` is therefore a parameter sweep.
 
+Before the run, `sim` runs the model's before-run scripts (its `InitFcn`; see [set_param](set_param)) in the base workspace. If one of them fails, or is not there, the run stops with the script's name and line.
+
 `out` is a structure like Simulink's `SimulationOutput`:
 
 - `out.tout`: the times, a column.
