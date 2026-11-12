@@ -246,7 +246,7 @@ def test_the_dialog_adds_orders_ticks_and_runs(app, tmp_path):
     assert [s.path for s in dialog.scripts()] == ["a.m", "b.m", "lib/c.m"]
     assert dialog.scripts()[1] == ModelScript("b.m", True, True)
 
-    dialog._table.selectRow(2)
+    dialog.select_rows([2])
     dialog.move_selected(-1)
     dialog.move_selected(-1)
     dialog.move_selected(-1)                       # already at the top
@@ -255,14 +255,14 @@ def test_the_dialog_adds_orders_ticks_and_runs(app, tmp_path):
     dialog._table.item(0, 1).setCheckState(Qt.Unchecked)   # c: not on open
     assert dialog.scripts()[0] == ModelScript("lib/c.m", False, True)
 
-    dialog._table.selectRow(1)
+    dialog.select_rows([1])
     dialog.run_now()
     assert [[s.path for s in batch] for batch in ran] == [["a.m"]]
-    dialog._table.clearSelection()
+    dialog.select_rows([])
     dialog.run_now()
     assert [s.path for s in ran[1]] == ["lib/c.m", "a.m", "b.m"]
 
-    dialog._table.selectRow(0)
+    dialog.select_rows([0])
     dialog.remove_selected()
     assert [s.path for s in dialog.scripts()] == ["a.m", "b.m"]
     # Nothing reached the model before OK.

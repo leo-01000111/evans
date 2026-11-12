@@ -158,6 +158,21 @@ class ModelScriptsDialog(QDialog):
                            for s in chosen])
             self._fill(select=rows)
 
+    def select_rows(self, rows) -> None:
+        """
+        Select exactly ``rows``. Through the selection model, not
+        ``selectRow``, which adds to or toggles the selection by whatever
+        keyboard modifiers Qt believes are held.
+        """
+        table = self._table
+        chosen = table.selectionModel()
+        chosen.clearSelection()
+        for row in rows:
+            if 0 <= row < table.rowCount():
+                chosen.select(table.model().index(row, 0),
+                              QItemSelectionModel.Select
+                              | QItemSelectionModel.Rows)
+
     # ── the table ───────────────────────────────────────────────
 
     def _ask_files(self) -> None:
@@ -201,13 +216,7 @@ class ModelScriptsDialog(QDialog):
                     table.setItem(row, column, item)
         finally:
             table.blockSignals(False)
-        table.clearSelection()
-        chosen = table.selectionModel()
-        for row in select or []:
-            if 0 <= row < table.rowCount():
-                chosen.select(table.model().index(row, 0),
-                              QItemSelectionModel.Select
-                              | QItemSelectionModel.Rows)
+        self.select_rows(select or [])
         has = bool(self._scripts)
         for button in (self.remove_button, self.up_button, self.down_button):
             button.setEnabled(has)
