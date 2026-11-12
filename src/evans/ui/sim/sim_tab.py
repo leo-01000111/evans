@@ -119,6 +119,14 @@ def _labelled(text: str, control: QWidget) -> QWidget:
     return holder
 
 
+
+class _StatusLine(QLabel):
+    """A one-line status that keeps its whole text as its tooltip."""
+
+    def setText(self, text: str) -> None:  # noqa: N802 (Qt's name)
+        super().setText(text)
+        self.setToolTip(text)
+
 class SimTab(QWidget, GuardedPanel):
     """Model, run, inspect."""
 
@@ -176,30 +184,17 @@ class SimTab(QWidget, GuardedPanel):
         # the usual way to look at a run.
         self._centre = centre
         self._scope = ScopeWidget()
-        self._global = QWidget()
-        global_layout = QVBoxLayout(self._global)
-        global_layout.setContentsMargins(0, 0, 0, 0)
-        global_layout.setSpacing(0)
-        self._global_bar = QWidget()
-        bar = QHBoxLayout(self._global_bar)
-        bar.setContentsMargins(4, 0, 4, 0)
+        # Its toggle sits under the inspector, not in a bar of its own under
+        # the canvas, so a folded-away scope costs the diagram no height.
+        self._global = self._scope
         self._global_button = QToolButton()
         self._global_button.setCheckable(True)
         self._global_button.setAutoRaise(True)
         self._global_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self._global_button.setToolTip(
-            "Every signal the run logged, in one plot")
+            "Every signal the run logged, in one plot. Double-click a Scope "
+            "block for its own window.")
         self._global_button.toggled.connect(self.set_global_scope_visible)
-        bar.addWidget(self._global_button)
-        scope_note = QLabel("Double-click a Scope block to open its own "
-                            "window.")
-        scope_note.setStyleSheet("color: palette(mid);")
-        # A hint, not a floor: it must not widen the window's minimum.
-        scope_note.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        bar.addWidget(scope_note)
-        bar.addStretch()
-        global_layout.addWidget(self._global_bar)
-        global_layout.addWidget(self._scope, stretch=1)
         centre.addWidget(self._global)
         centre.setCollapsible(1, False)
         centre.setStretchFactor(0, 3)
@@ -213,35 +208,28 @@ class SimTab(QWidget, GuardedPanel):
         # not see the block you were editing, or compare two of them.
         self._inspector = BlockInspector()
         self._inspector.setMinimumWidth(0)
-        self._inspector.setMaximumWidth(340)
-        splitter.addWidget(self._inspector)
+        side = QWidget()
+        side.setMinimumWidth(0)
+        side.setMaximumWidth(340)
+        side_layout = QVBoxLayout(side)
+        side_layout.setContentsMargins(0, 0, 0, 0)
+        side_layout.setSpacing(2)
+        side_layout.addWidget(self._inspector, stretch=1)
+        side_layout.addWidget(self._global_button, alignment=Qt.AlignLeft)
+        splitter.addWidget(side)
         splitter.setStretchFactor(1, 1)
 
         root.addWidget(splitter, stretch=1)
 
-        # A standing hint. The wiring gesture was discoverable only by
-        # succeeding at it, and the status line said how *after* you clicked.
-        self._hint = QLabel(
-            "Drag between two ports to wire them, or click one port and then "
-            "the other. Drag on empty canvas to select. Double-click a block "
-            "for its parameters, or a Scope block for its plot.")
-        self._hint.setWordWrap(True)
-        self._hint.setStyleSheet("color: palette(mid);")
-        root.addWidget(self._hint)
-
-        self._status = QLabel("")
-        self._status.setWordWrap(True)
-        # The model's file, marked when the diagram differs from it — as
-        # the Live tab shows its script's. Bottom right, out of the
-        # toolbar, which has no room to spare.
+        # The status line and the model's file (marked when the diagram
+        # differs from it, as the Live tab shows its script's). They live in
+        # the main window's status bar while this page shows
+        # (``status_widgets``), not in a row of their own under the canvas.
+        self._status = _StatusLine()
+        # One line that never widens the window; the full text is the tip.
+        self._status.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self._file_label = QLabel("")
         self._file_label.setStyleSheet("color: palette(mid);")
-        self._file_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
-        status_row = QHBoxLayout()
-        status_row.setContentsMargins(0, 0, 0, 0)
-        status_row.addWidget(self._status, stretch=1)
-        status_row.addWidget(self._file_label)
-        root.addLayout(status_row)
 
         self._palette.block_chosen.connect(self._canvas.add_block)
         self._canvas.status.connect(self._status.setText)
@@ -546,13 +534,13 @@ class SimTab(QWidget, GuardedPanel):
             "Hide global scope" if visible else "Show global scope")
         self._scope.setVisible(visible)
         if visible:
-            self._global.setMaximumHeight(16777215)    # QWIDGETSIZE_MAX
             total = sum(self._centre.sizes())
             if total > 0:
                 self._centre.setSizes([total * 3 // 5, total - total * 3 // 5])
-        else:
-            self._global.setMaximumHeight(
-                self._global_bar.sizeHint().height())
+
+    def status_widgets(self) -> tuple[QLabel, QLabel]:
+        """The status line and the file name, for the window's status bar."""
+        return self._status, self._file_label
 
     def scope_windows(self) -> dict[str, ScopeWindow]:
         """The open Scope block windows, by block path."""

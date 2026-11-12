@@ -827,13 +827,17 @@ def test_the_modern_sections_say_what_they_are_for(app, win):
         assert tabs.widget(index).accessibleName()
 
 
-def test_the_simulink_workspace_explains_how_to_wire(app, win):
-    """The gesture was previously discoverable only by succeeding at it."""
+def test_the_model_status_lives_in_the_window_status_bar(app, win):
+    """No row of its own under the canvas; shown only on the Model page."""
+    status, file_label = win._sim_tab.status_widgets()
+    assert status.parent() is win.statusBar()
+    assert file_label.parent() is win.statusBar()
     win.show_workspace(Workspace.MODEL)
     _settle(app, 5)
-    hint = win._sim_tab._hint.text().lower()
-    assert "drag" in hint and "click" in hint
-    assert win._sim_tab._hint.isVisible()
+    assert file_label.isVisible()
+    win.show_workspace(Workspace.CONSOLE)
+    _settle(app, 5)
+    assert not file_label.isVisible() and not status.isVisible()
 
 
 def test_docking_every_app_does_not_break_the_size_budget(app, win):

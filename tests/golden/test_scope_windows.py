@@ -231,8 +231,8 @@ def test_double_click_on_another_block_still_opens_parameters(app,
         view.deleteLater()
 
 
-def test_hint_mentions_the_scope_double_click(tab):
-    assert "Scope block for its plot" in tab._hint.text()
+def test_global_scope_toggle_mentions_the_scope_double_click(tab):
+    assert "Double-click a Scope block" in tab._global_button.toolTip()
 
 
 def test_copy_and_export_from_a_pop_out(tab, tmp_path):

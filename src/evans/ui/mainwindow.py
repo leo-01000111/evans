@@ -1228,6 +1228,18 @@ class MainWindow(QMainWindow):
     def _build_status_bar(self) -> None:
         self._status = QStatusBar()
         self.setStatusBar(self._status)
+        # The Model page's status line and file name live here, shown only
+        # while that page is: a row of their own under the canvas cost the
+        # diagram height and left this bar empty.
+        model_status, model_file = self._sim_tab.status_widgets()
+        self._status.addWidget(model_status, 1)
+        self._status.addPermanentWidget(model_file)
+        self._sync_model_status()
+
+    def _sync_model_status(self) -> None:
+        on_model = self._stack.current is Workspace.MODEL
+        for widget in self._sim_tab.status_widgets():
+            widget.setVisible(on_model)
 
     # ── Event handlers ────────────────────────────────────────
 
@@ -1298,6 +1310,7 @@ class MainWindow(QMainWindow):
             self._console.focus()
         self._sync_cedric()
         self._sync_view_menu()
+        self._sync_model_status()
         self._status.showMessage(workspace.description, 4000)
 
     def show_workspace(self, workspace) -> None:
