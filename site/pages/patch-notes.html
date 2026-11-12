@@ -13,10 +13,25 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.25.1">0.25.1</a><a href="#v0.25.0">0.25.0</a><a href="#v0.24.0">0.24.0</a><a href="#v0.23.0">0.23.0</a><a href="#v0.22.0">0.22.0</a><a href="#v0.21.0">0.21.0</a><a href="#v0.20.0">0.20.0</a><a href="#v0.19.0">0.19.0</a><a href="#v0.18.0">0.18.0</a><a href="#v0.17.2">0.17.2</a><a href="#v0.17.1">0.17.1</a><a href="#v0.17.0">0.17.0</a><a href="#v0.16.2">0.16.2</a><a href="#v0.16.1">0.16.1</a><a href="#v0.16.0">0.16.0</a><a href="#v0.15.1">0.15.1</a><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.26.0">0.26.0</a><a href="#v0.25.1">0.25.1</a><a href="#v0.25.0">0.25.0</a><a href="#v0.24.0">0.24.0</a><a href="#v0.23.0">0.23.0</a><a href="#v0.22.0">0.22.0</a><a href="#v0.21.0">0.21.0</a><a href="#v0.20.0">0.20.0</a><a href="#v0.19.0">0.19.0</a><a href="#v0.18.0">0.18.0</a><a href="#v0.17.2">0.17.2</a><a href="#v0.17.1">0.17.1</a><a href="#v0.17.0">0.17.0</a><a href="#v0.16.2">0.16.2</a><a href="#v0.16.1">0.16.1</a><a href="#v0.16.0">0.16.0</a><a href="#v0.15.1">0.15.1</a><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="issues.html#bugs">known issues</a><a href="issues.html#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.26.0">
+      <div class="card prose notes">
+        <h2>0.26.0 &middot; 12 November 2026</h2>
+        <p>Models can run their own setup scripts, and the Model tab gives the canvas more room.</p>
+        <h3>Added</h3>
+        <ul>
+          <li><strong>Model scripts.</strong> A model can name <code>.m</code> files to run in the console&rsquo;s workspace when it opens, before every run, or both, as a Simulink model&rsquo;s PreLoadFcn and InitFcn do: set <code>Kp</code>, <code>Ts</code> or a plant&rsquo;s matrices in a script and the blocks read them. <em>Scripts&hellip;</em> on the Model tab lists them in run order, and the list is saved in the <code>.evx</code> with paths relative to the model file. Before a run, a missing or failing script stops the run and the console names the script and line. A model opened from a file you did not save from Evans asks before running its scripts, with a <em>Trust this model</em> choice that is remembered. <code>set_param(model, 'PreLoadFcn' / 'InitFcn', 'setup; gains')</code> and <code>get_param</code> edit and read the same list. Older files open with no scripts.</li>
+        </ul>
+        <h3>Changed</h3>
+        <ul>
+          <li><strong>The Model tab&rsquo;s status line and file name sit in the window&rsquo;s bottom bar.</strong> The wiring hint under the canvas is gone, and the <em>Show global scope</em> toggle sits under the block inspector, so the canvas reaches the bottom of the window.</li>
+        </ul>
       </div>
     </section>
 

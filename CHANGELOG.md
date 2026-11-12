@@ -9,6 +9,11 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.26.0 - 2026-11-12
+
+Models can run their own setup scripts, and the Model tab gives the canvas
+more room.
+
 ### Added
 - **Model scripts.** A model can name `.m` files to run in the console's
   workspace when it opens, before every run, or both, as a Simulink model's
@@ -22,6 +27,12 @@ is on `main` but not released yet goes under Unreleased.
   is remembered. `set_param(model, 'PreLoadFcn' / 'InitFcn', 'setup; gains')`
   and `get_param` edit and read the same list, and `load_system` and `sim` run
   them. Older files open with no scripts.
+
+### Changed
+- **The Model tab's status line and file name sit in the window's bottom bar**,
+  shown only on that page. The standing wiring hint under the canvas is gone,
+  and the *Show global scope* toggle sits under the block inspector, so the
+  canvas reaches the bottom of the window.
 
 ## 0.25.1 - 2026-11-12
 
