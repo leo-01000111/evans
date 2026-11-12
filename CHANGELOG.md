@@ -9,6 +9,10 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.26.1 - 2026-11-12
+
+Two fixes: model scripts stay out of the way, and plot axes read plainly.
+
 ### Fixed
 - **A model's setup scripts keep you on the Model tab.** A script that drew a
   figure used to switch the window to the Console page; its figures now wait
