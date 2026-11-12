@@ -12,7 +12,7 @@ exceptions are the legacy `.fmdl` format tag, the settings migration, and the
 trademarks: mention them only to describe compatibility.
 
 ## Commands
-- Tests: `python -m pytest` (about 8 minutes; Qt runs offscreen). While working,
+- Tests: `python -m pytest` (about 26 minutes for ~5300 tests; Qt runs offscreen). While working,
   run only the changed area's tests (table in `docs/CODEMAP.md`); run the full
   suite once, in the background, before committing.
 - Lint: `ruff check .` (CI runs it; `Inspiration/` is excluded).

@@ -59,7 +59,7 @@ them (grep, go-to-definition), don't read them whole.**
 
 ## Tests by area
 
-Run only the area you changed while working; run the full suite (about 8 minutes) once
+Run only the area you changed while working; run the full suite (about 26 minutes) once
 before committing.
 
 | Area changed | Run |
