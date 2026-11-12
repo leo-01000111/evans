@@ -9,6 +9,14 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+### Fixed
+- **A model's setup scripts keep you on the Model tab.** A script that drew a
+  figure used to switch the window to the Console page; its figures now wait
+  there while you stay on the model.
+- **Plot axes only use a common factor for small or large numbers.** An axis
+  reading 0.3 showed "300" with "×0.001"; a factor now appears only when the
+  values are under 0.1 or over 1000. Axes with units (s, ms) are unchanged.
+
 ## 0.26.0 - 2026-11-12
 
 Models can run their own setup scripts, and the Model tab gives the canvas

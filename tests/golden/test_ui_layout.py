@@ -1026,3 +1026,24 @@ def test_the_open_loop_views_accept_l_and_g_only():
         assert poor_fit(view, Source.PLANT) is None
         assert poor_fit(view, Source.CLOSED_LOOP)
         assert poor_fit(view, Source.SENSITIVITY)
+
+
+def test_a_model_script_that_plots_keeps_the_model_page(app, win, tmp_path):
+    """Setup scripts run in the background: their figures do not take focus."""
+    from evans.sim.model import SimModel
+    from evans.sim.scripts import ModelScript
+
+    (tmp_path / "setup.m").write_text("Kp = 2;\nplot(1:3)\n",
+                                      encoding="utf-8")
+    model = SimModel("m")
+    model.scripts = [ModelScript("setup.m")]   # ticked for neither: no prompt
+    path = tmp_path / "m.evx"
+    model.save(path)
+    win.show_workspace(Workspace.MODEL)
+    win._sim_tab.load_model(path, remember=False)
+    _settle(app)
+    sim = win._sim_tab
+    assert sim.run_scripts_now(sim._canvas.root_model().scripts) == 1
+    _settle(app)
+    assert win._stack.current is Workspace.MODEL
+    assert not win._console.console.in_model_script

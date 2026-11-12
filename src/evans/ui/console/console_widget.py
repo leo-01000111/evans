@@ -132,6 +132,10 @@ class ConsoleWidget(QWidget):
     #: Stop, or Ctrl+C while something runs.
     stop_requested = Signal()
 
+    #: True while a model's setup script runs. Its figures must not pull the
+    #: Console page forward: the user is working on the model.
+    in_model_script = False
+
     def __init__(self, interpreter: Interpreter | None = None,
                  parent=None) -> None:
         super().__init__(parent)
@@ -402,11 +406,13 @@ class ConsoleWidget(QWidget):
 
         runtime = self.interpreter._matlab_runtime()
         folder, cwd = runtime.script_folder, runtime._cwd
+        self.in_model_script = True
         try:
             with self.running():
                 results = self.interpreter.run_matlab(
                     source, str(path.parent), on_result=show)
         finally:
+            self.in_model_script = False
             runtime.script_folder, runtime._cwd = folder, cwd
         self.executed.emit(results[-1] if results else None)
         failed = next((r for r in results if r.error), None)

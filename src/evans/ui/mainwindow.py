@@ -392,8 +392,9 @@ class MainWindow(QMainWindow):
         help.set_console(self._run_from_help, lambda: self._console.running)
         # A figure drawn from anywhere pulls the workspace into view, so
         # `step(G)` typed on the Analyse page does not draw somewhere unseen.
-        self._figures.figure_added.connect(
-            lambda: self._stack.set_current(Workspace.CONSOLE))
+        # Not for a model's setup script: that runs in the background of the
+        # Model page, and its figures wait on the Console page.
+        self._figures.figure_added.connect(self._reveal_figures)
 
         split = QSplitter(Qt.Vertical)
         split.addWidget(self._console)
@@ -405,6 +406,10 @@ class MainWindow(QMainWindow):
         split.setStretchFactor(1, 2)
         self._build_cedric()
         return split
+
+    def _reveal_figures(self) -> None:
+        if not self._console.console.in_model_script:
+            self._stack.set_current(Workspace.CONSOLE)
 
     def _build_cedric(self) -> None:
         """

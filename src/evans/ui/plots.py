@@ -42,6 +42,7 @@ it obeys the same contract as the ``freq_*`` helpers.
 
 from __future__ import annotations
 
+import math
 import weakref
 from dataclasses import dataclass
 
@@ -53,6 +54,30 @@ from PySide6.QtGui import QBrush, QColor, QPen
 from PySide6.QtWidgets import QAbstractGraphicsShapeItem
 
 from . import theme
+
+# ──────────────────────────────────────────────────────────────
+#  Axis scale factor
+# ──────────────────────────────────────────────────────────────
+
+#: Where an axis without units gets a common factor ("×0.001", "×1e+09").
+#: pyqtgraph's default puts one on anything under 1, so 0.3 read as
+#: "300 ×0.001". Plain numbers from 0.1 to 1000 need none; pyqtgraph's
+#: ranges include both ends, so these stop just short of 0.1 and 1000.
+PLAIN_AXIS_PREFIX_RANGES = ((0.0, math.nextafter(0.1, 0.0)),
+                            (math.nextafter(1000.0, math.inf), math.inf))
+
+_pg_prefix_ranges = pg.AxisItem.getSIPrefixEnableRanges
+
+
+def _prefix_ranges(self):
+    if self._siPrefixEnableRanges is None and self.labelUnits == "":
+        return PLAIN_AXIS_PREFIX_RANGES
+    return _pg_prefix_ranges(self)
+
+
+# Every axis in the app, including those made by pyqtgraph itself: plots are
+# built in many places, and none of them should rescale an ordinary number.
+pg.AxisItem.getSIPrefixEnableRanges = _prefix_ranges
 
 # ──────────────────────────────────────────────────────────────
 #  Theme
