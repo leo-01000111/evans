@@ -18,9 +18,15 @@ of that work starts.
 
 Sizes: **S** is under a day, **M** a few days, **L** a week or more.
 
+**Done means done.** A phase gets ✅ **DONE** only when it has no `[ ]` left, including
+its "left over" and "found while doing this phase" lists. A phase whose planned core
+is finished but still has open items is marked ◐ **Core done**, with the open items
+counted in its heading. A ticked item whose note says part of it was not built gets
+that part listed as its own `[ ]` item, so nothing open hides behind a tick.
+
 ---
 
-## Phase 0 — Silent wrong answers ✅ **DONE 2026-10-27**
+## Phase 0 — Silent wrong answers ◐ **Core done 2026-10-27; 3 items open**
 
 These gave a wrong value without any error, the failure `PLAN.md` Part 5 ranks worst.
 Tests: `tests/golden/test_confident_liars.py`, last section.
@@ -104,8 +110,14 @@ Left over from this phase:
       MATLAB lines run against known MATLAB answers (see Phase 6, reference
       corpus). **M** *Deferred to Phase 6:* the known answers need a MATLAB
       licence to produce.
+- [ ] **Array writes, what is left** (from the in-place writes item above): growing
+      (`a(end+1) = v`) still reallocates each time; a fill loop that passes the
+      array to a function off the owned list copies once per call; a thread
+      reading the workspace during a loop could see writes land. **M**
+- [ ] **A cs-list mixed with other targets**, `[a, c{:}] = f()` (from the
+      `varargout` item above). **S**
 
-## Phase 1 — Everyday data work at the console (mostly wrapping) ✅ **DONE 2026-10-28**
+## Phase 1 — Everyday data work at the console (mostly wrapping) ◐ **Core done 2026-10-28; 2 items open**
 
 Needed for any "process my logged data" job, whether coursework, a hobby project or test
 data at work. All of it is in numpy and scipy already.
@@ -192,12 +204,19 @@ command has had a help page since 2026-11-03 (`interp`, which only refuses, asid
       `computer`, `ispc`/`isunix`/`ismac`. `who` inside a function lists the
       workspace, not the function's variables.*
 - [x] `clock`, `now`, `datestr`, `datetime` (Phase 4), `pause` that honours Stop.
-      *Also `datenum`, `datevec`, `date`. `datetime` waits for Phase 4.*
+      *Also `datenum`, `datevec`, `date`. `datetime` came with Phase 4
+      (`console/lib_dates.py`).*
 - [x] `dec2bin`, `bin2dec`, `dec2hex`, `factorial`, `nchoosek`, `primes`, `isprime`,
       `gcd`, `lcm`, `erf`, `gamma`, `beta`. *Also `hex2dec`, `dec2base`,
       `base2dec`, `erfc`, `erfinv`, `erfcinv`, `gammaln`, `betaln`, `nthroot`.*
 
-## Phase 2 — Simulink for daily use ✅ **DONE 2026-10-30**
+Left over from this phase (parts of ticked items above that were not built):
+
+- [ ] Several outputs from an anonymous function, so `[a, b] = cellfun(@(x) max(x), c)`
+      works without a function file. **S–M**
+- [ ] A `cftool` curve-fitting GUI over `fit`. **L**
+
+## Phase 2 — Simulink for daily use ◐ **Core done 2026-10-30; 6 items open**
 
 The engine was ahead of the editor and of its links to the console. Tests:
 `tests/golden/test_sim_workspace.py`, `test_sim_library.py` and
@@ -400,15 +419,16 @@ The engine was ahead of the editor and of its links to the console. Tests:
       - **Hand-off to the console:** send the plotted channels to the workspace as a
         `timeseries` or struct, and "open as a figure" to continue editing it with
         console plot commands. **S–M**
-- [ ] **Script pre-run for a model.** Link one or more `.m` files to an `.fmdl`, run
+- [ ] **Script pre-run for a model.** Link one or more `.m` files to an `.evx`, run
       in order when the model opens and/or before each run, so a model's
       parameters (`Kp`, `Ts`, plant matrices) are set up by the script that
       defines them, as a Simulink model's PreLoadFcn/InitFcn do. Wanted:
       - A "Model scripts" dialog on the Model tab: an ordered list of `.m` files
         (relative to the `.fmdl` where possible), each ticked for *on open*,
         *before every run*, or both, with move up/down and a Run now button. **M**
-      - The paths and flags saved in the `.fmdl`; a missing file is a warning that
-        names it, not a failed open. **S**
+      - The paths and flags saved in the `.evx`; a missing file is a warning that
+        names it, not a failed open. Older files without the field open with no
+        scripts. **S**
       - Scripts run in the console workspace, so block parameters that name
         workspace variables see them at compile time (`sim/workspace.py`); output
         and errors go to the console with the script's name and line, and an error
@@ -447,8 +467,12 @@ Found while doing this phase, not fixed in it:
       they were not affected.
 - [x] A fixed-step run does not log its final instant (`_fixed_step` records
       only the edges before `t1`). **S** *Done 2026-11-03.*
+- [ ] **Buses**, cut on purpose and to be reconsidered after Goto/From, which is
+      done; nobody has reconsidered them yet. Decide, then build or drop. **M**
+- [ ] `sim` given a model object returns the Python result, not the
+      `SimulationOutput`-like struct that `sim('name')` returns. **S**
 
-## Phase 3 — Plotting ✅ **DONE 2026-11-03**
+## Phase 3 — Plotting ◐ **Core done 2026-11-03; 2 items open**
 
 Plotting stopped at 2-D lines and bars, and figures are a large share of what people use
 MATLAB for. The plot functions moved to `console/lib_plot.py`, a mixin like the other
@@ -479,14 +503,14 @@ paths the frozen build would otherwise only reach on first use.
 - [x] Images: `imagesc`, `image`, `imshow`, `colormap`, `colorbar`, `caxis`. **M**
       *Also `clim` and the colour-map functions (`jet(n)`, `gray(n)`, …). `parula`
       is MathWorks' own, so it is viridis. True-colour (m×n×3, 0–1) images work now;
-      `imread` is still to do; `imshow` of doubles is black at 0 and white at 1, as in
-      MATLAB, so 0–255 data needs `imshow(I, [])` until there is `uint8`.*
+      `imread` is still to do (listed below); `imshow` of doubles is black at 0 and
+      white at 1, as in MATLAB, and `imshow` of `uint8` spans 0–255 (Phase 4).*
 - [x] A data cursor and a hover readout in `ui/console/figure_view.py`. **M**
       *Every 2-D curve, marker, bar, contour and reference line reads out on hover
       (the analysis tabs' `HoverReadout`); an image reads out its pixel. A click
       pins a data tip, a click on the tip removes it, and the plot menu has
-      Remove data tips. 3-D axes show matplotlib's coordinate line instead; data
-      tips on them are not done.*
+      Remove data tips. 3-D axes show matplotlib's coordinate line; data tips on
+      them came 2026-11-09 (below).*
 - [x] Export figures to PDF and EPS alongside PNG/SVG, and `exportgraphics`. **S**
       *PDF and EPS are drawn by matplotlib on a white page, for papers; PNG, JPEG,
       TIFF and SVG are the figure as on screen, a picture at `'Resolution'` or
@@ -503,6 +527,7 @@ Left over from this phase:
 
 - [ ] Handle graphics: `h = plot(...)` and `set(h, …)`/`h.Color = …`, `cb.Label.String`.
       Every plot function returns nothing; properties go in as name-value pairs. **L**
+- [ ] `imread` (from the Images item above), into `uint8` arrays. **S**
 - [x] `figure(n)` going back to figure `n`, and `gcf` following the selected tab. **S–M**
       *Done 2026-11-09:* figures carry a number (`FigureSpec.number`); `figure(n)`
       selects it or opens it with that number, and the next plot replaces its
