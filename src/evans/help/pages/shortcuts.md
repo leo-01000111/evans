@@ -43,6 +43,7 @@ Every shortcut in the menus, and the few keys that belong to one widget. Press C
 
 ## Model canvas
 
+- Double-click: Add a block by name (or just start typing)
 - Delete: Delete the selected blocks and lines
 - Esc: Leave the subsystem, or cancel what is in hand
 - Ctrl+wheel: Zoom the diagram

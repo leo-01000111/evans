@@ -25,6 +25,7 @@ from .search import Entry
 #: Keys no action owns: (where, key, what it does). Shown after the actions.
 EXTRA_KEYS: tuple[tuple[str, str, str], ...] = (
     ("Anywhere", "Ctrl+`", "Go to the command window"),
+    ("Model canvas", "Double-click", "Add a block by name (or just start typing)"),
     ("Model canvas", "Delete", "Delete the selected blocks and lines"),
     ("Model canvas", "Esc", "Leave the subsystem, or cancel what is in hand"),
     ("Model canvas", "Ctrl+wheel", "Zoom the diagram"),

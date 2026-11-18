@@ -1093,7 +1093,7 @@ Each of these is a project of its own. Decide whether each is in scope before st
 - [ ] **An extension mechanism:** user toolboxes on the path, and a place to share
       them. **L**
 
-## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 6 of 10 packages done**
+## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 7 of 10 packages done**
 
 Planned 2026-11-16 from a UI audit (research into comparable tools, a code inventory
 and offscreen renders of every workspace) and two rounds of decisions with Leon. It
@@ -1892,7 +1892,7 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
   shortcut), the field in the title strip with the integrated title bar, Ctrl+K and
   Ctrl+Shift+P from each workspace including the script editor, and the sheet.
 
-- [ ] **R6 — Canvas quick insert; scope dock option.** *sonnet.* **M** Needs R2 (for
+- [x] **R6 — Canvas quick insert; scope dock option.** *sonnet.* **M** Needs R2 (for
   the side panel) and R4 (for the preference); may run beside R5 or R7.
   - **Quick insert popup** (`ui/sim/quick_insert.py`): a small frameless child of
     the canvas viewport, 220 px wide, a `QLineEdit` over a list of at most eight
@@ -1939,6 +1939,98 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
     preference, redraw after a run in both places, closed on model replace) and
     `tests/golden/test_canvas.py` (the three ways in; Alt keeps the old cancel; one
     undo step removes block and wire together).
+
+
+  *Done 2026-11-18:* `ui/sim/quick_insert.py` (`QuickInsert`, `rank`, `catalog`),
+  the three ways in on `SimCanvas` (`open_quick_insert`, `mouseDoubleClickEvent`,
+  `_starts_quick_insert`, `_add_connected`), `ScopeView` split out of `ScopeWindow`
+  in `ui/sim/scope_window.py`, `SimTab.show_scope` / `dock_scope` / `undock_scope` /
+  `docked_scopes`, and `SidePanel.add_tab(before=)`, `remove_tab`, `set_title`.
+  Tests: 14 new in `tests/golden/test_canvas.py`, 13 in `test_scope_windows.py`,
+  1 in `test_side_panel.py`. Decisions where the spec met the code:
+  - **Alt keeps the armed wire, not a cancel.** The spec says today's release on
+    nothing "cancels" the wire; it does not, it leaves it armed for the second click
+    of click-click wiring (`test_releasing_on_empty_space_keeps_the_wire_armed`).
+    Alt on the release gives exactly that, and a plain release after a drag of at
+    least 12 px opens the popup. A release on the start port, or within 12 px of it,
+    is a click and stays armed.
+  - **There was no standing wiring hint.** Only the status line while wiring. The
+    canvas now has `HINT` ("Double-click or type to add a block. Drag from a port to
+    wire it.") as the viewport tooltip, and the wiring status line adds "drop it on
+    empty canvas to add a block (Alt: keep it)".
+  - **Popup:** 220 px plate over a field and at most eight rows, in the search
+    popup's look (2 px frame, hard 4 px shadow, plate-coloured selection). Empty query
+    lists Step, Gain, Sum, Integrator, TransferFcn, Scope, ... first; otherwise
+    `search.score` on the type name, then on "category name" at a 20 point penalty.
+    A wire dropped from an output lists types whose default block has an input, and
+    the reverse. Row click, Enter insert; Esc and a press anywhere else cancel (the
+    wire too).
+  - **Placement is local and snapped:** a plain insert goes at the point (grid-snapped,
+    as `add_block` always does); a dropped wire puts the new block's first matching
+    port within half a grid step of the drop point (port offset read from a probe
+    `BlockItem`). Block and `Connect` are one macro, "Add connected block". A wire
+    from an input that already has a wire is refused with a status message.
+  - **Typing** opens the popup for one printable character without Ctrl/Alt/Meta
+    (Shift allowed, space not) when no wire is armed and no input-method item has
+    focus. The new branch sits last in `keyPressEvent`, after Esc, Delete/Backspace,
+    Copy, Paste and Select all, so none of them changed.
+  - **Scope:** `ScopeView` (plot plus a Dock/Undock button) is what moves; a
+    `ScopeWindow` is a window around one. Docking adds a tab `scope:<path>` titled
+    "Scope: <title>" before Cedric, opens the panel and selects it. A double-click
+    raises a scope where it already is (window or tab) and otherwise obeys
+    `model/scopeOpensIn`; `open_scope_window` on a docked scope undocks it.
+    `close_scope_windows` also removes docked tabs; a run redraws both.
+  Check by eye on a real screen: the popup's look in both themes, its position near
+  the view's edges, a dropped wire (rubber wire visible behind the popup), typing
+  with the mouse outside the canvas (opens at the centre), and docking a scope with
+  curves on screen, then dragging the panel wider.
+
+- [ ] **R6b — Fixes from Leon's review of R2–R5 (2026-11-18).** *sonnet.* **M**
+  Leon ran R5's build. Search, the menus, Plant, the lamp and margins, the side
+  panels and Cedric were approved. These five things were not:
+  - **The search field is invisible.** The title-strip button (`TitleBar.search_button`)
+    is too small, has no accent and sits off to the side. Move it out of the title
+    strip and into each workspace's own top strip, where the palette pops up anyway,
+    significantly bigger and with the accent (signal yellow, the tab bars' selection
+    colour; theme tokens only):
+    - *Analyse:* in the context bar, between G(s) and the *Plant | Edit loop* buttons.
+    - *Model:* centred at the top of the canvas, semi-transparent like the arrange
+      panel (`ui/sim/arrange.py`), floating over the canvas.
+    - *Console:* in the Console's tab row, between the *Console · Script · Live* tabs
+      and the *Ask Cedric* button.
+    Ctrl+K and Ctrl+Shift+P stay. Remove the title-strip button and its
+    `region_at` client-area case (update `tests/golden/test_title_bar.py`). The
+    window minimum size must not grow.
+  - **The Design tab cannot be found while the panel is closed.** Add a **Design**
+    button to the context bar beside *Edit loop*, opening the Analyse side panel on
+    Design (and closing it when it is already open there, as *Edit loop* does for
+    Loop).
+  - **The Design tab's layout wastes the panel.** In Gain and Compensator the root
+    locus is a fixed 220 px strip, then the controls and the text, then empty space
+    to the bottom (screenshot in the session). Make the plot take the free height:
+    plot stretches (minimum 220 px), controls and the result text keep their natural
+    height below it, nothing empty at the bottom; with too little height the page
+    scrolls as now. The **PID** page gets a plot too, with the same stretching: the
+    closed-loop step response of the tuned loop by default, with a small Step ·
+    Bode · Nichols switch above it (the panes show the rest). It follows the sliders
+    with the same 50 ms throttle as the rest of the tab.
+  - **The Loop tab has the same problem** (diagram capped at 150–260 px, the block
+    editor, then nothing). Let the diagram take the spare height (keep 150 px as its
+    minimum; drop the 260 px cap) with the editor at its natural height below it.
+  - **On Model, a closed side panel is lost.** Two fixes:
+    - Selecting exactly one block on the canvas opens the Model side panel on
+      Properties if it is closed (not when several are selected, and not while
+      dragging a rubber band).
+    - While the Model panel is closed, show a narrow vertical tab at the canvas's
+      right edge, under the arrange panel, reading "‹ PROPERTIES" with one letter
+      under another, which opens the panel on Properties. Flat, design-system frame,
+      accessible name "Show properties".
+  Tests: the search field's place in each workspace and that clicking it opens the
+  palette; the Design button; the Design and Loop pages have no empty space below
+  their content at the default panel height (the plot or diagram fills it); the PID
+  plot follows a slider change; single selection reopens Properties, multiple
+  selection does not; the vertical tab shows only while the panel is closed. Leon
+  checks the result by eye.
 
 - [ ] **R7 — Projects as folders.** *opus for the core and the decisions, sonnet for
   the rest.* **L** Needs R4.

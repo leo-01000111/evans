@@ -262,3 +262,158 @@ def test_pop_out_has_no_xy_view_choice(tab):
     _run(tab)
     window = tab.open_scope_window("out")
     assert window.scope._view.isHidden()
+
+
+# ──────────────────────────────────────────────────────────────
+#  Dock or window (R6)
+# ──────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def prefers_panel():
+    persist.set_scope_opens_in("panel")
+    yield
+    persist.settings().remove(persist.SCOPE_OPENS_IN_KEY)
+
+
+def test_a_scope_window_has_a_dock_button(tab):
+    window = tab.open_scope_window("out")
+    button = window.view.dock_button
+    assert button.text() == "Dock"
+    assert button.accessibleName() == "Dock scope"
+
+
+def test_dock_moves_the_same_widget_into_the_side_panel(tab):
+    _run(tab)
+    window = tab.open_scope_window("out")
+    scope = window.scope
+    window.scope._compare.setChecked(True)
+    untick = next(iter(scope._checks))
+    scope._checks[untick].setChecked(False)
+
+    view = tab.dock_scope("out")
+    assert tab.scope_windows() == {}
+    assert not window.isVisible()
+    assert tab.docked_scopes() == {"out": view}
+    assert view.scope is scope                       # one widget, moved
+    assert tab.side_panel.keys == ("properties", "scope:out")
+    assert tab.side_panel.title("scope:out") == "Scope: Output"
+    assert tab.side_panel.current == "scope:out"
+    assert tab.side_panel.is_open
+    assert view.dock_button.text() == "Undock"
+    assert view.dock_button.accessibleName() == "Undock scope"
+    assert scope._compare.isChecked()
+    assert not scope._checks[untick].isChecked()
+    assert view.parentWidget() is tab.side_panel.holder("scope:out")
+
+
+def test_a_docked_scope_goes_before_cedric(tab):
+    tab.side_panel.add_tab("cedric", "Cedric")
+    tab.dock_scope("out")
+    tab.dock_scope("effort")
+    assert tab.side_panel.keys == ("properties", "scope:out", "scope:effort",
+                                   "cedric")
+
+
+def test_undock_moves_it_back_to_a_window(tab):
+    _run(tab)
+    view = tab.dock_scope("out")
+    scope = view.scope
+    scope._compare.setChecked(True)
+    window = tab.undock_scope("out")
+    assert tab.docked_scopes() == {}
+    assert tab.side_panel.keys == ("properties",)
+    assert tab.scope_windows() == {"out": window}
+    assert window.isVisible()
+    assert window.scope is scope and scope._compare.isChecked()
+    assert window.view.dock_button.text() == "Dock"
+    assert "Output" in window.windowTitle()
+
+
+def test_the_buttons_do_it(tab):
+    _run(tab)
+    tab.open_scope_window("out").view.dock_button.click()
+    assert list(tab.docked_scopes()) == ["out"]
+    assert tab.scope_windows() == {}
+    tab.docked_scopes()["out"].dock_button.click()
+    assert tab.docked_scopes() == {}
+    assert list(tab.scope_windows()) == ["out"]
+
+
+def test_default_preference_is_a_window(tab):
+    persist.settings().remove(persist.SCOPE_OPENS_IN_KEY)
+    tab._canvas._edit_params("out")
+    assert list(tab.scope_windows()) == ["out"]
+    assert tab.docked_scopes() == {}
+
+
+def test_preference_panel_opens_a_double_click_in_the_side_panel(
+        tab, prefers_panel):
+    _run(tab)
+    tab._canvas._edit_params("out")                 # what a double-click calls
+    assert tab.scope_windows() == {}
+    view = tab.docked_scopes()["out"]
+    assert view.message() == ""
+    assert tab.side_panel.current == "scope:out"
+    tab.side_panel.set_current("properties")
+    tab._canvas._edit_params("out")                 # raises the same tab
+    assert tab.docked_scopes()["out"] is view
+    assert tab.side_panel.current == "scope:out"
+    assert tab.side_panel.keys.count("scope:out") == 1
+
+
+def test_a_scope_already_in_a_window_stays_there_under_the_panel_preference(
+        tab, prefers_panel):
+    persist.set_scope_opens_in("window")
+    window = tab.open_scope_window("out")
+    persist.set_scope_opens_in("panel")
+    tab._canvas._edit_params("out")
+    assert tab.scope_windows() == {"out": window}
+    assert tab.docked_scopes() == {}
+
+
+def test_opening_a_docked_scope_as_a_window_undocks_it(tab):
+    tab.dock_scope("out")
+    window = tab.open_scope_window("out")
+    assert tab.docked_scopes() == {}
+    assert tab.scope_windows() == {"out": window}
+
+
+def test_a_rerun_redraws_docked_and_windowed_scopes(tab):
+    first = _run(tab)
+    docked = tab.dock_scope("out")
+    window = tab.open_scope_window("effort")
+    assert docked.scope.result is first
+    assert window.scope.result is first
+    second = _run(tab)
+    assert docked.scope.result is second
+    assert window.scope.result is second
+    assert docked.scope.history[0] is first
+
+
+def test_a_docked_scope_opened_before_a_run_says_so_then_draws(tab):
+    view = tab.dock_scope("out")
+    assert view.message() == scope_window.NOT_RUN
+    _run(tab)
+    assert view.message() == ""
+
+
+def test_loading_another_model_closes_docked_scopes_too(tab, tmp_path):
+    _run(tab)
+    docked = tab.dock_scope("out")
+    window = tab.open_scope_window("effort")
+    path = tmp_path / "other.evx"
+    two_scopes().save(path)
+    tab.load_model(path)
+    assert tab.docked_scopes() == {} and tab.scope_windows() == {}
+    assert tab.side_panel.keys == ("properties",)
+    assert not window.isVisible()
+    assert docked.parent() is None
+
+
+def test_a_tab_follows_the_blocks_title(tab):
+    _run(tab)
+    tab._canvas.model.block("out").set_param("title", "Renamed")
+    view = tab.dock_scope("out")
+    _run(tab)
+    assert tab.side_panel.title("scope:out") == "Scope: Renamed"
+    assert view.title == "Renamed"

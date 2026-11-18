@@ -130,3 +130,26 @@ def test_a_dragged_width_is_kept(app):
     assert panel.preferred_width == panel.width()
     assert abs(panel.preferred_width - 360) <= 2
     page.close()
+
+
+def test_a_tab_can_go_before_another_and_be_removed_and_renamed(app):
+    """R6 docks a scope as a tab in front of Cedric, and takes it out again."""
+    panel = SidePanel()
+    panel.add_tab("one", "One")
+    panel.add_tab("cedric", "Cedric")
+    label = QLabel("scope")
+    panel.add_tab("scope:a", "Scope: a", label, before="cedric")
+    panel.add_tab("scope:b", "Scope: b", before="not a tab")     # last
+    assert panel.keys == ("one", "scope:a", "cedric", "scope:b")
+    assert panel._bar.tabText(1) == "Scope: a"
+    panel.set_current("scope:a")
+    panel.set_title("scope:a", "Scope: renamed")
+    assert panel.title("scope:a") == "Scope: renamed"
+
+    label.setParent(None)                          # keep the widget alive
+    panel.remove_tab("scope:a")
+    assert panel.keys == ("one", "cedric", "scope:b")
+    assert panel.current in panel.keys
+    assert panel._stack.count() == 3
+    assert label.text() == "scope"
+    panel.remove_tab("scope:a")                    # already gone: no error

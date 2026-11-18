@@ -481,10 +481,10 @@ def _press(view, pos):
         Qt.NoModifier))
 
 
-def _release(view, pos):
+def _release(view, pos, modifiers=Qt.NoModifier):
     view.mouseReleaseEvent(QMouseEvent(
         QEvent.MouseButtonRelease, QPointF(pos), Qt.LeftButton, Qt.LeftButton,
-        Qt.NoModifier))
+        modifiers))
 
 
 def _port(view, block_id, name, is_input):
@@ -533,10 +533,12 @@ def test_a_wire_can_be_drawn_backwards(wiring):
     assert str(conn.dst).startswith("Gain1")
 
 
-def test_releasing_on_empty_space_keeps_the_wire_armed(wiring):
+def test_releasing_on_empty_space_with_alt_keeps_the_wire_armed(wiring):
+    """Alt on the release is the old behaviour: no popup, the wire waits."""
     _press(wiring, _port(wiring, "Step1", "out", False))
-    _release(wiring, EMPTY_SPOT)
+    _release(wiring, EMPTY_SPOT, Qt.AltModifier)
     assert wiring._pending_port is not None
+    assert not wiring.quick_insert.isVisible()
 
     _press(wiring, _port(wiring, "Gain1", "in", True))
     _release(wiring, _port(wiring, "Gain1", "in", True))
@@ -680,3 +682,228 @@ def test_right_click_delete_removes_the_wire_under_the_cursor(app):
     app.processEvents()
     assert not model.connections
     view.deleteLater()
+
+
+# ──────────────────────────────────────────────────────────────
+#  Quick insert (R6): three ways to add a block without the palette
+# ──────────────────────────────────────────────────────────────
+
+from PySide6.QtTest import QTest  # noqa: E402
+
+from evans.ui.sim import quick_insert  # noqa: E402
+from evans.ui.sim.items import GRID  # noqa: E402
+
+
+@pytest.fixture
+def blank(app):
+    """An empty, shown canvas."""
+    view = SimCanvas(SimModel("blank"))
+    view.resize(900, 600)
+    view.show()
+    for _ in range(10):
+        app.processEvents()
+    yield view
+    view.hide()
+    view.deleteLater()
+
+
+def _types(view):
+    return sorted(b.type_name for b in view.model)
+
+
+def test_quick_insert_ranks_with_the_palettes_matcher():
+    assert quick_insert.rank("gain")[0] == "Gain"
+    assert quick_insert.rank("sc")[0] == "Scope"
+    assert len(quick_insert.rank("")) <= quick_insert.ROWS
+    assert len(quick_insert.rank("a")) <= quick_insert.ROWS
+    assert quick_insert.rank("zzzzzzzz") == []
+
+
+def test_quick_insert_lists_by_port_direction():
+    needs_input = quick_insert.rank("", "input", limit=500)
+    needs_output = quick_insert.rank("", "output", limit=500)
+    assert "Scope" in needs_input and "Scope" not in needs_output
+    assert "Step" in needs_output and "Step" not in needs_input
+    assert "Gain" in needs_input and "Gain" in needs_output
+
+
+def test_double_click_on_empty_canvas_opens_the_popup_and_inserts(blank):
+    vp = blank.viewport()
+    where = QPoint(300, 200)
+    QTest.mouseDClick(vp, Qt.LeftButton, Qt.NoModifier, where)
+    popup = blank.quick_insert
+    assert popup.isVisible()
+    assert popup.width() <= 220 + 8             # 220 px plate and its shadow
+    QTest.keyClicks(popup.field, "gain")
+    assert popup.results[0] == "Gain"
+    QTest.keyClick(popup.field, Qt.Key_Return)
+    assert not popup.isVisible()
+    assert _types(blank) == ["Gain"]
+    block = next(iter(blank.model))
+    place = blank.model.placement(block.block_id)
+    scene = blank.mapToScene(where)
+    assert abs(place.x - scene.x()) <= GRID and abs(place.y - scene.y()) <= GRID
+
+
+def test_escape_closes_the_popup_and_adds_nothing(blank):
+    QTest.mouseDClick(blank.viewport(), Qt.LeftButton, Qt.NoModifier,
+                      QPoint(300, 200))
+    QTest.keyClick(blank.quick_insert.field, Qt.Key_Escape)
+    assert not blank.quick_insert.isVisible()
+    assert len(blank.model) == 0
+
+
+def test_a_click_elsewhere_closes_the_popup(blank, app):
+    QTest.mouseDClick(blank.viewport(), Qt.LeftButton, Qt.NoModifier,
+                      QPoint(300, 200))
+    assert blank.quick_insert.isVisible()
+    QTest.mouseClick(blank.viewport(), Qt.LeftButton, Qt.NoModifier,
+                     QPoint(700, 500))
+    assert not blank.quick_insert.isVisible()
+
+
+def test_double_click_on_a_block_does_not_open_the_popup(wiring, monkeypatch):
+    from evans.ui.sim import params
+
+    opened = []
+
+    class FakeDialog:
+        changes = {}
+
+        def __init__(self, block, parent=None):
+            opened.append(block.block_id)
+
+        def exec(self):
+            return False
+
+    monkeypatch.setattr(params, "ParamDialog", FakeDialog)
+    on_block = wiring.mapFromScene(QPointF(150, 0))
+    QTest.mouseDClick(wiring.viewport(), Qt.LeftButton, Qt.NoModifier,
+                      on_block)
+    assert not wiring.quick_insert.isVisible()
+    assert opened == ["Gain1"]
+
+
+def test_typing_opens_the_popup_with_the_letter_already_typed(blank):
+    QTest.keyClick(blank, Qt.Key_S, Qt.NoModifier)
+    popup = blank.quick_insert
+    assert popup.isVisible()
+    assert popup.field.text() == "s"
+    QTest.keyClicks(popup.field, "tep")
+    QTest.keyClick(popup.field, Qt.Key_Return)
+    assert _types(blank) == ["Step"]
+
+
+def test_shift_letters_type_too_but_ctrl_and_alt_letters_do_not(blank):
+    QTest.keyClick(blank, Qt.Key_G, Qt.ControlModifier)
+    QTest.keyClick(blank, Qt.Key_G, Qt.AltModifier)
+    QTest.keyClick(blank, Qt.Key_Space)
+    assert not blank.quick_insert.isVisible()
+    QTest.keyClick(blank, Qt.Key_G, Qt.ShiftModifier)
+    assert blank.quick_insert.isVisible()
+    assert blank.quick_insert.field.text().lower() == "g"
+
+
+def test_letters_do_not_swallow_the_existing_keys(blank, app):
+    blank.add_block("Gain", QPointF(0, 0))
+    blank.add_block("Step", QPointF(200, 0))
+    QTest.keyClick(blank, Qt.Key_A, Qt.ControlModifier)
+    assert not blank.quick_insert.isVisible()
+    assert len(blank.scene().selectedItems()) == 2
+    QTest.keyClick(blank, Qt.Key_C, Qt.ControlModifier)
+    QTest.keyClick(blank, Qt.Key_V, Qt.ControlModifier)
+    assert not blank.quick_insert.isVisible()
+    assert len(blank.model) == 4                # the paste added two
+    QTest.keyClick(blank, Qt.Key_Backspace)
+    assert not blank.quick_insert.isVisible()
+    assert len(blank.model) == 2                # the pasted pair was selected
+    blank.select_all()
+    QTest.keyClick(blank, Qt.Key_Delete)
+    assert not blank.quick_insert.isVisible()
+    assert len(blank.model) == 0
+
+
+def test_typing_while_a_wire_is_armed_does_not_open_the_popup(wiring):
+    _press(wiring, _port(wiring, "Step1", "out", False))
+    _release(wiring, _port(wiring, "Step1", "out", False))
+    assert wiring._pending_port is not None
+    QTest.keyClick(wiring, Qt.Key_G)
+    assert not wiring.quick_insert.isVisible()
+    QTest.keyClick(wiring, Qt.Key_Escape)       # Esc still cancels the wire
+    assert wiring._pending_port is None
+
+
+def test_a_wire_dropped_on_empty_canvas_offers_blocks_with_an_input(wiring):
+    _press(wiring, _port(wiring, "Step1", "out", False))
+    _release(wiring, EMPTY_SPOT)
+    popup = wiring.quick_insert
+    assert popup.isVisible()
+    assert wiring._pending_port is not None     # the rubber wire stays
+    assert _rubber_bands(wiring) == 1
+    popup.field.setText("scope")
+    assert popup.results[0] == "Scope"
+    popup.field.setText("step")
+    assert "Step" not in popup.results          # no input port: not offered
+
+
+def test_enter_adds_the_block_and_the_wire_as_one_undo_step(wiring):
+    start = _port(wiring, "Step1", "out", False)
+    _press(wiring, start)
+    _release(wiring, EMPTY_SPOT)
+    popup = wiring.quick_insert
+    QTest.keyClicks(popup.field, "scope")
+    QTest.keyClick(popup.field, Qt.Key_Return)
+
+    assert _types(wiring) == ["Gain", "Scope", "Step"]
+    assert [(str(c.src), str(c.dst)) for c in wiring.model.connections] == \
+        [("Step1.out", "Scope1.in1")]
+    assert wiring._pending_port is None
+    assert _rubber_bands(wiring) == 0
+    # The new block's input port sits on the drop point (to the grid).
+    port = wiring._blocks["Scope1"].ports[("in1", True)].scene_pos()
+    drop = wiring.mapToScene(EMPTY_SPOT)
+    assert abs(port.x() - drop.x()) <= GRID / 2 + 1e-6
+    assert abs(port.y() - drop.y()) <= GRID / 2 + 1e-6
+
+    wiring.undo_stack.undo()                    # one step removes both
+    assert _types(wiring) == ["Gain", "Step"]
+    assert wiring.model.connections == []
+    wiring.undo_stack.redo()
+    assert _types(wiring) == ["Gain", "Scope", "Step"]
+    assert len(wiring.model.connections) == 1
+
+
+def test_a_wire_started_at_an_input_gets_a_block_with_an_output(wiring):
+    _press(wiring, _port(wiring, "Gain1", "in", True))
+    _release(wiring, EMPTY_SPOT)
+    popup = wiring.quick_insert
+    popup.field.setText("scope")
+    assert "Scope" not in popup.results         # a Scope has no output
+    popup.field.setText("const")
+    assert popup.results[0] == "Constant"
+    QTest.keyClick(popup.field, Qt.Key_Return)
+    assert [(str(c.src), str(c.dst)) for c in wiring.model.connections] == \
+        [("Constant1.out", "Gain1.in")]
+    wiring.undo_stack.undo()
+    assert _types(wiring) == ["Gain", "Step"]
+
+
+def test_escape_on_the_wire_popup_cancels_the_wire(wiring):
+    _press(wiring, _port(wiring, "Step1", "out", False))
+    _release(wiring, EMPTY_SPOT)
+    QTest.keyClick(wiring.quick_insert.field, Qt.Key_Escape)
+    assert wiring._pending_port is None
+    assert _rubber_bands(wiring) == 0
+    assert _types(wiring) == ["Gain", "Step"]
+    assert wiring.model.connections == []
+
+
+def test_the_wiring_hint_mentions_adding_a_block(wiring):
+    from evans.ui.sim.canvas import HINT
+
+    assert "Double-click or type to add a block" in HINT
+    assert wiring.viewport().toolTip() == HINT
+    messages = []
+    wiring.status.connect(messages.append)
+    _press(wiring, _port(wiring, "Step1", "out", False))
+    assert "empty canvas" in messages[-1]

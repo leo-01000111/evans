@@ -66,7 +66,7 @@ from .canvas import SimCanvas
 from .inspector import BlockInspector
 from .palette import STRIP_WIDTH, PaletteDock
 from .scope import ScopeWidget
-from .scope_window import ScopeWindow
+from .scope_window import ScopeView, ScopeWindow
 
 #: The solver combo, group by group with a separator between: Simulink's
 #: variable-step names, the fixed-step ones, then the scipy names they map to.
@@ -219,6 +219,8 @@ class SimTab(QWidget, GuardedPanel):
         splitter.addWidget(centre)
         #: Each open Scope block window, by the block's path.
         self._scope_windows: dict[str, ScopeWindow] = {}
+        #: Each docked Scope block, in a tab of the side panel, by path.
+        self._scope_docked: dict[str, ScopeView] = {}
 
         # The inspector, so parameters can be edited with the diagram still
         # visible. They used to be a modal dialog on double-click: you could
@@ -260,7 +262,7 @@ class SimTab(QWidget, GuardedPanel):
         self._inspector.tune_requested.connect(
             lambda block_id: self._canvas.tune_pid(block_id))
         self._palette_dock.toggled.connect(self._on_palette_toggled)
-        self._canvas.scope_requested.connect(self.open_scope_window)
+        self._canvas.scope_requested.connect(self.show_scope)
         self._canvas.model_replaced.connect(self.close_scope_windows)
         self._show_global_scope(persist.global_scope_open())
         self._restoring_palette = False
@@ -577,24 +579,108 @@ class SimTab(QWidget, GuardedPanel):
         """The open Scope block windows, by block path."""
         return dict(self._scope_windows)
 
+    def docked_scopes(self) -> dict[str, ScopeView]:
+        """The Scope blocks docked in the side panel, by block path."""
+        return dict(self._scope_docked)
+
+    def show_scope(self, key: str) -> None:
+        """
+        What a double-click on a Scope block does: raise it where it already
+        is, else open it where the preference ``model/scopeOpensIn`` says
+        (its own window by default, or a tab of the Model side panel).
+        """
+        if key in self._scope_docked:
+            self._show_docked(key)
+        elif key in self._scope_windows or persist.scope_opens_in() != "panel":
+            self.open_scope_window(key)
+        else:
+            self.dock_scope(key)
+
     def open_scope_window(self, key: str) -> ScopeWindow:
         """
-        Open (or raise) the window of the Scope block at path ``key``:
-        what a double-click on the block does.
+        Open (or raise) the window of the Scope block at path ``key``. One
+        that is docked comes out of the side panel into its window.
         """
+        if key in self._scope_docked:
+            return self.undock_scope(key)
         window = self._scope_windows.get(key)
         if window is None:
             model_name = self._canvas.root_model().name
             window = ScopeWindow(key, self._scope_title(key), model_name,
                                  self)
-            window.closed.connect(self._forget_scope_window)
-            self._scope_windows[key] = window
+            self._register_window(window)
             window.show_result(self._result, model_name,
                                history=self._scope.history)
         window.show()
         window.raise_()
         window.activateWindow()
         return window
+
+    def _register_window(self, window: ScopeWindow) -> None:
+        window.closed.connect(self._forget_scope_window)
+        window.view.dock_toggled.connect(self.dock_scope)
+        self._scope_windows[window.key] = window
+
+    def dock_scope(self, key: str) -> ScopeView:
+        """
+        Move the Scope block ``key`` into the side panel as a tab. It is the
+        same widget the window held, so curves and ticks survive.
+        """
+        if key in self._scope_docked:
+            self._show_docked(key)
+            return self._scope_docked[key]
+        window = self._scope_windows.pop(key, None)
+        if window is None:
+            model_name = self._canvas.root_model().name
+            view = ScopeView(key, self._scope_title(key), model_name)
+            view.show_result(self._result, model_name,
+                             history=self._scope.history)
+        else:
+            view = window.release_view()
+            view.dock_toggled.disconnect(self.dock_scope)
+        view.dock_toggled.connect(self.undock_scope)
+        view.retitled.connect(lambda k=key: self._retitle_docked(k))
+        view.set_docked(True)
+        self._scope_docked[key] = view
+        self.side_panel.add_tab(self._dock_key(key), self._dock_title(view),
+                                view, before="cedric")
+        self._show_docked(key)
+        return view
+
+    def undock_scope(self, key: str) -> ScopeWindow:
+        """Move a docked Scope block back into a window of its own."""
+        view = self._scope_docked.pop(key, None)
+        if view is None:
+            return self.open_scope_window(key)
+        view.dock_toggled.disconnect(self.undock_scope)
+        view.retitled.disconnect()
+        view.setParent(None)                    # out of the tab, alive
+        self.side_panel.remove_tab(self._dock_key(key))
+        window = ScopeWindow(key, view.title, view.model_name, self,
+                             view=view)
+        self._register_window(window)
+        window.show()
+        window.raise_()
+        window.activateWindow()
+        return window
+
+    @staticmethod
+    def _dock_key(key: str) -> str:
+        return f"scope:{key}"
+
+    @staticmethod
+    def _dock_title(view: ScopeView) -> str:
+        return f"Scope: {view.title}"
+
+    def _show_docked(self, key: str) -> None:
+        self.side_panel.set_open(True)
+        self.side_panel.set_current(self._dock_key(key))
+
+    def _retitle_docked(self, key: str) -> None:
+        view = self._scope_docked.get(key)
+        if view is not None:
+            self.side_panel.set_title(self._dock_key(key),
+                                      self._dock_title(view))
 
     def _scope_title(self, key: str) -> str:
         """A Scope block's title, read off the level on screen if it is there."""
@@ -611,10 +697,15 @@ class SimTab(QWidget, GuardedPanel):
             del self._scope_windows[key]
 
     def close_scope_windows(self) -> None:
-        """Close every Scope block window: another model is on the canvas."""
+        """Close every Scope block window and docked tab: another model."""
         windows, self._scope_windows = self._scope_windows, {}
         for window in windows.values():
             window.close()
+        docked, self._scope_docked = self._scope_docked, {}
+        for key, view in docked.items():
+            view.setParent(None)
+            self.side_panel.remove_tab(self._dock_key(key))
+            view.deleteLater()
 
     # ── the workspace ───────────────────────────────────────────
 
@@ -758,6 +849,8 @@ class SimTab(QWidget, GuardedPanel):
         model_name = self._canvas.root_model().name
         for window in self._scope_windows.values():
             window.show_result(result, model_name)
+        for view in self._scope_docked.values():
+            view.show_result(result, model_name)
         self.simulated.emit(result)
         note = f"Done — {len(result.t)} samples, {result.solver}"
         if result.warnings:

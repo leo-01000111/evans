@@ -54,6 +54,7 @@ class SidePanel(QWidget):
         self.setMinimumWidth(self.MINIMUM_WIDTH)
         self._keys: list[str] = []
         self._holders: dict[str, QWidget] = {}
+        self._pages: dict[str, QScrollArea] = {}
         #: The width to come back at; the user's drag is kept on close.
         self._width = self.DEFAULT_WIDTH
         self._width_pending = True
@@ -97,11 +98,13 @@ class SidePanel(QWidget):
     # ── tabs ────────────────────────────────────────────────────
 
     def add_tab(self, key: str, title: str,
-                widget: QWidget | None = None) -> QWidget:
+                widget: QWidget | None = None,
+                before: str | None = None) -> QWidget:
         """
         A page called ``title``, holding ``widget`` if given. Returns the
         page's container (also ``holder(key)``), whose layout a widget can
-        be moved into later.
+        be moved into later. ``before`` is the key of the tab it goes in
+        front of (so Cedric stays last); absent or unknown, it goes last.
         """
         if key in self._holders:
             raise ValueError(f"the side panel already has a {key!r} tab")
@@ -116,12 +119,36 @@ class SidePanel(QWidget):
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidgetResizable(True)
         scroll.setWidget(holder)
-        self._keys.append(key)
+        index = self._keys.index(before) if before in self._keys             else len(self._keys)
+        self._keys.insert(index, key)
         self._holders[key] = holder
-        self._stack.addWidget(scroll)
-        index = self._bar.addTab(title)
+        self._pages[key] = scroll
+        self._stack.insertWidget(index, scroll)
+        index = self._bar.insertTab(index, title)
         self._bar.setTabToolTip(index, title)
         return holder
+
+    def remove_tab(self, key: str) -> None:
+        """
+        Take tab ``key`` away. A widget in it is deleted with it: move it
+        out first (``setParent(None)``) to keep it.
+        """
+        if key not in self._holders:
+            return
+        index = self._keys.index(key)
+        self._keys.pop(index)
+        del self._holders[key]
+        page = self._pages.pop(key)
+        self._stack.removeWidget(page)
+        self._bar.removeTab(index)
+        self._stack.setCurrentIndex(max(self._bar.currentIndex(), 0))
+        page.deleteLater()
+
+    def set_title(self, key: str, title: str) -> None:
+        if key in self._holders:
+            index = self._keys.index(key)
+            self._bar.setTabText(index, title)
+            self._bar.setTabToolTip(index, title)
 
     def holder(self, key: str) -> QWidget:
         """The container of tab ``key``; ``holder.layout().addWidget(w)``."""

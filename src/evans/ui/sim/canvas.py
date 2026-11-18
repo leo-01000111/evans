@@ -14,11 +14,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QPen, QUndoStack
-from PySide6.QtWidgets import QApplication, QGraphicsScene, QGraphicsView, QMenu
+from PySide6.QtWidgets import (
+    QApplication,
+    QGraphicsItem,
+    QGraphicsScene,
+    QGraphicsView,
+    QMenu,
+)
 
-from ...sim.block import block_types
+from ...sim.block import block_types, create
 from ...sim.compile import CompileError, compile_model
 from ...sim.linearize import LinearizationError, plant_seen_by
 from ...sim.model import ModelError, PortRef, SimModel
@@ -35,6 +41,11 @@ from .items import (
 )
 
 MIME_TYPE = "application/x-evans-blocks"
+
+#: The canvas's standing hint (its tooltip over empty canvas).
+HINT = "Double-click or type to add a block. Drag from a port to wire it."
+#: A wire dropped this far (view pixels) from its port counts as dropped.
+DROP_DISTANCE = 12.0
 
 
 class SimCanvas(QGraphicsView):
@@ -80,6 +91,15 @@ class SimCanvas(QGraphicsView):
         self._guides: list = []
         #: Where a middle-button pan last was, in view pixels; None if none.
         self._pan_from = None
+        #: The last mouse position over the viewport, for where typing opens
+        #: the quick insert; None when the mouse is elsewhere.
+        self._last_mouse: QPoint | None = None
+        #: The quick-insert popup (built on first use) and what it is for:
+        #: the scene point to insert at, and the wire it was opened from.
+        self._quick = None
+        self._quick_scene_pos = QPointF()
+        self._quick_wire: tuple[str, str, bool] | None = None
+        self.viewport().setToolTip(HINT)
 
         self._scene.selectionChanged.connect(self._on_selection)
         theme.notifier().changed.connect(lambda *_: self._scene.update())
@@ -479,6 +499,7 @@ class SimCanvas(QGraphicsView):
         self.status.emit(
             f"Wiring from {port.block_id}.{port.port} ({kind}) — "
             f"click an {'output' if port.is_input else 'input'} port, "
+            f"drop it on empty canvas to add a block (Alt: keep it), "
             f"or press Esc")
         self._highlight_targets(port, True)
 
@@ -497,6 +518,7 @@ class SimCanvas(QGraphicsView):
                     candidate.set_highlight(on)
 
     def mouseMoveEvent(self, event) -> None:
+        self._last_mouse = event.position().toPoint()
         if self._pan_from is not None:
             delta = event.position() - self._pan_from
             self._pan_from = event.position()
@@ -525,10 +547,16 @@ class SimCanvas(QGraphicsView):
                 # A drag that landed on another port: connect and finish.
                 self._finish_wire(target)
                 self._cancel_wire()
-            # Releasing on the starting port, or on empty space, leaves the
-            # wire *armed* so the next click can complete it. Cancelling here
-            # is what broke click-click wiring: the press had started a wire
-            # and the release immediately threw it away.
+            elif (target is None and not event.modifiers() & Qt.AltModifier
+                    and self._dragged_away(event.position())):
+                # A drag that ended on nothing: offer a block to wire to.
+                self.open_quick_insert(event.position().toPoint(),
+                                       wire_from=self._pending_port)
+            # Releasing on the starting port, or on empty space with Alt
+            # held, leaves the wire *armed* so the next click can complete
+            # it. Cancelling here is what broke click-click wiring: the
+            # press had started a wire and the release immediately threw it
+            # away.
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -755,6 +783,8 @@ class SimCanvas(QGraphicsView):
             self.paste()
         elif event.matches(QKeySequence.SelectAll):
             self.select_all()
+        elif self._starts_quick_insert(event):
+            self.open_quick_insert(self._typing_point(), text=event.text())
         else:
             super().keyPressEvent(event)
             return
@@ -784,6 +814,135 @@ class SimCanvas(QGraphicsView):
             if item not in skip:
                 return item
         return None
+
+    # ── quick insert ────────────────────────────────────────────
+    #
+    # A popup that picks a block type, opened three ways: double-click on
+    # empty canvas, typing a letter, or a wire dropped on empty canvas. The
+    # placement is deliberately local and simple (the point given, or for a
+    # dropped wire the matching port on the drop point) so that a layout
+    # pass can replace it later.
+
+    @property
+    def quick_insert(self):
+        """The popup, built on first use."""
+        if self._quick is None:
+            from .quick_insert import QuickInsert
+            self._quick = QuickInsert(self.viewport())
+            self._quick.chosen.connect(self._quick_chosen)
+            self._quick.cancelled.connect(self._quick_cancelled)
+        return self._quick
+
+    def open_quick_insert(self, view_pos: QPoint, text: str = "",
+                          wire_from: PortItem | None = None) -> None:
+        """
+        Open the popup with its corner at ``view_pos`` (viewport pixels),
+        ``text`` already typed. Whatever is chosen goes at that point; with
+        ``wire_from`` (a wire in progress) only types with a port of the
+        needed direction are listed, and the choice is wired to it.
+        """
+        point = QPoint(view_pos)
+        self._quick_scene_pos = self.mapToScene(point)
+        if wire_from is not None:
+            self._quick_wire = (wire_from.block_id, wire_from.port,
+                                wire_from.is_input)
+            if self._rubber_wire is not None:
+                path = QPainterPath(wire_from.scene_pos())
+                path.lineTo(self._quick_scene_pos)
+                self._rubber_wire.setPath(path)
+            need = "output" if wire_from.is_input else "input"
+        else:
+            self._quick_wire = None
+            need = None
+        self.quick_insert.open_at(point, text, need)
+
+    def _quick_chosen(self, type_name: str) -> None:
+        wire, self._quick_wire = self._quick_wire, None
+        if wire is None:
+            self.add_block(type_name, self._quick_scene_pos)
+        else:
+            self._add_connected(type_name, wire, self._quick_scene_pos)
+        self.setFocus()
+
+    def _quick_cancelled(self) -> None:
+        if self._quick_wire is not None:
+            self._quick_wire = None
+            self._cancel_wire()
+            self.status.emit("Wiring cancelled")
+        self.setFocus()
+
+    def _add_connected(self, type_name: str, wire: tuple[str, str, bool],
+                       drop: QPointF) -> None:
+        """
+        Add ``type_name`` with its first port of the right direction on
+        ``drop``, wired to the port ``wire`` started from: one undo step.
+        """
+        block_id, port, is_input = wire
+        if is_input and self.model.connection_into(
+                PortRef(block_id, port)) is not None:
+            self._cancel_wire()
+            self.status.emit(f"{block_id}.{port} already has a wire")
+            return
+        want_input = not is_input
+        probe = create(type_name, "_probe")
+        first = (probe.inputs if want_input else probe.outputs)[0]
+        shape = BlockItem(probe, 0.0, 0.0)      # kept alive: it owns its ports
+        offset = shape.ports[(first, want_input)].pos()
+        x, y = snap(drop.x() - offset.x()), snap(drop.y() - offset.y())
+        self.undo_stack.beginMacro("Add connected block")
+        try:
+            add = cmd.AddBlock(self, type_name, x, y)
+            self.undo_stack.push(add)
+            new = f"{add.block_id}.{first}"
+            old = f"{block_id}.{port}"
+            self.undo_stack.push(cmd.Connect(
+                self, *((new, old) if is_input else (old, new))))
+            self.status.emit(f"Added {add.block_id} and connected it to "
+                             f"{block_id}.{port}")
+        except ModelError as exc:
+            self.status.emit(str(exc))
+        finally:
+            self.undo_stack.endMacro()
+        self._cancel_wire()
+
+    def _dragged_away(self, pos: QPointF) -> bool:
+        """Whether ``pos`` is far enough from the wire's port to be a drop."""
+        start = QPointF(self.mapFromScene(self._pending_port.scene_pos()))
+        return QLineF(start, pos).length() >= DROP_DISTANCE
+
+    def _typing_point(self) -> QPoint:
+        """Where typing opens the popup: the mouse, or else the view's centre."""
+        rect = self.viewport().rect()
+        if self._last_mouse is not None and rect.contains(self._last_mouse):
+            return QPoint(self._last_mouse)
+        return rect.center()
+
+    def _starts_quick_insert(self, event) -> bool:
+        """A plain printable character, with no wire or text edit in progress."""
+        if self._pending_port is not None:
+            return False
+        if event.modifiers() & (Qt.ControlModifier | Qt.AltModifier
+                                | Qt.MetaModifier):
+            return False
+        text = event.text()
+        if len(text) != 1 or not text.isprintable() or text.isspace():
+            return False
+        focus = self._scene.focusItem()
+        return not (focus is not None
+                    and focus.flags() & QGraphicsItem.ItemAcceptsInputMethod)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        """On empty canvas: the quick insert. A block handles its own."""
+        if (event.button() == Qt.LeftButton
+                and self._item_at(event.position().toPoint()) is None):
+            self.open_quick_insert(event.position().toPoint())
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._last_mouse = None
+        super().leaveEvent(event)
 
     def contextMenuEvent(self, event) -> None:
         self.context_menu(event.pos()).exec(event.globalPos())
