@@ -125,11 +125,12 @@ def test_export_is_a_file_submenu_with_the_six_items(win):
     assert export.actions()[0].shortcut().toString() == "Ctrl+Shift+C"
 
 
-def test_ctrl_shift_p_is_left_for_search(win):
-    shortcuts = {a.shortcut().toString() for menu in
-                 (_menu(win, t) for t in ("File", "Edit", "View", "Help"))
-                 for a in _walk(menu)}
-    assert "Ctrl+Shift+P" not in shortcuts
+def test_ctrl_shift_p_belongs_to_search_alone(win):
+    owners = [a for menu in
+              (_menu(win, t) for t in ("File", "Edit", "View", "Help"))
+              for a in _walk(menu)
+              if "Ctrl+Shift+P" in [k.toString() for k in a.shortcuts()]]
+    assert owners == [win._act_search]
 
 
 def test_the_edit_menu(win):
@@ -142,8 +143,9 @@ def test_the_edit_menu(win):
 
 
 def test_the_view_menu(win):
+    # R5 puts Search… at the top.
     assert _texts(_menu(win, "View")) == [
-        "Side panel", "Cedric", "Analyse", "Model", "Console",
+        "Search…", "Side panel", "Cedric", "Analyse", "Model", "Console",
         "Snapshot bar", "Block palette", "Reset layout"]
     assert win._act_palette.shortcut().toString() == "Ctrl+B"
     assert win._act_side.shortcut().toString() == "Ctrl+\\"
@@ -151,7 +153,8 @@ def test_the_view_menu(win):
 
 def test_the_help_menu(win):
     help_menu = _menu(win, "Help")
-    assert _texts(help_menu) == ["Documentation", "Check for updates…", "About"]
+    assert _texts(help_menu) == [
+        "Documentation", "Keyboard shortcuts", "Check for updates…", "About"]
     assert help_menu.actions()[0].shortcut().toString() == "F1"
 
 

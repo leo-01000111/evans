@@ -1093,7 +1093,7 @@ Each of these is a project of its own. Decide whether each is in scope before st
 - [ ] **An extension mechanism:** user toolboxes on the path, and a place to share
       them. **L**
 
-## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 5 of 10 packages done**
+## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 6 of 10 packages done**
 
 Planned 2026-11-16 from a UI audit (research into comparable tools, a code inventory
 and offscreen renders of every workspace) and two rounds of decisions with Leon. It
@@ -1765,7 +1765,7 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
   in the status bar in both themes, the Preferences dialog's look, and
   Ctrl+, and Ctrl+Shift+E from each workspace.
 
-- [ ] **R5 — Search: the command palette, and the shortcut sheet.** *sonnet.* **M–L**
+- [x] **R5 — Search: the command palette, and the shortcut sheet.** *sonnet.* **M–L**
   Needs R4.
   - **Qt-free core, `ui/search.py`:**
     - `@dataclass Entry`: `id: str` (stable, e.g. `"file.save"`,
@@ -1838,6 +1838,59 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
     Analyse the same query lists the block under a later group and choosing it
     switches to Model first; "bode" + Enter on Analyse changes the active pane;
     Esc closes and restores focus; every menu action appears exactly once.
+  *Done 2026-11-18:* `ui/search.py` (Qt-free: `Entry`, `score`, `rank`, `remember`;
+  `tests/test_search.py`, 16), `ui/search_registry.py` (`collect(window)`),
+  `ui/search_popup.py` (`SearchPopup`), `ui/shortcuts.py` (the sheet), the title-strip
+  field in `ui/titlebar.py`, `MainWindow.show_search` / `toggle_search` /
+  `show_shortcuts` / `show_pane_kind`, `PaneGrid.active_index`, and
+  `tests/golden/test_search_ui.py` (36). Decisions where the spec met the code:
+  - **Scoring** is a subsequence match with the best alignment (a small DP over the
+    matched letters): +4 at the start of the text, +2 at a word start (also camelCase),
+    +2 for a letter right after the previous one, a small gap and length penalty.
+    `rank` groups current workspace, global, other workspaces; empty query puts the
+    recent entries first. `search/recent` holds 20 ids (`persist.search_recent`).
+  - **Menu entries** come from walking the menu bar; ids are the action's object name
+    when set (Undo, Redo, Search, Keyboard shortcuts) and otherwise a slug of the path
+    (`file.save_as`, `file.export.model_diagram`). The *Open recent* and *Examples*
+    submenus are skipped in the walk (`searchSkip` property): their files and models
+    have entries of their own ("Open: x.m" under *Recent*, "Example: ..."), so every
+    action still appears once. Workspace-specific actions carry
+    `action.setProperty("workspace", ...)`: Export (analysis ones Analyse, model ones
+    Model), Send loop, Snapshot bar, Block palette.
+  - **Where R3/R4 moved things:** "Design tabs" are the Design panel's Gain ·
+    Compensator · PID (`Design: PID` calls `show_design`); presets are the Plant menu's
+    seven, listed from `MainWindow._PRESETS`; there is no separate go-to-workspace entry
+    because View already has the three workspaces.
+  - **Help pages** ("Help: bode", 540 of them) belong to Console for ranking but do not
+    switch workspace: the help window is its own window. Everything else of another
+    workspace switches first.
+  - **Active pane:** `PaneGrid.active_index` follows a mouse press anywhere inside a
+    pane (one application-level filter in the grid that reacts to presses only; clamped
+    when the layout shrinks). There is no visual marker for the active pane yet; *Show
+    Bode* reports "Pane 2: Bode" in the status bar.
+  - **Popup:** a child of the window, plate 560 px (window less 32 if smaller), top 48 px
+    under the window's top, selection in the tab bars' plate with signal-yellow text, 2 px
+    frame and a hard 4 px offset shadow painted by the widget. A press on the title-strip
+    field toggles it rather than closing and reopening. A failing entry shows in the
+    status bar, not a trace. The palette and the registry are built on first use, so
+    startup is unchanged.
+  - **Title strip:** `TitleBar.search_button` (a flat button dressed as a field, at most
+    280 px, minimum width 0 so it never widens the window; shown from 900 px; the real
+    window's own minimum is wider, so that rule is tested on a bare strip). `region_at`
+    reports it as client.
+  - **Shortcut sheet:** Help ▸ Keyboard shortcuts (Ctrl+/) is non-modal and built from
+    `collect(window, for_sheet=True)` (disabled actions stay, Undo and Redo keep fixed
+    names) plus `shortcuts.EXTRA_KEYS`; the same content is the help guide
+    `help/pages/shortcuts.md` (a guide, in `help.GUIDES`; linked from the index). A test
+    fails when a shortcut is missing from the page; regenerate it with
+    `shortcuts.markdown(collect(window, for_sheet=True))`. Added Ctrl+` to the fixed
+    list, and Shift+F5 is not listed (F5, F10, F11 as the spec asks).
+  Changed assertions: `test_r4_menus.py` (the View menu now starts with Search…; the Help
+  menu has Keyboard shortcuts; `test_ctrl_shift_p_is_left_for_search` became
+  `test_ctrl_shift_p_belongs_to_search_alone`); the README test count. Check by eye on a
+  real screen: the popup in both themes (the selected row, the muted section, the mono
+  shortcut), the field in the title strip with the integrated title bar, Ctrl+K and
+  Ctrl+Shift+P from each workspace including the script editor, and the sheet.
 
 - [ ] **R6 — Canvas quick insert; scope dock option.** *sonnet.* **M** Needs R2 (for
   the side panel) and R4 (for the preference); may run beside R5 or R7.

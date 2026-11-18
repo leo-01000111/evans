@@ -4,7 +4,7 @@ Reference pages for the functions you can call at the Evans console and in MATLA
 
 ## Using this window
 
-Each function has a page with its calling forms, a description of what Evans does with each one, a short example and links to related functions. Type in the search box to filter the tree on the left by name and by the text of the pages, and press Enter to open the first match. Every example has a Run link that runs it in the console as if you had typed it there, and a Copy link that puts it on the clipboard. In the script editor, Ctrl+click a function name to open its page directly. F1 and Help, Documentation open this overview.
+Each function has a page with its calling forms, a description of what Evans does with each one, a short example and links to related functions. Type in the search box to filter the tree on the left by name and by the text of the pages, and press Enter to open the first match. Every example has a Run link that runs it in the console as if you had typed it there, and a Copy link that puts it on the clipboard. In the script editor, Ctrl+click a function name to open its page directly. F1 and Help, Documentation open this overview. Every keyboard shortcut is on the [shortcuts](shortcuts) page, and Ctrl+K searches every action by name.
 
 ## Build
 

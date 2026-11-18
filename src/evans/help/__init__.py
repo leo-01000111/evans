@@ -55,7 +55,8 @@ PAGES = Path(__file__).parent / "pages"
 HOME = "index"
 
 #: Pages that explain rather than document one function.
-GUIDES: tuple[str, ...] = ("index", "s", "python", "not_in_evans", "classdef")
+GUIDES: tuple[str, ...] = ("index", "s", "python", "not_in_evans", "classdef",
+                           "shortcuts")
 
 #: The function pages, grouped as the index tree shows them. The control
 #: groups are the console's own (``api._GROUPS``), so a command added there

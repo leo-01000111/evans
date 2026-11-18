@@ -21,7 +21,7 @@ them (grep, go-to-definition), don't read them whole.**
 | `evans.help` | help pages, one Markdown file per command in `help/pages/` | `__init__.py` |
 | `evans.examples` | sample `.evx` models (rebuilt by `tools/build_examples.py`) | `__init__.py` |
 | `evans.assistant` | Cedric's OpenRouter client and prompt protocol, Qt-free | `client.py`, `protocol.py` |
-| `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave; `side_panel.py` is each workspace's right-hand tabbed panel (`SidePanel`); `design_panel.py` is the Analyse panel's Design tab (Gain · Compensator · PID, live apply to K₂); `preferences.py` is the Preferences dialog (`preferences_dialog(window)`; theme, title bar, block boxes, snapshot bar, autosave, updates, startup, scope); `panes.py` the pane grid and each plot pane's Compare menu | `mainwindow.py` |
+| `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave; `side_panel.py` is each workspace's right-hand tabbed panel (`SidePanel`); `design_panel.py` is the Analyse panel's Design tab (Gain · Compensator · PID, live apply to K₂); `preferences.py` is the Preferences dialog (`preferences_dialog(window)`; theme, title bar, block boxes, snapshot bar, autosave, updates, startup, scope); `panes.py` the pane grid (`PaneGrid.active_index`) and each plot pane's Compare menu; `search.py` the command palette's Qt-free matching and order (`Entry`, `score`, `rank`), `search_registry.py` what it lists (`collect(window)`), `search_popup.py` the popup, `shortcuts.py` the Help ▸ Keyboard shortcuts sheet (also the source of `help/pages/shortcuts.md`) | `mainwindow.py` |
 | `evans.ui.console` | command window, workspace, script editor, live editor, figures | `console_dock.py` |
 | `evans.ui.code` | code editing: highlighting, completion popup, hover/Ctrl+click | `editor.py`, `completion.py` |
 | `evans.ui.sim` | the Model tab: canvas, palette, inspector, scope, run toolbar | `sim_tab.py`, `canvas.py` |
@@ -63,6 +63,11 @@ them (grep, go-to-definition), don't read them whole.**
 - **Design and compare** (`sisotool`, `pidtuner`, `ltiview`): `ui/design_panel.py` writes K₂
   through `MainWindow.change_loop`; `MainWindow.open_app` routes the console commands;
   tests in `tests/golden/test_apps_ui.py`.
+- **The command palette** (Ctrl+K, Ctrl+Shift+P, the title-strip field): the window's
+  `show_search`; ranking in `ui/search.py` (tests: `tests/test_search.py`, Qt-free), the entry
+  list in `ui/search_registry.py`, the popup in `ui/search_popup.py`; a menu action reaches
+  it by itself, a workspace-specific one needs `action.setProperty("workspace", ...)` in
+  `_build_menus`. Tests: `tests/golden/test_search_ui.py`.
 - **Theme colours and spacing**: `ui/theme.py`, `ui/design.py`.
 
 ## Tests by area
@@ -78,6 +83,7 @@ before committing.
 | `core` analysis | the module's own `tests/test_<module>.py` (Qt-free, fast), then `tests/golden/test_analysis_values.py` |
 | live scripts | `python -m pytest tests -q -k "live or mlx or sipro"` |
 | a window or widget | the matching `tests/golden/test_*_ui.py` |
+| the command palette or the shortcut sheet | `python -m pytest tests/test_search.py tests/golden/test_search_ui.py -q` |
 | help pages | `python -m pytest tests/test_help.py -q` |
 | README numbers (counts) | `python -m pytest tests/golden/test_packaging.py -q` |
 

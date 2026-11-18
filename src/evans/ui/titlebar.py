@@ -30,17 +30,22 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMenuBar,
+    QPushButton,
     QSizePolicy,
     QWidget,
 )
 
-from . import iconset, theme
+from . import iconset, keys, theme
 
 #: Height of the strip and size of each button, in logical px: the
 #: Windows 11 caption metrics, so the buttons land where hands expect them.
 BAR_HEIGHT = 32
 BUTTON_SIZE = QSize(46, BAR_HEIGHT)
 GLYPH_PX = 20
+#: The search field between the menus and the title: at most this wide, and
+#: gone when the window is narrower than `SEARCH_MIN_WINDOW`.
+SEARCH_MAX_WIDTH = 280
+SEARCH_MIN_WINDOW = 900
 
 
 def draws_own_top_border() -> bool:
@@ -130,6 +135,26 @@ class CaptionButton(QAbstractButton):
         p.end()
 
 
+class _SearchButton(QPushButton):
+    """
+    Never what sets the window's minimum size: it just gets narrower, and it
+    is as tall as the menu bar beside it, so the strip is no taller with it.
+    """
+
+    def __init__(self, text: str, like: QWidget) -> None:
+        super().__init__(text)
+        self._like = like
+
+    def _height(self) -> int:
+        return self._like.sizeHint().height()
+
+    def sizeHint(self) -> QSize:              # noqa: N802 (Qt API)
+        return QSize(super().sizeHint().width(), self._height())
+
+    def minimumSizeHint(self) -> QSize:       # noqa: N802 (Qt API)
+        return QSize(0, self._height())
+
+
 class TitleBar(QWidget):
     """
     The strip at the top of the main window. ``menu_bar`` is the window's
@@ -162,6 +187,22 @@ class TitleBar(QWidget):
         self.menu_bar.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
         row.addWidget(self.menu_bar, alignment=Qt.AlignVCenter)
 
+        # A flat button dressed as a field; it opens the command palette.
+        chord = keys.label("Ctrl+K")
+        self.search_button = _SearchButton(
+            f"Search   {chord if keys.is_mac() else chord.replace('+', ' ')}",
+            self.menu_bar)
+        self.search_button.setObjectName("TitleBarSearch")
+        self.search_button.setAccessibleName("Search")
+        self.search_button.setToolTip(keys.label(
+            "Search actions, blocks, commands and help (Ctrl+K)"))
+        self.search_button.setFocusPolicy(Qt.NoFocus)
+        self.search_button.setCursor(Qt.IBeamCursor)
+        self.search_button.setMaximumWidth(SEARCH_MAX_WIDTH)
+        self.search_button.setSizePolicy(QSizePolicy.Maximum,
+                                         QSizePolicy.Fixed)
+        row.addWidget(self.search_button, alignment=Qt.AlignVCenter)
+
         self.title = QLabel(window.windowTitle())
         self.title.setObjectName("TitleBarTitle")
         # It gives way to everything else: never what sets the window's
@@ -189,6 +230,7 @@ class TitleBar(QWidget):
         self.close_button.clicked.connect(self.close_requested)
 
         window.installEventFilter(self)
+        self._sync_search()
         iconset.on_theme_change(self, lambda live: live._repaint_buttons())
         self.sync_window_state()
 
@@ -246,10 +288,17 @@ class TitleBar(QWidget):
                        self.close_button):
             button.update()
 
+    def _sync_search(self) -> None:
+        """The search field is for windows wide enough to spare the room."""
+        self.search_button.setVisible(
+            self._window.width() >= SEARCH_MIN_WINDOW)
+
     def eventFilter(self, obj, event) -> bool:     # noqa: N802 (Qt API)
         if obj is self._window:
             kind = event.type()
-            if kind == QEvent.WindowStateChange:
+            if kind == QEvent.Resize:
+                self._sync_search()
+            elif kind == QEvent.WindowStateChange:
                 self.sync_window_state()
                 self.update()               # the top border comes and goes
             elif kind in (QEvent.ActivationChange, QEvent.WindowActivate,
@@ -280,6 +329,8 @@ class TitleBar(QWidget):
             return "maximize"
         if (self._contains(self.minimize_button, local) or
                 self._contains(self.close_button, local)):
+            return "client"
+        if self._contains(self.search_button, local):
             return "client"
         if self._contains(self.menu_bar, local):
             inner = self.menu_bar.mapFrom(self, local)

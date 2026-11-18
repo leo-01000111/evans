@@ -120,6 +120,9 @@ class MainWindow(QMainWindow):
         self._autosave_interval = recovery.saved_interval()
         #: Preferences, built on first use (`preferences_dialog`).
         self._prefs = None
+        #: The command palette and the shortcut sheet, built on first use.
+        self._search = None
+        self._shortcuts = None
         #: Snapshots are shared: the bar above the tabs, the Compare button
         #: and the console all read the same store.
         self.snapshots = SnapshotStore()
@@ -136,6 +139,8 @@ class MainWindow(QMainWindow):
         self._title_bar.maximize_requested.connect(
             lambda: self.toggle_maximized())
         self._title_bar.close_requested.connect(lambda: self.close())
+        self._title_bar.search_button.clicked.connect(
+            lambda: self.toggle_search())
         self.setMenuWidget(self._title_bar)
         self._native_frame = winframe.NativeFrame(self, self._title_bar)
         self._build_ui()
@@ -1106,10 +1111,13 @@ class MainWindow(QMainWindow):
         file_menu.addAction(act_open)
         self._recent_menu = file_menu.addMenu("Open &recent")
         self._recent_menu.setToolTipsVisible(True)
+        # The palette lists the files and the models itself.
+        self._recent_menu.setProperty("searchSkip", True)
         self._recent_menu.aboutToShow.connect(self._fill_recent_menu)
         self._fill_recent_menu()
         self._examples_menu = file_menu.addMenu("E&xamples")
         self._examples_menu.setToolTipsVisible(True)
+        self._examples_menu.setProperty("searchSkip", True)
         self._fill_examples_menu()
         file_menu.addSeparator()
         file_menu.addAction(act_save)
@@ -1131,6 +1139,10 @@ class MainWindow(QMainWindow):
         act_undo.setShortcut("Ctrl+Z")
         act_redo = self._undo_group.createRedoAction(self, "Redo")
         act_redo.setShortcuts(["Ctrl+Y", "Ctrl+Shift+Z"])
+        # Their text changes with the stack ("Undo Add block"): the palette
+        # needs an id that does not.
+        act_undo.setObjectName("edit.undo")
+        act_redo.setObjectName("edit.redo")
         self._act_undo, self._act_redo = act_undo, act_redo
         edit_menu.addAction(act_undo)
         edit_menu.addAction(act_redo)
@@ -1140,6 +1152,7 @@ class MainWindow(QMainWindow):
         act_send.setStatusTip(
             "Put G, K2, L, T, arch and model in the console's workspace")
         self._act_send_loop = act_send
+        act_send.setProperty("workspace", Workspace.ANALYSE.value)
         edit_menu.addAction(act_send)
         edit_menu.addSeparator()
         act_prefs = QAction("&Preferences…", self)
@@ -1156,6 +1169,16 @@ class MainWindow(QMainWindow):
 
         # View menu
         view_menu = mb.addMenu("&View")
+        act_search = QAction("&Search…", self)
+        act_search.setObjectName("view.search")
+        act_search.setShortcuts(["Ctrl+K", "Ctrl+Shift+P"])
+        act_search.setStatusTip(
+            "Find any action, block, command or help page by typing a few "
+            "of its letters")
+        act_search.triggered.connect(self.toggle_search)
+        self._act_search = act_search
+        view_menu.addAction(act_search)
+        view_menu.addSeparator()
         act_side = QAction("&Side panel", self, checkable=True)
         act_side.setShortcut("Ctrl+\\")
         act_side.setStatusTip(
@@ -1206,6 +1229,7 @@ class MainWindow(QMainWindow):
         act_snapshots.setStatusTip(
             "The Snapshot · Restore · Compare row above the analysis panes")
         act_snapshots.setChecked(persist.snapshot_bar())
+        act_snapshots.setProperty("workspace", Workspace.ANALYSE.value)
         act_snapshots.triggered.connect(self.set_snapshot_bar_visible)
         self._act_snapshot_bar = act_snapshots
         view_menu.addAction(act_snapshots)
@@ -1216,6 +1240,7 @@ class MainWindow(QMainWindow):
         act_palette.setStatusTip(
             "Show or hide the block palette on the Model workspace")
         act_palette.setChecked(self._sim_tab.palette_visible)
+        act_palette.setProperty("workspace", Workspace.MODEL.value)
         act_palette.triggered.connect(self._sim_tab.set_palette_visible)
         self._sim_tab.palette_changed.connect(
             lambda on: self._set_checked(act_palette, on))
@@ -1229,6 +1254,13 @@ class MainWindow(QMainWindow):
         help_menu = mb.addMenu("&Help")
         help_menu.addAction(QAction("Documentation", self, shortcut="F1",
                                      triggered=lambda: help.open_help()))
+        act_keys = QAction("&Keyboard shortcuts", self)
+        act_keys.setObjectName("help.keyboard_shortcuts")
+        act_keys.setShortcut("Ctrl+/")
+        act_keys.setStatusTip("Every shortcut, and what the other keys do")
+        act_keys.triggered.connect(self.show_shortcuts)
+        self._act_shortcuts = act_keys
+        help_menu.addAction(act_keys)
         help_menu.addSeparator()
         help_menu.addAction(QAction(
             "Check for &updates…", self,
@@ -1252,6 +1284,7 @@ class MainWindow(QMainWindow):
         act_png.triggered.connect(self._export_plot_png)
         self._act_export_png = act_png
         for a in (act_copy, act_report, act_png):
+            a.setProperty("workspace", Workspace.ANALYSE.value)
             menu.addAction(a)
         menu.addSeparator()
         act_diagram = QAction("Model &diagram…", self)
@@ -1264,6 +1297,7 @@ class MainWindow(QMainWindow):
         act_data.setToolTip("The last run's signals as CSV or .mat")
         act_data.triggered.connect(self._sim_tab.export_data)
         for a in (act_diagram, act_print, act_data):
+            a.setProperty("workspace", Workspace.MODEL.value)
             menu.addAction(a)
         return menu
 
@@ -1272,6 +1306,65 @@ class MainWindow(QMainWindow):
         action.blockSignals(True)
         action.setChecked(on)
         action.blockSignals(False)
+
+    # ── Search: the command palette, and the shortcut sheet ───
+
+    def search_popup(self):
+        """The palette, built on first use and not shown."""
+        if self._search is None:
+            from .search_popup import SearchPopup
+            self._search = SearchPopup(self)
+            self._search.on_chosen = self._run_search_entry
+            self._search.ignore_clicks_on(self._title_bar.search_button)
+        return self._search
+
+    def show_search(self):
+        """View ▸ Search… (Ctrl+K, Ctrl+Shift+P): the palette, fresh."""
+        from .search_registry import collect
+        popup = self.search_popup()
+        popup.open_with(collect(self), self._stack.current,
+                        persist.search_recent())
+        return popup
+
+    def toggle_search(self, *_ignored):
+        popup = self.search_popup()
+        if popup.isVisible():
+            popup.close_popup()
+            return popup
+        return self.show_search()
+
+    def _run_search_entry(self, entry) -> None:
+        """Remember the entry, then do it; a failure is a message, not a trace."""
+        from .search import remember
+        persist.set_search_recent(remember(persist.search_recent(), entry.id))
+        try:
+            entry.run()
+        except Exception as exc:                          # noqa: BLE001
+            self._status.showMessage(f"{entry.title}: {exc}", 8000)
+
+    def show_pane_kind(self, key: str) -> None:
+        """Set what the active pane shows (the palette's *Show Bode*)."""
+        grid = self._grid
+        pane = grid.active_pane
+        if pane is None:
+            return
+        pane.set_kind(key)
+        self._status.showMessage(
+            f"Pane {grid.active_index + 1}: "
+            f"{[k.label for k in PANE_KINDS if k.key == key][0]}", 3000)
+
+    def show_shortcuts(self, *_ignored):
+        """Help ▸ Keyboard shortcuts: non-modal, rebuilt each time."""
+        from .search_registry import collect
+        from .shortcuts import ShortcutsDialog
+        if self._shortcuts is not None:
+            self._shortcuts.close()
+            self._shortcuts.deleteLater()
+        self._shortcuts = ShortcutsDialog(collect(self, for_sheet=True), self)
+        self._shortcuts.show()
+        self._shortcuts.raise_()
+        self._shortcuts.activateWindow()
+        return self._shortcuts
 
     # ── Preferences ───────────────────────────────────────────
 

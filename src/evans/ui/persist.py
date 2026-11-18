@@ -315,3 +315,17 @@ def trust_model(path: str | Path) -> None:
     key = path_key(path)
     items = [p for p in trusted_models() if os.path.normcase(p) != key]
     settings().setValue(TRUSTED_MODELS_KEY, [*items, key][-500:])
+
+
+#: The command palette's recently used entries, newest first (their ids).
+SEARCH_RECENT_KEY = "search/recent"
+SEARCH_RECENT_LIMIT = 20
+
+
+def search_recent() -> list[str]:
+    return _string_list(settings().value(SEARCH_RECENT_KEY))[:SEARCH_RECENT_LIMIT]
+
+
+def set_search_recent(ids: Iterable[str]) -> None:
+    settings().setValue(SEARCH_RECENT_KEY,
+                        [str(i) for i in ids][:SEARCH_RECENT_LIMIT])

@@ -32,8 +32,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFrame,
     QGridLayout,
@@ -671,10 +672,17 @@ class PaneGrid(QWidget):
         #: buttons, which used to cost a row of their own above the grid.
         self._corner: QWidget | None = None
 
+        #: The pane the last click (or the palette) was in: the one that
+        #: "Show Bode" in the command palette changes.
+        self._active = 0
+
         self._grid = QGridLayout(self)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setSpacing(TIGHT)
         self.set_layout_size(1)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
 
     # ── layout ──────────────────────────────────────────────────
 
@@ -727,6 +735,33 @@ class PaneGrid(QWidget):
             self._grid.addWidget(pane, index // columns, index % columns)
         self._place_corner()
         self.refresh()
+
+    # ── the active pane ─────────────────────────────────────────
+
+    @property
+    def active_index(self) -> int:
+        """Which pane was clicked last (0 until one is), within the grid."""
+        return min(self._active, max(len(self.panes) - 1, 0))
+
+    @property
+    def active_pane(self) -> AnalysisPane | None:
+        return self.panes[self.active_index] if self.panes else None
+
+    def set_active_index(self, index: int) -> None:
+        if self.panes:
+            self._active = max(0, min(index, len(self.panes) - 1))
+
+    def eventFilter(self, obj, event) -> bool:         # noqa: N802 (Qt API)
+        """A press anywhere inside a pane makes it the active one."""
+        if event.type() == QEvent.MouseButtonPress and                 isinstance(obj, QWidget) and self.isVisible():
+            widget = obj
+            while widget is not None and widget is not self:
+                if isinstance(widget, AnalysisPane):
+                    if widget in self.panes:
+                        self._active = self.panes.index(widget)
+                    break
+                widget = widget.parentWidget()
+        return False
 
     def compare_options(self) -> list[CompareOption]:
         """Every Compare entry: the loop, the snapshots, ltiview's systems."""
