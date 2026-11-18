@@ -57,7 +57,7 @@ TRANSIENT_TICKS = 100      # 0 … 100      ⇒  transient 0 … 1
 class PIDTuner(QWidget, GuardedPanel):
     """Tune a PID for a plant, and compare it against what is there now."""
 
-    #: The user pressed "Apply as K₂".
+    #: The user pressed "Apply to loop" (sets K₂).
     controller_applied = Signal(object)          # TransferFunction
 
     def __init__(self, plant: ctl.TransferFunction | None = None,
@@ -150,7 +150,8 @@ class PIDTuner(QWidget, GuardedPanel):
         reset = QPushButton("Reset sliders")
         reset.clicked.connect(self.reset)
         buttons.addWidget(reset)
-        apply_btn = QPushButton("Apply as K₂")
+        apply_btn = QPushButton("Apply to loop")
+        apply_btn.setToolTip("Sets K₂ to this controller.")
         apply_btn.clicked.connect(self._apply)
         buttons.addWidget(apply_btn)
         lay.addLayout(buttons)

@@ -12,6 +12,7 @@ simulated.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QPen, QUndoStack
@@ -45,6 +46,7 @@ class SimCanvas(QGraphicsView):
     selection_changed = Signal(object)      # BlockItem | None
     status = Signal(str)
     path_changed = Signal(list)             # breadcrumb, outermost first
+    files_dropped = Signal(list)            # local files dropped on the canvas
     #: A Scope block was double-clicked: its path from the top level
     #: (``"Scope1"``, ``"Sub/Scope1"``), as a run result keys its signals.
     scope_requested = Signal(str)
@@ -859,16 +861,30 @@ class SimCanvas(QGraphicsView):
 
     # ── drag & drop from the palette ────────────────────────────
 
+    @staticmethod
+    def _dropped_files(mime) -> list:
+        """Local files in a drop: they belong to the window, not the canvas."""
+        if not mime.hasUrls():
+            return []
+        return [Path(url.toLocalFile()) for url in mime.urls()
+                if url.isLocalFile()]
+
     def dragEnterEvent(self, event) -> None:
-        if event.mimeData().hasFormat(MIME_TYPE):
+        if (event.mimeData().hasFormat(MIME_TYPE)
+                or self._dropped_files(event.mimeData())):
             event.acceptProposedAction()
 
     def dragMoveEvent(self, event) -> None:
-        if event.mimeData().hasFormat(MIME_TYPE):
+        if (event.mimeData().hasFormat(MIME_TYPE)
+                or self._dropped_files(event.mimeData())):
             event.acceptProposedAction()
 
     def dropEvent(self, event) -> None:
         if not event.mimeData().hasFormat(MIME_TYPE):
+            files = self._dropped_files(event.mimeData())
+            if files:
+                event.acceptProposedAction()
+                self.files_dropped.emit(files)
             return
         type_name = bytes(event.mimeData().data(MIME_TYPE)).decode()
         if type_name in block_types():

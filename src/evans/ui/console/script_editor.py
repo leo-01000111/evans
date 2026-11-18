@@ -354,6 +354,10 @@ class ScriptEditor(QWidget):
 
     # ── files ───────────────────────────────────────────────────
 
+    def open_dialog(self) -> None:
+        """Ask for scripts to open, each in a tab (File ▸ Open…, Ctrl+O)."""
+        self._open()
+
     def _open(self) -> None:
         folder = self.current_document().path
         paths, _ = QFileDialog.getOpenFileNames(

@@ -342,8 +342,9 @@ def test_reset_layout_clears_the_saved_state(app, win, scratch_settings):
     win.reset_layout()
     _settle(app)
     assert not win._model_dock.isVisible()
-    assert win._grid.keys == ("step",)
-    assert win._grid.count == 1
+    # R0: Reset layout goes to the 2x2 default, not a single step response.
+    assert win._grid.keys == DEFAULT_LAYOUT
+    assert win._grid.count == 4
     assert win.restore_layout() is False, "reset must forget what was saved"
 
 

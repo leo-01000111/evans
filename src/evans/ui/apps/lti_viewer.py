@@ -47,12 +47,16 @@ from ..plots import (
     add_vline,
     curve_pen,
     draw_asymptotes,
+    emptiest_corner,
     freq_marker,
     freq_text,
     install_hover_readout,
     make_freq_plot,
     make_plot,
+    place_legend,
     plot_freq,
+    separate_labels,
+    widen_degenerate_range,
 )
 
 
@@ -87,6 +91,7 @@ class LTIViewer(QWidget, GuardedPanel):
         self._characteristics: set[Characteristic] = (
             set(Characteristic) if compact else set())
         self._hovers: list[HoverReadout] = []
+        self._legends: list = []
         self._build_ui()
         self.refresh()
 
@@ -299,6 +304,7 @@ class LTIViewer(QWidget, GuardedPanel):
 
     def _clear_plots(self) -> None:
         self._hovers = []
+        self._legends = []
         while self._plot_lay.count():
             item = self._plot_lay.takeAt(0)
             widget = item.widget()
@@ -313,11 +319,13 @@ class LTIViewer(QWidget, GuardedPanel):
                                  x_unit="phase" if nichols else None,
                                  y_unit="db" if nichols else None))
         plot = widget.getPlotItem()
-        plot.addLegend(offset=(-10, 10))
+        legend = plot.addLegend(offset=(-10, 10))
         if data.aspect_locked:
             plot.setAspectLocked(True)
         hover = self._new_hover(plot, data)
         self._paint(plot, data, "main", hover)
+        self._place_legend(legend, data, "main")
+        self._fit_degenerate(plot, data)
         if data.kind is ResponseKind.NYQUIST:
             self._nyquist_furniture(plot, hover)
         if nichols:
@@ -339,9 +347,10 @@ class LTIViewer(QWidget, GuardedPanel):
         splitter.addWidget(bottom)
 
         top_plot = top.getPlotItem()
-        top_plot.addLegend(offset=(-10, 10))
+        top_legend = top_plot.addLegend(offset=(-10, 10))
         top_hover = self._new_hover(top_plot, data)
         self._paint(top_plot, data, "main", top_hover)
+        self._place_legend(top_legend, data, "main")
         add_hline(top_plot, 0.0, theme.plot_colour("muted"), width=0.8)
 
         bottom_plot = bottom.getPlotItem()
@@ -352,6 +361,53 @@ class LTIViewer(QWidget, GuardedPanel):
         for widget in (top, bottom):
             self._install_context_menu(widget)
         self._plot_lay.addWidget(splitter)
+
+    def _place_legend(self, legend, data: ViewerData, panel: str) -> None:
+        """Put the legend in the emptiest corner; hide it when it adds nothing."""
+        curves = data.curves_on(panel)
+        if curves:
+            xs = np.concatenate([np.asarray(c.x, dtype=float) for c in curves])
+            ys = np.concatenate([np.asarray(c.y, dtype=float) for c in curves])
+            if data.log_x:
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    xs = np.where(xs > 0, np.log10(np.where(xs > 0, xs, 1.0)), np.nan)
+            place_legend(legend, *emptiest_corner(xs, ys))
+        self._legends.append(legend)
+        self._update_legends()
+
+    #: Below this width a pane's header already names the system, and a legend
+    #: with one entry would only cover the curve.
+    NARROW_PANE = 360
+
+    def _update_legends(self) -> None:
+        narrow = self.width() < self.NARROW_PANE
+        for legend in self._legends:
+            legend.setVisible(not (narrow and len(legend.items) <= 1))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_legends()
+
+    @staticmethod
+    def _fit_degenerate(plot, data: ViewerData) -> None:
+        """Give a plot whose data is a line (or a point) a usable range."""
+        if data.log_x or not data.curves:
+            return
+        xs = np.concatenate([np.asarray(c.x, dtype=float) for c in data.curves])
+        ys = np.concatenate([np.asarray(c.y, dtype=float) for c in data.curves])
+        ok = np.isfinite(xs) & np.isfinite(ys)
+        if not ok.any():
+            return
+        xs, ys = xs[ok], ys[ok]
+        x_lo, x_hi, y_lo, y_hi = xs.min(), xs.max(), ys.min(), ys.max()
+        (nx_lo, nx_hi), (ny_lo, ny_hi) = widen_degenerate_range(
+            x_lo, x_hi, y_lo, y_hi)
+        if (nx_lo, nx_hi) != (x_lo, x_hi):
+            pad = 0.1 * (nx_hi - nx_lo)
+            plot.setXRange(nx_lo - pad, nx_hi + pad, padding=0)
+        if (ny_lo, ny_hi) != (y_lo, y_hi):
+            pad = 0.1 * (ny_hi - ny_lo)
+            plot.setYRange(ny_lo - pad, ny_hi + pad, padding=0)
 
     def _new_hover(self, plot, data: ViewerData) -> HoverReadout:
         hover = install_hover_readout(plot, log_x=data.log_x)
@@ -383,6 +439,7 @@ class LTIViewer(QWidget, GuardedPanel):
                     name=curve.name, param=curve.param,
                     colour=_hex(curve.colour))
 
+        labels = []
         for mark in data.marks_on(panel):
             colour = COLORS[mark.colour % len(COLORS)]
             # Full sentence when there is room for it (the standalone viewer),
@@ -394,13 +451,16 @@ class LTIViewer(QWidget, GuardedPanel):
                           width=1.0)
             elif data.log_x:
                 freq_marker(plot, mark.x, mark.y, color=colour)
-                freq_text(plot, mark.x, mark.y, text, color=colour)
+                label = freq_text(plot, mark.x, mark.y, text, color=colour)
+                if label is not None:
+                    labels.append(label)
             else:
                 add_marker(plot, mark.x, mark.y, color=colour)
                 add_text_annotation(plot, mark.x, mark.y, text, color=colour)
             if hover is not None:
                 hover.model.add_mark(mark.x, mark.y, mark.label,
                                      kind=mark.kind, colour=colour)
+        separate_labels(plot, labels)
 
     def _draw_asymptotes(self, plot, data: ViewerData, panel: str,
                          hover: HoverReadout | None) -> None:

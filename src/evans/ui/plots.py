@@ -802,6 +802,98 @@ def add_text_annotation(plot: PlotItem, x: float, y: float,
     return item
 
 
+def widen_degenerate_range(x_lo: float, x_hi: float, y_lo: float, y_hi: float):
+    """
+    Keep a view range from collapsing onto a line.
+
+    A root locus whose branches all lie on Re = -1 has an x span of round-off
+    (1e-15), and the axis then prints ticks like ``-1.0000000000000002``. When
+    one span is under 1e-6 of the other (or under 1e-9 absolute) it is widened to
+    the other axis's span, centred. Returns ``((x_lo, x_hi), (y_lo, y_hi))``.
+    """
+    sx, sy = x_hi - x_lo, y_hi - y_lo
+
+    def widen(lo: float, hi: float, span: float, other: float):
+        if span >= 1e-9 and span >= 1e-6 * other:
+            return lo, hi
+        target = other if other >= 1e-9 else 1.0
+        mid = 0.5 * (lo + hi)
+        return mid - 0.5 * target, mid + 0.5 * target
+
+    return widen(x_lo, x_hi, sx, sy), widen(y_lo, y_hi, sy, sx)
+
+
+def emptiest_corner(xs, ys) -> tuple[bool, bool]:
+    """
+    ``(right, top)`` of the corner of the data box holding the fewest points.
+
+    The box is split at its middle into four quadrants; ties go to top right,
+    then top left, bottom right, bottom left.
+    """
+    x = np.asarray(xs, dtype=float)
+    y = np.asarray(ys, dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y)
+    x, y = x[ok], y[ok]
+    if not len(x):
+        return True, True
+    xm, ym = 0.5 * (x.min() + x.max()), 0.5 * (y.min() + y.max())
+    best, best_n = (True, True), None
+    for right, top in ((True, True), (False, True), (True, False), (False, False)):
+        n = int(np.count_nonzero(((x >= xm) == right) & ((y >= ym) == top)))
+        if best_n is None or n < best_n:
+            best, best_n = (right, top), n
+    return best
+
+
+def place_legend(legend, right: bool, top: bool, gap: int = 10) -> None:
+    """Anchor ``legend`` to the given corner of its view box."""
+    corner = (1 if right else 0, 0 if top else 1)
+    offset = (-gap if right else gap, gap if top else -gap)
+    legend.anchor(itemPos=corner, parentPos=corner, offset=offset)
+
+
+def separate_labels(plot: PlotItem, labels: list):
+    """
+    Stop text ``labels`` (bottom-left anchored) from overlapping.
+
+    Sorted by x, each label moves up by one text height while it intersects one
+    already placed. Text size is in pixels and positions in data units, so the
+    layout is redone when the view is resized. Returns that relayout function.
+    """
+    base = sorted(((lab, lab.pos().x(), lab.pos().y()) for lab in labels),
+                  key=lambda t: t[1])
+    vb = plot.getViewBox()
+    busy = [False]
+
+    def relayout(*_ignored) -> None:
+        if busy[0] or len(base) < 2:
+            return
+        px, py = vb.viewPixelSize()
+        if not (px > 0 and py > 0):
+            return
+        busy[0] = True
+        try:
+            placed: list[tuple[float, float, float, float]] = []
+            for item, x, y in base:
+                rect = item.boundingRect()
+                w, h = rect.width() * px, rect.height() * py
+                for _ in range(len(base)):
+                    if not any(x < px2 and px1 < x + w and y < py2 and py1 < y + h
+                               for px1, py1, px2, py2 in placed):
+                        break
+                    y += h
+                placed.append((x, y, x + w, y + h))
+                cur = item.pos()
+                if abs(cur.y() - y) > 1e-12 * max(1.0, abs(y)):
+                    item.setPos(x, y)
+        finally:
+            busy[0] = False
+
+    vb.sigResized.connect(relayout)
+    relayout()
+    return relayout
+
+
 # ──────────────────────────────────────────────────────────────
 #  Bode asymptotes
 # ──────────────────────────────────────────────────────────────

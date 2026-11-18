@@ -66,10 +66,8 @@ class ModernTab(QWidget, GuardedPanel):
         load.clicked.connect(self.load_from_plant)
         row.addWidget(load)
 
-        send = QPushButton("Send to analysis →")
-        send.setToolTip(
-            "Push the current state-space model back to the classical tabs as "
-            "G(s).")
+        send = QPushButton("Apply to loop")
+        send.setToolTip("Sets G to this state-space model's transfer function.")
         send.clicked.connect(self.send_to_analysis)
         row.addWidget(send)
 
@@ -123,7 +121,7 @@ class ModernTab(QWidget, GuardedPanel):
         self.ctx.status.emit(
             "loaded G(s) as a state-space model in controllable canonical form")
 
-    @guard("Send to analysis")
+    @guard("Apply to loop")
     def send_to_analysis(self) -> None:
         if self._arch is None:
             return

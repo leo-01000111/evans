@@ -153,6 +153,10 @@ def main() -> None:
     )
 
     win = MainWindow(arch)
+    # A saved layout comes back; a first launch opens the 2x2 grid (step,
+    # Bode, root locus, metrics) rather than one lonely step response.
+    if not win.restore_layout():
+        win.set_pane_layout(4)
     win.show()
     win.raise_()
     splash.finish(win)

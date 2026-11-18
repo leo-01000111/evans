@@ -113,7 +113,8 @@ class DesignTab(QWidget, GuardedPanel):
         self._ll_grp.hide()
 
         # Apply button
-        self._apply_btn = QPushButton("Apply to Architecture")
+        self._apply_btn = QPushButton("Apply to loop")
+        self._apply_btn.setToolTip("Sets K₂ to this controller.")
         self._apply_btn.clicked.connect(self._apply_controller)
         left_lay.addWidget(self._apply_btn)
 

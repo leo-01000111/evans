@@ -144,6 +144,7 @@ class SimTab(QWidget, GuardedPanel):
     linearised = Signal(object, str)       # TransferFunction, description
     #: A model file was opened or saved — the recent-files list listens.
     file_used = Signal(object)             # Path
+    files_dropped = Signal(list)           # local files dropped on the canvas
     #: A run finished; the console writes it to the workspace as ``out``.
     simulated = Signal(object)             # SimResult
 
@@ -186,6 +187,8 @@ class SimTab(QWidget, GuardedPanel):
 
         centre = QSplitter(Qt.Vertical)
         self._canvas = SimCanvas()
+        self._canvas.files_dropped.connect(self.files_dropped)
+        self._fit_pending = False
         centre.addWidget(self._canvas)
         self._arrange = ArrangePanel(self._canvas, self._align,
                                      self._distribute)
@@ -315,15 +318,15 @@ class SimTab(QWidget, GuardedPanel):
         # Near the start: a toolbar that runs out of room hides its *last*
         # entries, and at the end these were the ones a narrow window lost.
         for label, icon, slot, tip in (
-            ("Open…", "open", self.open_model, "Open a model (.evx or .fmdl)"),
-            ("Save", "save", self.save_model, "Save this model to its file"),
+            ("Open…", "open", self.open_model, "Open a model, .evx or .fmdl (Ctrl+O)"),
+            ("Save", "save", self.save_model, "Save this model to its file (Ctrl+S)"),
             ("Save As…", "save", self.save_model_as,
-             "Save this model to a new file (.evx, or .fmdl for an older "
-             "Evans)"),
+             "Save this model to a new file: .evx, or .fmdl for an older "
+             "Evans (Ctrl+Shift+S)"),
         ):
             action = bar.addAction(label)
             iconset.bind(action, icon)
-            action.setToolTip(tip)
+            action.setToolTip(keys.label(tip))
             action.triggered.connect(slot)
         self._scripts_action = bar.addAction("Scripts…")
         iconset.bind(self._scripts_action, "edit")
@@ -870,7 +873,7 @@ class SimTab(QWidget, GuardedPanel):
         # As PreLoadFcn does: before the canvas checks the parameters.
         self.run_model_scripts(model, ON_OPEN)
         self._canvas.set_model(model)
-        self._canvas.fit_all()
+        self._fit_when_shown()
         self._scope.clear()
         self._result = None
         self._status.setText(f"Loaded {path}")
@@ -880,6 +883,18 @@ class SimTab(QWidget, GuardedPanel):
         self.mark_saved()
         if remember:
             self.file_used.emit(Path(path))
+
+    def _fit_when_shown(self) -> None:
+        """Fit the model to the view; a view not on screen has no size, so wait."""
+        self._canvas.fit_all()
+        self._fit_pending = not self._canvas.isVisible()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._fit_pending:
+            self._fit_pending = False
+            # After this show has laid the canvas out.
+            QTimer.singleShot(0, self._canvas.fit_all)
 
     # ── model scripts ───────────────────────────────────────────
     #

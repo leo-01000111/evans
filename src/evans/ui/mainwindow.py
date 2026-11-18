@@ -227,6 +227,10 @@ class MainWindow(QMainWindow):
         self._sim_tab.linearised.connect(self._on_linearised)
         self._sim_tab.file_used.connect(self.recent_files.add)
         self._console.editor.file_used.connect(self.recent_files.add)
+        # Files dropped on the window open where they belong; the canvas
+        # keeps block drops for itself and hands file drops up.
+        self.setAcceptDrops(True)
+        self._sim_tab.files_dropped.connect(self.open_files)
 
     def _build_analyse(self) -> QWidget:
         central = QWidget()
@@ -613,7 +617,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self._cedric_dock)
         self._sync_cedric()
         self.resize(1400, 850)
-        self._grid.set_layout_size(1, ("step",), (None,))
+        self._grid.set_layout_size(4, DEFAULT_LAYOUT, (None,) * 4)
         self._sync_layout_buttons()
         self._stack.set_current(Workspace.ANALYSE)
         self._sync_view_menu()
@@ -1050,14 +1054,21 @@ class MainWindow(QMainWindow):
         # File menu
         file_menu = mb.addMenu("&File")
         act_new  = QAction("&New session",    self); act_new.setShortcut("Ctrl+N")
-        act_open = QAction("&Open session…",  self); act_open.setShortcut("Ctrl+O")
-        act_save = QAction("&Save session…",  self); act_save.setShortcut("Ctrl+S")
+        act_open = QAction("&Open…",          self); act_open.setShortcut("Ctrl+O")
+        act_save = QAction("&Save",           self); act_save.setShortcut("Ctrl+S")
+        act_save_as = QAction("Save &as…",    self)
+        act_save_as.setShortcut("Ctrl+Shift+S")
+        # One File menu, three workspaces: each item acts on the page in view
+        # (file_open, file_save, file_save_as) and its status tip says which.
+        self._act_file_open, self._act_file_save = act_open, act_save
+        self._act_file_save_as = act_save_as
         act_quit = QAction("&Quit",           self); act_quit.setShortcut("Ctrl+Q")
         act_new.triggered.connect(self._new_session)
-        act_open.triggered.connect(self._open_session)
-        act_save.triggered.connect(self._save_session)
+        act_open.triggered.connect(self.file_open)
+        act_save.triggered.connect(self.file_save)
+        act_save_as.triggered.connect(self.file_save_as)
         act_quit.triggered.connect(self.close)
-        for a in [act_new, act_open, act_save, None]:
+        for a in [act_new, act_open, act_save, act_save_as, None]:
             if a is None:
                 file_menu.addSeparator()
             else:
@@ -1073,6 +1084,7 @@ class MainWindow(QMainWindow):
         file_menu.addMenu(self._build_autosave_menu())
         file_menu.addSeparator()
         file_menu.addAction(act_quit)
+        self._sync_file_tips()
 
         # Export menu
         export_menu = mb.addMenu("&Export")
@@ -1320,6 +1332,7 @@ class MainWindow(QMainWindow):
         self._sync_cedric()
         self._sync_view_menu()
         self._sync_model_status()
+        self._sync_file_tips()
         self._status.showMessage(workspace.description, 4000)
 
     def show_workspace(self, workspace) -> None:
@@ -1398,6 +1411,75 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.critical(self, "Load error", str(exc))
 
+    # The File menu acts on the workspace in view. Tests patch the dialogs the
+    # targets open (QFileDialog), never these dispatchers.
+
+    def file_open(self) -> None:
+        """File ▸ Open…: a loop session, a model or a script, by workspace."""
+        workspace = self._stack.current
+        if workspace is Workspace.MODEL:
+            self._sim_tab.open_model()
+        elif workspace is Workspace.CONSOLE:
+            self._console.editor.open_dialog()
+        else:
+            self._open_session()
+
+    def file_save(self) -> None:
+        """File ▸ Save: the loop, the model or the current script."""
+        workspace = self._stack.current
+        if workspace is Workspace.MODEL:
+            self._sim_tab.save_model()
+        elif workspace is Workspace.CONSOLE:
+            self._console.editor.save()
+        else:
+            self._save_session()
+
+    def file_save_as(self) -> None:
+        """File ▸ Save as…: asks for a file, whichever workspace is in view."""
+        workspace = self._stack.current
+        if workspace is Workspace.MODEL:
+            self._sim_tab.save_model_as()
+        elif workspace is Workspace.CONSOLE:
+            self._console.editor.save_as()
+        else:
+            self._save_session()        # a session is always saved by name
+
+    _FILE_TIPS = {
+        Workspace.ANALYSE: ("Open a saved loop", "Save the loop"),
+        Workspace.MODEL: ("Open a model", "Save the model"),
+        Workspace.CONSOLE: ("Open a script", "Save the script"),
+    }
+
+    def _sync_file_tips(self) -> None:
+        open_tip, save_tip = self._FILE_TIPS[self._stack.current]
+        self._act_file_open.setStatusTip(open_tip)
+        self._act_file_save.setStatusTip(save_tip)
+        self._act_file_save_as.setStatusTip(save_tip + " under a new name")
+
+    # ── files dropped on the window ─────────────────────────────
+
+    @staticmethod
+    def _dropped_files(mime) -> list[Path]:
+        if not mime.hasUrls():
+            return []
+        return [Path(url.toLocalFile()) for url in mime.urls()
+                if url.isLocalFile()]
+
+    def dragEnterEvent(self, event) -> None:
+        if self._dropped_files(event.mimeData()):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        paths = self._dropped_files(event.mimeData())
+        if paths:
+            event.acceptProposedAction()
+            self.open_files(paths)
+
+    def open_files(self, paths) -> None:
+        """Open each file where it belongs (models on Model, scripts on Console)."""
+        for path in paths:
+            self.open_recent(path)
+
     def _fill_examples_menu(self) -> None:
         """One entry per example model; each opens on the Model tab."""
         from ..examples import examples
@@ -1421,8 +1503,10 @@ class MainWindow(QMainWindow):
         """
         if not self._settle_model():
             return False
-        self._sim_tab.load_model(example.path, remember=False)
+        # The Model page first: a canvas that is not on screen has no size to
+        # fit to (SimTab.load_model also fits when it is next shown).
         self._stack.set_current(Workspace.MODEL)
+        self._sim_tab.load_model(example.path, remember=False)
         self._status.showMessage(f"{example.title}: {example.summary}", 8000)
         return True
 
@@ -1467,8 +1551,8 @@ class MainWindow(QMainWindow):
         if is_model_file(path):
             if not self._settle_model():
                 return False
-            self._sim_tab.load_model(path)
             self._stack.set_current(Workspace.MODEL)
+            self._sim_tab.load_model(path)
         else:
             try:
                 self._console.editor.load_file(path)

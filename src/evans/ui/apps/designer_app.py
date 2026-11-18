@@ -54,6 +54,7 @@ from ..plots import (
     make_freq_plot,
     make_plot,
     plot_freq,
+    widen_degenerate_range,
 )
 
 #: How long after the last drag event before the linked plots are recomputed.
@@ -65,7 +66,7 @@ DRAG_INTERVAL_MS = 60
 class ControlSystemDesigner(QWidget, GuardedPanel):
     """Drag a closed-loop pole; watch the Bode plot and step response move."""
 
-    #: The user pressed "Apply as K₂".
+    #: The user pressed "Apply to loop" (sets K₂).
     compensator_applied = Signal(object)        # TransferFunction
 
     def __init__(self, plant: ctl.TransferFunction | None = None,
@@ -182,10 +183,9 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         self._readout.setFont(theme.data_font(9))
         lay.addWidget(self._readout, stretch=1)
 
-        apply_btn = QPushButton("Apply as K₂")
+        apply_btn = QPushButton("Apply to loop")
         apply_btn.setToolTip(
-            "Send this compensator to the architecture, so every tab "
-            "analyses it.")
+            "Sets K₂ to this compensator, so every pane analyses it.")
         apply_btn.clicked.connect(self._apply)
         lay.addWidget(apply_btn)
         return panel
@@ -542,7 +542,9 @@ def _frame(plot, roots: np.ndarray) -> None:
     if not len(finite):
         return
     x_lo, x_hi = float(np.min(finite.real)), float(np.max(finite.real))
+    y_top = float(np.max(np.abs(finite.imag)))
+    (x_lo, x_hi), (y_lo, y_hi) = widen_degenerate_range(x_lo, x_hi, -y_top, y_top)
     span = max(x_hi - x_lo, 1e-9)
-    y_span = max(float(np.max(np.abs(finite.imag))), 0.25 * span)
+    y_span = max(0.5 * (y_hi - y_lo), 0.25 * span)
     plot.setXRange(x_lo - 0.2 * span, x_hi + 0.2 * span, padding=0)
     plot.setYRange(-1.2 * y_span, 1.2 * y_span, padding=0)
