@@ -220,7 +220,7 @@ Left over from this phase (parts of ticked items above that were not built):
       works without a function file. **S–M**
 - [ ] A `cftool` curve-fitting GUI over `fit`. **L**
 
-## Phase 2 — Simulink for daily use ◐ **Core done 2026-10-30; 6 items open**
+## Phase 2 — Simulink for daily use ◐ **Core done 2026-10-30; 7 items open**
 
 The engine was ahead of the editor and of its links to the console. Tests:
 `tests/golden/test_sim_workspace.py`, `test_sim_library.py` and
@@ -490,6 +490,20 @@ Found while doing this phase, not fixed in it:
       done; nobody has reconsidered them yet. Decide, then build or drop. **M**
 - [ ] `sim` given a model object returns the Python result, not the
       `SimulationOutput`-like struct that `sim('name')` returns. **S**
+- [ ] **Retry with the obvious fix instead of failing (Excel-style
+      correction).** A block parameter that does not parse should be retried
+      with the likely repair, the run should go on, and the Model tab should
+      say what was changed. Seen 2026-11-18: a Repeating Sequence with
+      `0, T_PWM/2, T_PWM` stopped the run with `CompileError ... not a MATLAB
+      expression (expected ')', found ',')`; `[0, T_PWM/2, T_PWM]` was meant.
+      Start with vector parameters (`kind="vector"`: bare comma or space list
+      gets brackets) in `sim/workspace.py`, then see which other errors have
+      one clear fix. Keep it narrow: only a repair with a single reading,
+      and never one that changes a value. Show the correction in the bottom
+      bar or the block's tooltip, and write the corrected text back only if
+      the user accepts it, so a saved model stays as typed. A failure with no
+      clear fix must still name the block and parameter, as now. Tests next to
+      `tests/golden/test_sim_workspace.py`. **S–M**
 
 ## Phase 3 — Plotting ◐ **Core done 2026-11-03; 3 items open**
 
@@ -961,11 +975,19 @@ Professional users need this before Evans can be used for paid work.
               tokens are nested one level too deep (221); `strcat({'a '}, 'b')`
               gives a char (175); `string(1/3)` should be `"0.33333"` (251);
               `sprintf` with a string format should return a string (264, 265).
+              (all fixed 2026-11-18; 221 already matched by the time it was
+              checked, so it only gained a regression test. `num2str` of a
+              row with fractions, `[1.5 2.25]`, now spaces like MATLAB too.)
             - Control: `pole` returns a complex row, not a real column (412,
               440, and `rlocus` columns in 446); `freqresp` squeezes to a column
               (435); `margin` when the gain is exactly 1 at DC (418: MATLAB gives
-              Pm −180, Wcp 0; Evans Inf, NaN).
-            - `interp1(..., 'nearest')` breaks a tie downwards (367).
+              Pm −180, Wcp 0; Evans Inf, NaN). (all fixed 2026-11-18: `pole`
+              is a real column when no pole is complex, `freqresp` is
+              `ny×nu×N`, a piece of a complex array with no imaginary part is
+              real so `r(:, 1)` of `rlocus` is real, and `margin` reports
+              Pm −180 at Wcp 0 for a unit DC gain.)
+            - `interp1(..., 'nearest')` breaks a tie downwards (367). (fixed
+              2026-11-18)
       - [ ] **Tolerances, not fixes (3):** `margin` (419), `stepinfo` (422) and
             `ode45` (378) differ by 0.1–1% because MATLAB's own answers are
             approximate (Evans's gain margin is the exact 8, MATLAB's 8.0011).
@@ -1248,6 +1270,12 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
   the real Windows platform gave a non-blank, non-notdef image for omega, zeta, the
   triangle, superscript minus and subscript 2 in both sans and mono. No glyph was
   replaced. **A by-eye check on a real screen is still left for Leon** (R9 repeats it).
+  *Added 2026-11-18 (Leon):* File ▸ New (Ctrl+N) dispatches like Open and Save
+  (`MainWindow.file_new`): a default loop on Analyse (one undo step, "New loop"), an
+  untitled model on Model (`SimTab.new_model`), a new script on Console, or a new live
+  script when the Live tab shows (`LiveScriptEditor.new_document`). "Session" is gone
+  from the File menu and the loop file dialogs: until R7, loops and files; then
+  projects. R4's *New ▸* submenu builds on `file_new`.
 
 - [x] **R1 — Undo for the loop, and an Edit menu.** *sonnet.* **M**
   - New module `ui/loop_undo.py` with one command class:

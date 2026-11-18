@@ -329,6 +329,40 @@ def test_file_menu_items_are_renamed_and_tipped_by_workspace(app, win):
         assert win._act_file_save.statusTip() == tip
 
 
+def test_new_on_model_opens_an_untitled_model(app, win, monkeypatch):
+    sim = win._sim_tab
+    monkeypatch.setattr(sim, "settle_unsaved", lambda: True)
+    win.show_workspace(Workspace.MODEL)
+    win._act_file_new.trigger()
+    assert sim.model_path is None
+    assert sim._canvas.root_model().name == "untitled"
+    assert not sim._canvas.root_model().blocks
+    assert not sim.is_unsaved()
+
+
+def test_new_on_console_makes_a_script_or_a_live_script(app, win, monkeypatch):
+    console = win._console
+    win.show_workspace(Workspace.CONSOLE)
+    console.show_script()
+    before = len(console.editor.documents())
+    win._act_file_new.trigger()
+    assert len(console.editor.documents()) == before + 1
+    monkeypatch.setattr(console.live, "settle_unsaved", lambda: True)
+    console.show_live()
+    assert win._console.live_active
+    win._act_file_new.trigger()
+    assert console.live.path is None
+    assert not console.live.is_unsaved()
+    console.show_script()
+
+
+def test_new_on_analyse_is_one_undoable_loop_step(app, win):
+    win.show_workspace(Workspace.ANALYSE)
+    win._preset_satellite()          # a loop that differs from the default
+    win._act_file_new.trigger()
+    assert win._loop_undo.undoText() == "New loop"
+
+
 def test_save_on_analyse_writes_a_loop_session(app, win, tmp_path, monkeypatch):
     import evans.ui.mainwindow as mw
     target = tmp_path / "loop.json"

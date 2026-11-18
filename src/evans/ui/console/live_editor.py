@@ -1127,6 +1127,13 @@ class LiveScriptEditor(QWidget):
         base = self.path or Path.cwd() / "live_script.m"
         return str(base.with_suffix(suffix))
 
+    def new_document(self) -> bool:
+        """An empty, untitled live script, once the current one is settled."""
+        if not self.settle_unsaved():
+            return False
+        self.set_document(LiveDocument([Cell.code("")]))
+        return True
+
     def open(self, path: str | Path | None = None) -> bool:
         path = path or self._ask_open_path()
         if not path or not self.settle_unsaved():

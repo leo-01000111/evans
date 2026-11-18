@@ -859,6 +859,17 @@ class SimTab(QWidget, GuardedPanel):
         if path and self.settle_unsaved():
             self.load_model(path)
 
+    def new_model(self) -> None:
+        """An empty, untitled model, once the current one is settled."""
+        if not self.settle_unsaved():
+            return
+        self._canvas.set_model(SimModel("untitled"))
+        self._scope.clear()
+        self._result = None
+        self._forget_path()
+        self.mark_saved()
+        self._status.setText("New model")
+
     @guard("Open model")
     def load_model(self, path: str | Path, remember: bool = True) -> None:
         """

@@ -1061,7 +1061,8 @@ class MainWindow(QMainWindow):
 
         # File menu
         file_menu = mb.addMenu("&File")
-        act_new  = QAction("&New session",    self); act_new.setShortcut("Ctrl+N")
+        act_new  = QAction("&New",            self); act_new.setShortcut("Ctrl+N")
+        self._act_file_new = act_new
         act_open = QAction("&Open…",          self); act_open.setShortcut("Ctrl+O")
         act_save = QAction("&Save",           self); act_save.setShortcut("Ctrl+S")
         act_save_as = QAction("Save &as…",    self)
@@ -1071,7 +1072,7 @@ class MainWindow(QMainWindow):
         self._act_file_open, self._act_file_save = act_open, act_save
         self._act_file_save_as = act_save_as
         act_quit = QAction("&Quit",           self); act_quit.setShortcut("Ctrl+Q")
-        act_new.triggered.connect(self._new_session)
+        act_new.triggered.connect(self.file_new)
         act_open.triggered.connect(self.file_open)
         act_save.triggered.connect(self.file_save)
         act_save_as.triggered.connect(self.file_save_as)
@@ -1481,12 +1482,12 @@ class MainWindow(QMainWindow):
             G  = first_order(1.0, 1.0),
             K2 = unity(), K1 = unity(), H  = unity(),
         ))
-        self.change_loop("New session",
+        self.change_loop("New loop",
                          lambda: load_session_dict(self._arch, fresh))
 
     def _save_session(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Session", "", "JSON files (*.json)")
+            self, "Save loop", "", "Loop files (*.json)")
         if not path:
             return
         Path(path).write_text(
@@ -1495,7 +1496,7 @@ class MainWindow(QMainWindow):
 
     def _open_session(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Session", "", "JSON files (*.json)")
+            self, "Open loop", "", "Loop files (*.json)")
         if not path:
             return
         try:
@@ -1508,6 +1509,21 @@ class MainWindow(QMainWindow):
 
     # The File menu acts on the workspace in view. Tests patch the dialogs the
     # targets open (QFileDialog), never these dispatchers.
+
+    def file_new(self) -> None:
+        """File ▸ New: a default loop, an untitled model, or a new script
+        (a live script when the Live tab is showing)."""
+        workspace = self._stack.current
+        if workspace is Workspace.MODEL:
+            self._sim_tab.new_model()
+        elif workspace is Workspace.CONSOLE:
+            if self._console.live_active:
+                self._console.live.new_document()
+            else:
+                self._console.show_script()
+                self._console.editor.new_document()
+        else:
+            self._new_session()
 
     def file_open(self) -> None:
         """File ▸ Open…: a loop session, a model or a script, by workspace."""
@@ -1545,8 +1561,15 @@ class MainWindow(QMainWindow):
         Workspace.CONSOLE: ("Open a script", "Save the script"),
     }
 
+    _NEW_TIPS = {
+        Workspace.ANALYSE: "Start again from the default loop",
+        Workspace.MODEL: "A new, untitled model",
+        Workspace.CONSOLE: "A new script (a live script on the Live tab)",
+    }
+
     def _sync_file_tips(self) -> None:
         open_tip, save_tip = self._FILE_TIPS[self._stack.current]
+        self._act_file_new.setStatusTip(self._NEW_TIPS[self._stack.current])
         self._act_file_open.setStatusTip(open_tip)
         self._act_file_save.setStatusTip(save_tip)
         self._act_file_save_as.setStatusTip(save_tip + " under a new name")

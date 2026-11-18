@@ -194,7 +194,7 @@ def test_a_new_session_keeps_the_same_architecture_object(win):
     assert win._diagram._arch is arch
     assert win._snapshot_bar._arch is arch
     assert win._console.interpreter.namespace["arch"] is arch
-    assert win._loop_undo.undoText() == "New session"
+    assert win._loop_undo.undoText() == "New loop"
     win._loop_undo.undo()
     assert win._arch is arch
     assert np.allclose(arch.block_tf("G").den[0][0],
