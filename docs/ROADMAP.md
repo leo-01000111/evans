@@ -1026,7 +1026,7 @@ Each of these is a project of its own. Decide whether each is in scope before st
 - [ ] **An extension mechanism:** user toolboxes on the path, and a place to share
       them. **L**
 
-## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 1 of 10 packages done**
+## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 2 of 10 packages done**
 
 Planned 2026-11-16 from a UI audit (research into comparable tools, a code inventory
 and offscreen renders of every workspace) and two rounds of decisions with Leon. It
@@ -1233,7 +1233,7 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
   triangle, superscript minus and subscript 2 in both sans and mono. No glyph was
   replaced. **A by-eye check on a real screen is still left for Leon** (R9 repeats it).
 
-- [ ] **R1 — Undo for the loop, and an Edit menu.** *sonnet.* **M**
+- [x] **R1 — Undo for the loop, and an Edit menu.** *sonnet.* **M**
   - New module `ui/loop_undo.py` with one command class:
     `ReplaceLoop(QUndoCommand)` holding `arch`, `before: dict`, `after: dict`
     (both from `core.session.session_dict(arch)`), a `text`, and an optional
@@ -1295,6 +1295,18 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
     linearise are each one step; ten merged slider changes are one step; the menu's
     Undo acts on the canvas when Model is current; a console command that changes
     `arch` is undoable; a new session keeps the same architecture object.
+  - *Done 2026-11-18:* `ui/loop_undo.py` (`ReplaceLoop`), `MainWindow.change_loop`
+    / `_after_loop_change` / `_loop_baseline`, Edit menu with a `QUndoGroup`,
+    `tests/golden/test_loop_undo.py` (20 tests). `change_loop` takes `before` from
+    the baseline, not from a fresh `session_dict`, so the Design tab, snapshot bar and
+    Modern tab (which write `arch` before signalling) are covered; `mutate` is
+    optional. The canvas swaps its `undo_stack` when you descend into or leave a
+    subsystem, so `_sync_undo_group` (also run on `path_changed`) adds the live stacks
+    to the group and drops the dead ones. "Undo: <text>" uses the group's
+    `indexChanged` and `redoText()`. A new session is itself an undoable step
+    ("New session"). The Model toolbar buttons keep working; only their shortcuts
+    went. Ctrl+Z in the script editor still undoes typing (tested). Changed
+    assertion: `test_title_bar.py` menu list now has Edit after File.
 
 - [ ] **R2 — The side panel.** *opus.* **L**
   The structural package. After it there are no `QDockWidget`s left except the app

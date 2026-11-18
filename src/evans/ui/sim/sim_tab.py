@@ -401,12 +401,10 @@ class SimTab(QWidget, GuardedPanel):
         undo = bar.addAction("Undo")
         iconset.bind(undo, "undo")
         undo.setToolTip(keys.label("Undo (Ctrl+Z)"))
-        undo.setShortcut("Ctrl+Z")
         undo.triggered.connect(lambda: self._canvas.undo_stack.undo())
         redo = bar.addAction("Redo")
         iconset.bind(redo, "redo")
         redo.setToolTip(keys.label("Redo (Ctrl+Y)"))
-        redo.setShortcut("Ctrl+Y")
         redo.triggered.connect(lambda: self._canvas.undo_stack.redo())
         bar.addSeparator()
 

@@ -40,7 +40,7 @@ from pathlib import Path
 
 import control as ctl
 from PySide6.QtCore import QProcess, QSettings, Qt, QTimer
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtGui import QAction, QActionGroup, QUndoGroup, QUndoStack
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -78,6 +78,7 @@ from .console import ConsolePanel, FigureArea
 from .context_bar import ContextBar
 from .design import TIGHT
 from .diagram.fixed_diagram import FixedDiagramView
+from .loop_undo import ReplaceLoop
 from .panes import DEFAULT_LAYOUT, LAYOUTS, PANE_KINDS, PaneGrid, Source
 from .persist import RecentFiles
 from .sim.sim_tab import SimTab
@@ -101,6 +102,14 @@ class MainWindow(QMainWindow):
         )
         self.setWindowTitle(self.APP_TITLE)
         self.resize(1400, 850)
+        #: Undo for the loop (G, K1, K2, H); the Model workspace keeps the
+        #: canvas's own stack. `_loop_baseline` is the loop as last seen, so a
+        #: change made by a widget that writes the architecture directly can
+        #: still be recorded with the state it started from.
+        self._loop_undo = QUndoStack(self)
+        self._loop_undo.setUndoLimit(200)
+        self._loop_baseline = session_dict(self._arch)
+        self._undo_seen: dict = {}
         #: Snapshots are shared: the bar above the tabs, the Compare button
         #: and the console all read the same store.
         self.snapshots = SnapshotStore()
@@ -216,6 +225,8 @@ class MainWindow(QMainWindow):
         # different model with its own undo stack and file format, not another
         # view of the architecture the other panels share.
         self._sim_tab = SimTab()
+        self._sim_tab._canvas.path_changed.connect(
+            lambda _path: self._sync_undo_group())
         self._stack.add_page(Workspace.MODEL, self._sim_tab)
         self._stack.add_page(Workspace.CONSOLE, self._build_console())
 
@@ -392,6 +403,7 @@ class MainWindow(QMainWindow):
             lambda model: self._on_console_model(model.name, model))
         self._sim_tab.simulated.connect(self._on_simulated)
         self._console.open_system.connect(self._on_console_system)
+        self._console.console.executed.connect(self._on_console_executed)
         self._console.open_model.connect(self._on_console_model)
         help.set_console(self._run_from_help, lambda: self._console.running)
         # A figure drawn from anywhere pulls the workspace into view, so
@@ -489,10 +501,8 @@ class MainWindow(QMainWindow):
     def _on_console_system(self, name: str, system) -> None:
         """A system was double-clicked in the workspace: analyse it as G(s)."""
         tf = ctl.ss2tf(system) if hasattr(system, "A") else system
-        self._arch.set_block("G", tf)
-        self._diagram.build()
-        self._update_all_tabs()
-        self._refresh_status()
+        self.change_loop(f"Load {name} as G",
+                         lambda: self._arch.set_block("G", tf))
         self._stack.set_current(Workspace.ANALYSE)
         self._status.showMessage(f"{name} loaded as G(s)", 6000)
 
@@ -944,9 +954,7 @@ class MainWindow(QMainWindow):
             f"Comparing {len(collection)} designs in the LTI Viewer", 6000)
 
     def _on_snapshot_restored(self, snapshot) -> None:
-        self._diagram.build()
-        self._update_all_tabs()
-        self._refresh_status()
+        self.change_loop("Restore snapshot")
         self._status.showMessage(f"Restored “{snapshot.label}”", 5000)
 
     # ── Menus ────────────────────────────────────────────────
@@ -1085,6 +1093,25 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(act_quit)
         self._sync_file_tips()
+
+        # Edit menu: one Undo and Redo for whichever workspace is in view.
+        # Analyse undoes loop changes, Model the canvas; the Console's text
+        # editors handle Ctrl+Z themselves (the group has no active stack).
+        edit_menu = mb.addMenu("&Edit")
+        self._undo_group = QUndoGroup(self)
+        self._undo_group.addStack(self._loop_undo)
+        self._undo_group.addStack(self._sim_tab._canvas.undo_stack)
+        act_undo = self._undo_group.createUndoAction(self, "Undo")
+        act_undo.setShortcut("Ctrl+Z")
+        act_redo = self._undo_group.createRedoAction(self, "Redo")
+        act_redo.setShortcuts(["Ctrl+Y", "Ctrl+Shift+Z"])
+        self._act_undo, self._act_redo = act_undo, act_redo
+        edit_menu.addAction(act_undo)
+        edit_menu.addAction(act_redo)
+        edit_menu.addSeparator()
+        self._edit_menu = edit_menu
+        self._undo_group.indexChanged.connect(self._on_undo_index)
+        self._sync_undo_group()
 
         # Export menu
         export_menu = mb.addMenu("&Export")
@@ -1275,18 +1302,16 @@ class MainWindow(QMainWindow):
         self._grid.refresh(self._arch)
 
     def _on_tf_edited(self, block_id: str, tf: ctl.TransferFunction) -> None:
-        self._diagram.update_block(block_id, tf)
-        self._update_all_tabs()
-        self._refresh_status()
+        self.change_loop(f"Edit {block_id}",
+                         lambda: self._diagram.update_block(block_id, tf))
 
     def _on_arch_changed(self) -> None:
         self._update_all_tabs()
 
     def _on_controller_designed(self, tf: ctl.TransferFunction) -> None:
         """Design tab applied a new K2 — sync diagram and all tabs."""
-        self._diagram.update_block("K2", tf)
-        self._update_all_tabs()
-        self._refresh_status()
+        self.change_loop("Apply controller",
+                         lambda: self._diagram.update_block("K2", tf))
 
     def _refresh_analyse(self) -> None:
         """Refresh every pane of the Analyse page."""
@@ -1294,9 +1319,7 @@ class MainWindow(QMainWindow):
 
     def _on_modern_model_sent(self) -> None:
         """The Modern tab pushed its state-space model back as G(s)."""
-        self._diagram.build()
-        self._update_all_tabs()
-        self._refresh_status()
+        self.change_loop("Send model to G")
 
     def _on_linearised(self, tf, description: str) -> None:
         """
@@ -1306,15 +1329,91 @@ class MainWindow(QMainWindow):
         to unity — the loop is already baked into the linearisation, so
         leaving K₂ in place would apply it twice.
         """
-        self._arch.set_block("G", tf)
-        self._arch.set_block("K2", unity())
-        self._diagram.build()
-        self._update_all_tabs()
-        self._refresh_status()
+        def mutate() -> None:
+            self._arch.set_block("G", tf)
+            self._arch.set_block("K2", unity())
+
+        self.change_loop("Load linearised model", mutate)
         self._stack.set_current(Workspace.ANALYSE)
         self._status.showMessage(
             "Linearised model loaded as G(s) — " +
             description.splitlines()[0], 8000)
+
+    # ── Loop undo ─────────────────────────────────────────────
+
+    def change_loop(self, text: str, mutate=None, *,
+                    merge_key: str | None = None) -> None:
+        """
+        Change the loop as one undoable step named ``text``.
+
+        ``mutate`` (if any) makes the change. The step starts from the loop
+        as last seen (`_loop_baseline`), so a widget that already wrote the
+        architecture before telling us is covered too. ``merge_key`` folds
+        consecutive changes with the same key into one step (a slider drag).
+        """
+        before = self._loop_baseline
+        if mutate is not None:
+            mutate()
+        after = session_dict(self._arch)
+        if after != before:
+            self._loop_undo.push(ReplaceLoop(
+                self._arch, before, after, text,
+                self._after_loop_change, merge_key))
+        self._after_loop_change()
+
+    def _after_loop_change(self) -> None:
+        """Show the loop as it now is, and remember it as the baseline."""
+        self._loop_baseline = session_dict(self._arch)
+        self._diagram.build()
+        self._update_all_tabs()
+        self._refresh_status()
+
+    def _on_console_executed(self, _result=None) -> None:
+        """A console command may have changed ``arch`` behind our back."""
+        after = session_dict(self._arch)
+        if after == self._loop_baseline:
+            return
+        self._loop_undo.push(ReplaceLoop(
+            self._arch, self._loop_baseline, after, "Console change",
+            self._after_loop_change))
+        self._loop_baseline = after
+        self._diagram.build()
+
+    def _sync_undo_group(self) -> None:
+        """Point Edit > Undo at the stack of the workspace in view."""
+        group = getattr(self, "_undo_group", None)
+        if group is None:
+            return
+        canvas = self._sim_tab._canvas
+        # Descending into a subsystem swaps the canvas's stack; keep the group
+        # to the stacks still in use.
+        live = {self._loop_undo, canvas.undo_stack,
+                *(entry[2] for entry in canvas._stack)}
+        for stack in group.stacks():
+            if stack not in live:
+                group.removeStack(stack)
+        for stack in live:
+            if stack not in group.stacks():
+                group.addStack(stack)
+        current = self._stack.current
+        if current is Workspace.ANALYSE:
+            active = self._loop_undo
+        elif current is Workspace.MODEL:
+            active = canvas.undo_stack
+        else:
+            active = None
+        if active is not None:
+            self._undo_seen[active] = active.index()
+        group.setActiveStack(active)
+
+    def _on_undo_index(self, index: int) -> None:
+        stack = self._undo_group.activeStack()
+        if stack is None:
+            return
+        seen = self._undo_seen.get(stack, index)
+        self._undo_seen[stack] = index
+        if index < seen and stack.redoText():
+            self._status.showMessage(f"Undo: {stack.redoText()}", 3000)
 
     # ── Full refresh ──────────────────────────────────────────
 
@@ -1333,6 +1432,7 @@ class MainWindow(QMainWindow):
         self._sync_view_menu()
         self._sync_model_status()
         self._sync_file_tips()
+        self._sync_undo_group()
         self._status.showMessage(workspace.description, 4000)
 
     def show_workspace(self, workspace) -> None:
@@ -1374,18 +1474,15 @@ class MainWindow(QMainWindow):
     # ── File I/O ──────────────────────────────────────────────
 
     def _new_session(self) -> None:
-        self._arch = CourseArchitecture(
+        # The same architecture object, loaded with the default loop: the undo
+        # stack, the panes, the diagram, the snapshot bar and the console all
+        # hold it, and none of them has to be handed a new one.
+        fresh = session_dict(CourseArchitecture(
             G  = first_order(1.0, 1.0),
             K2 = unity(), K1 = unity(), H  = unity(),
-        )
-        self._diagram._arch = self._arch
-        # Everything holding the *old* architecture has to be handed the new
-        # one. A stale reference here is invisible until someone takes a
-        # snapshot of a plant that is no longer on screen.
-        self._snapshot_bar.set_architecture(self._arch)
-        self._console.push(arch=self._arch)
-        self._diagram.build()
-        self._update_all_tabs()
+        ))
+        self.change_loop("New session",
+                         lambda: load_session_dict(self._arch, fresh))
 
     def _save_session(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -1402,11 +1499,9 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            load_session_dict(
-                self._arch, json.loads(Path(path).read_text(encoding="utf-8")))
-            self._diagram.build()
-            self._update_all_tabs()
-            self._refresh_status()
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            self.change_loop("Open loop",
+                             lambda: load_session_dict(self._arch, data))
             self._status.showMessage(f"Loaded {path}", 4000)
         except Exception as exc:
             QMessageBox.critical(self, "Load error", str(exc))
@@ -1598,11 +1693,11 @@ class MainWindow(QMainWindow):
     # ── Presets ───────────────────────────────────────────────
 
     def _load_preset_G(self, tf: ctl.TransferFunction) -> None:
-        self._arch.set_block("G", tf)
-        self._arch.set_block("K2", unity())
-        self._diagram.build()
-        self._update_all_tabs()
-        self._refresh_status()
+        def mutate() -> None:
+            self._arch.set_block("G", tf)
+            self._arch.set_block("K2", unity())
+
+        self.change_loop("Load preset", mutate)
 
     def _preset_first_order(self):  self._load_preset_G(first_order(1.0, 1.0))
     def _preset_so_under(self):     self._load_preset_G(second_order(1.0, 0.2, 2.0))
