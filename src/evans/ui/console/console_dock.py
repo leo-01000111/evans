@@ -512,8 +512,11 @@ class FigureArea(QWidget):
 
 class ConsolePanel(QWidget):
     """
-    Command window on the left; workspace and history on the right, as tabs;
-    the script behind.
+    The command window, with the script and live tabs behind it.
+
+    The workspace and the history (``workspace``, ``history``) are built
+    here but shown by the main window, in the Console workspace's side
+    panel: inside the Console tab they vanished on the Script and Live tabs.
     """
 
     #: A system in the workspace was double-clicked.
@@ -525,6 +528,8 @@ class ConsolePanel(QWidget):
     figure_area_wanted = Signal(bool)
     #: *Ask Cedric* on a selection: (context, source, action) for the panel.
     cedric_requested = Signal(object, object, str)
+    #: A side-panel tab should show (``"workspace"``, ``"history"``).
+    side_requested = Signal(str)
 
     def __init__(self, figures: FigureArea, extra: dict | None = None,
                  parent=None) -> None:
@@ -539,21 +544,12 @@ class ConsolePanel(QWidget):
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
 
-        split = QSplitter(Qt.Horizontal)
         self.console = ConsoleWidget(self.interpreter)
-        split.addWidget(self.console)
-        # The history shares the workspace's side as a second tab: both are
-        # lookups beside the prompt, and a third column would squeeze it.
-        self._side = QTabWidget()
-        self._side.setDocumentMode(True)
+        self._tabs.addTab(self.console, "Console")
+        # The workspace and the history: lookups beside whichever tab is
+        # showing, so the main window puts them in the side panel.
         self.workspace = WorkspaceWidget(self.interpreter)
-        self._side.addTab(self.workspace, "Workspace")
         self.history = HistoryWidget()
-        self._side.addTab(self.history, "History")
-        split.addWidget(self._side)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 2)
-        self._tabs.addTab(split, "Console")
 
         self.editor = ScriptEditor()
         self.editor.run_requested.connect(self._run_script)
@@ -638,7 +634,7 @@ class ConsolePanel(QWidget):
         self._attach_ask(self.console._transcript, self._console_source)
 
         # Cedric's button in the tab bar; the main window gives it the
-        # action that shows and hides his dock.
+        # action that shows and hides his side-panel tab.
         self.cedric_button = QToolButton()
         self.cedric_button.setObjectName("cedricButton")
         self.cedric_button.setText("Ask Cedric")
@@ -1180,7 +1176,7 @@ class ConsolePanel(QWidget):
 
     def show_history(self) -> None:
         self._tabs.setCurrentIndex(0)
-        self._side.setCurrentWidget(self.history)
+        self.side_requested.emit("history")
 
     def show_script(self) -> None:
         self._tabs.setCurrentWidget(self.editor)

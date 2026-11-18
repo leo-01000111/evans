@@ -1,6 +1,7 @@
 """
 Cedric at the foot of the navigation rail: he is there, he paints in both
-themes, and poking him asks for help — which opens the documentation site.
+themes, and poking him asks for him (his side-panel tab); the *Docs* button
+under him opens the documentation.
 """
 
 from __future__ import annotations
@@ -24,18 +25,35 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def test_the_rail_ends_with_cedric(app):
+def test_the_rail_ends_with_cedric_then_docs(app):
     from evans.ui.workspace import NavigationRail
 
     rail = NavigationRail()
     layout = rail.layout()
-    assert layout.itemAt(layout.count() - 1).widget() is rail.cedric
-    asked = []
-    rail.help_requested.connect(lambda: asked.append(True))
+    assert layout.itemAt(layout.count() - 2).widget() is rail.cedric
+    assert layout.itemAt(layout.count() - 1).widget() is rail.docs
+    asked, helped = [], []
+    rail.cedric_requested.connect(lambda: asked.append(True))
+    rail.help_requested.connect(lambda: helped.append(True))
     rail.resize(90, 400)
     rail.show()
-    QTest.mouseClick(rail.cedric, Qt.LeftButton, pos=QPoint(30, 50))
-    assert asked == [True]
+    QTest.mouseClick(rail.cedric, Qt.LeftButton, pos=QPoint(20, 20))
+    assert asked == [True] and helped == []         # the shrimp is Cedric
+    rail.docs.click()
+    assert helped == [True] and asked == [True]
+    rail.deleteLater()
+
+
+def test_the_rail_foot_says_what_it_does(app):
+    from evans.ui.workspace import NavigationRail
+
+    rail = NavigationRail()
+    assert rail.cedric.accessibleName() == "Cedric"
+    assert "Ask Cedric" in rail.cedric.toolTip()
+    assert "Shift+A" in rail.cedric.toolTip()
+    assert rail.docs.text() == "Docs"
+    assert rail.docs.toolTip() == "Documentation (F1)"
+    assert rail.docs.accessibleName()
     rail.deleteLater()
 
 

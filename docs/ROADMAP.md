@@ -220,7 +220,7 @@ Left over from this phase (parts of ticked items above that were not built):
       works without a function file. **S–M**
 - [ ] A `cftool` curve-fitting GUI over `fit`. **L**
 
-## Phase 2 — Simulink for daily use ◐ **Core done 2026-10-30; 7 items open**
+## Phase 2 — Simulink for daily use ◐ **Core done 2026-10-30; 8 items open**
 
 The engine was ahead of the editor and of its links to the console. Tests:
 `tests/golden/test_sim_workspace.py`, `test_sim_library.py` and
@@ -504,6 +504,35 @@ Found while doing this phase, not fixed in it:
       the user accepts it, so a saved model stays as typed. A failure with no
       clear fix must still name the block and parameter, as now. Tests next to
       `tests/golden/test_sim_workspace.py`. **S–M**
+- [ ] **Automatic block layout that is genuinely good.** Added 2026-11-18 by Leon:
+      block placement is one of the biggest complaints of Simulink users, so
+      this should be a reason to pick Evans. Today the canvas has only manual
+      helpers (`ui/sim/arrange.py`: Fit, Align row, Align column, Space) and a
+      wire router (`route` in `ui/sim/items.py`). Wanted:
+      - **Arrange model** (one command, one undo step) that lays a diagram out
+        the way an engineer would draw it: signal flow left to right, the
+        forward path on one straight line, feedback paths routed below it
+        and back, sources at the left and sinks (Scope, To Workspace, Out) at
+        the right, few wire crossings and few bends, aligned ports so that
+        straight wires are straight, even spacing that leaves room for
+        labels. A layered (Sugiyama-style) layout with the feedback edges
+        reversed is the likely start; judge it on the shipped examples and
+        the course models, not on random graphs.
+      - **Arrange selection**: the same for selected blocks only, leaving the
+        rest where it is.
+      - **Gentle placement while editing:** a block added from the palette,
+        quick insert (R6) or a dropped wire lands where it belongs next to
+        what it connects to, without moving anything the user placed.
+      - **Models built without positions** (console `add_block`, code-first
+        models, a later `.slx` import) get a good layout automatically.
+      - Subsystems are laid out per level; their port order follows the
+        layout.
+      Must never move a block the user has pinned or placed unless they asked
+      for an arrange. Tests: crossings, bends and overlap counts on the
+      examples (no overlaps, no more crossings than a hand-drawn reference),
+      and stability (arranging twice changes nothing). Worth a design pass on
+      *opus* first; it touches `sim/model.py` positions, `ui/sim/canvas.py`
+      and the router. **L**
 
 ## Phase 3 — Plotting ◐ **Core done 2026-11-03; 3 items open**
 
@@ -1064,7 +1093,7 @@ Each of these is a project of its own. Decide whether each is in scope before st
 - [ ] **An extension mechanism:** user toolboxes on the path, and a place to share
       them. **L**
 
-## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 2 of 10 packages done**
+## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 3 of 10 packages done**
 
 Planned 2026-11-16 from a UI audit (research into comparable tools, a code inventory
 and offscreen renders of every workspace) and two rounds of decisions with Leon. It
@@ -1352,7 +1381,7 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
     went. Ctrl+Z in the script editor still undoes typing (tested). Changed
     assertion: `test_title_bar.py` menu list now has Edit after File.
 
-- [ ] **R2 — The side panel.** *opus.* **L**
+- [x] **R2 — The side panel.** *opus.* **L**
   The structural package. After it there are no `QDockWidget`s left except the app
   docks, which R3 removes.
   - **New widget `ui/side_panel.py`: `SidePanel(QWidget)`.** A tab bar at the top
@@ -1439,6 +1468,38 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
   re-synchronised the check marks after it; the new toggle must be synchronised on
   every workspace change instead. The Console page's `figure_area_wanted` signal
   hides the figure strip on the Live tab; keep it working after the re-parenting.
+  *Done 2026-11-18:* `ui/side_panel.py` (`SidePanel`, `page_with_panel`); each page
+  is `[content | SidePanel]`; one `AssistantPanel` (`MainWindow._cedric_panel`)
+  moved by `_place_cedric` on every workspace change; `LoopSource` and
+  `ModelSource` are read-only `DescriptionSource`s (context origin
+  `"description"`, no region, `apply` refuses); tests in
+  `tests/golden/test_side_panel.py` plus the rewritten layout, Cedric, rail and
+  history tests. Decisions where the spec met code it did not foresee:
+  - **The window minimum would have grown.** The Console page's minimum was set by
+    the Live tab's 1000 px button row, and the snapshot bar's status label asked
+    192 px; a 240 px panel beside either broke the 1280 px budget. The Live
+    buttons now sit in a `QToolBar` (overflow behind its arrow, as the Model
+    toolbar does) and the snapshot status label takes no width. With every panel
+    open the minimum is 1061×331, under 0.27.0's 1146×331 (the test pins that).
+  - `SidePanel.is_open` is its own flag, not `isHidden()`: a child widget counts
+    as hidden until its window first shows, so a fresh Analyse panel looked
+    closed and then appeared. The width is the one asked for or last dragged
+    (`splitterMoved`), never read back from the geometry, which lags a layout.
+  - Ctrl+Shift+A stays a toggle (checked while the panel in view shows Cedric),
+    so the Console tab bar's *Ask Cedric* button keeps working as before; the
+    shrimp only opens. The panel's × closes it whatever the tab.
+  - `ConsolePanel.show_history` cannot reach the side panel, so it emits a new
+    `side_requested("history")`; `.workspace` and `.history` stay attributes.
+  - `ContextBar.describe()` (summary plus PM, GM, ωc) feeds `LoopSource`, since
+    `summary()` has no margins and its text is asserted elsewhere.
+  - The Model panel's old 340 px cap is gone (default 320, minimum 240).
+  - No `Workspace`-level setting was added: the three `side/<workspace>/…` keys
+    are layout keys (cleared by Reset layout), and `modelPanel`/`cedricPanel`
+    are migrated, then removed, on the first restore that finds them.
+  Check by eye on a real screen: the Docs button and the shrimp at the rail's
+  foot, the Live toolbar's overflow arrow at narrow widths, the side panels'
+  tab bar and × in both themes, and dragging a panel wider then closing and
+  reopening it.
 
 - [ ] **R3 — The Design tab; the three apps go.** *opus.* **L** Needs R1 and R2.
   - **Design tab** (`ui/design_panel.py`, new): a `QWidget` with a three-way

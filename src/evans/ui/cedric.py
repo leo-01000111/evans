@@ -1,5 +1,5 @@
 """
-Cedric the shrimp, at the foot of the navigation rail, asking "need help?".
+Cedric the shrimp, at the foot of the navigation rail: poke him to ask him.
 
 Cedric is not under the GNU GPL: his name, drawing and the design data in
 this file are all rights reserved (Leon Gorecki). See LICENSE-CEDRIC.
@@ -12,8 +12,9 @@ night. He is twenty-odd straight hatch strokes, so he is painted directly with
 ``QPainter`` rather than carried as an SVG: that keeps the idle motion (bob,
 swim wave, antenna wiggle, blink) the site has without a web view.
 
-Clicking him emits ``clicked``; what that opens is :mod:`evans.ui.help`'s
-business, not his.
+Clicking him emits ``clicked``; the rail turns that into ``cedric_requested``
+and the main window opens his panel. (He used to ask "need help?" and open
+the documentation; that is the rail's *Docs* button now.)
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import random
 import time
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QSizePolicy, QWidget
 
 from . import theme
@@ -76,9 +77,6 @@ EYE_S = 0.3
 # The site's coral palette (cedric.css): (nose, tail tip, eye).
 DAY_INK = ("#f2643f", "#f2643f", "#121314")
 NIGHT_INK = ("#ff7048", "#ffa3c2", "#86a8ff")
-
-LINE = "need help?"
-
 
 def _mix(a: QColor, b: QColor, t: float) -> QColor:
     return QColor.fromRgbF(
@@ -157,7 +155,7 @@ def ink_for(tok) -> tuple[QColor, QColor, QColor]:
 
 
 class CedricButton(QWidget):
-    """Cedric with a "need help?" callout; the whole thing is one button."""
+    """Cedric on his own; the whole of him is one button."""
 
     clicked = Signal()
 
@@ -168,9 +166,9 @@ class CedricButton(QWidget):
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.TabFocus)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setToolTip("Open the Evans documentation")
-        self.setAccessibleName("Cedric: need help?")
-        self.setAccessibleDescription("Opens the Evans documentation")
+        self.setToolTip("Ask Cedric")
+        self.setAccessibleName("Cedric")
+        self.setAccessibleDescription("Opens Cedric, the assistant")
         self.setMouseTracking(True)
 
         self._t0 = time.monotonic()
@@ -190,21 +188,13 @@ class CedricButton(QWidget):
 
     # ── size ────────────────────────────────────────────────
 
-    # As wide as his line and no wider: the rail grows to fit him, and the
-    # window's minimum width has to stay inside the 1280 px budget.
+    # Narrower than the rail's workspace buttons, so he never widens it:
+    # the window's minimum width has to stay inside the 1280 px budget.
     def sizeHint(self) -> QSize:
-        return QSize(self._text_width() + 4, 84)
+        return QSize(56, 48)
 
     def minimumSizeHint(self) -> QSize:
-        return QSize(self._text_width() + 4, 72)
-
-    def _text_width(self) -> int:
-        return QFontMetrics(self._font()).horizontalAdvance(LINE)
-
-    def _font(self):
-        # The site's callout is lowercase mono, so the data face, not the
-        # uppercase sign/label one.
-        return theme.data_font(7.0)
+        return QSize(40, 40)
 
     # ── animation clock ──────────────────────────────────────
     #
@@ -282,24 +272,8 @@ class CedricButton(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         r = QRectF(self.rect())
 
-        # The callout: text on an underline, as on the site. (The site's
-        # leader line has no room on a rail this narrow.)
-        p.setFont(self._font())
-        fm = p.fontMetrics()
-        text_w = fm.horizontalAdvance(LINE)
-        text_h = fm.height()
-        ink = QColor(tok.ink if (self._hover or self.hasFocus())
-                     else tok.ink_muted)
-        tx = max(1.0, (r.width() - text_w) / 2)
-        ty = 4.0
-        p.setPen(ink)
-        p.drawText(QRectF(tx, ty, text_w + 2, text_h), Qt.AlignLeft, LINE)
-        rule_y = ty + text_h + 2
-        p.setPen(QPen(ink, 1.2, Qt.SolidLine, Qt.RoundCap))
-        p.drawLine(QPointF(tx, rule_y), QPointF(tx + text_w, rule_y))
-
-        # Cedric, fitted under the callout with room for the bob.
-        box = QRectF(1, rule_y + 4, r.width() - 2, r.height() - rule_y - 8)
+        # Cedric, fitted with room for the bob.
+        box = QRectF(1, 4, r.width() - 2, r.height() - 8)
         scale = min(box.width() / VIEW.width(), box.height() / VIEW.height())
         w, h = VIEW.width() * scale, VIEW.height() * scale
         ox = box.left() + (box.width() - w) / 2

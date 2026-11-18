@@ -21,7 +21,7 @@ them (grep, go-to-definition), don't read them whole.**
 | `evans.help` | help pages, one Markdown file per command in `help/pages/` | `__init__.py` |
 | `evans.examples` | sample `.evx` models (rebuilt by `tools/build_examples.py`) | `__init__.py` |
 | `evans.assistant` | Cedric's OpenRouter client and prompt protocol, Qt-free | `client.py`, `protocol.py` |
-| `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave | `mainwindow.py` |
+| `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave; `side_panel.py` is each workspace's right-hand tabbed panel (`SidePanel`) | `mainwindow.py` |
 | `evans.ui.console` | command window, workspace, script editor, live editor, figures | `console_dock.py` |
 | `evans.ui.code` | code editing: highlighting, completion popup, hover/Ctrl+click | `editor.py`, `completion.py` |
 | `evans.ui.sim` | the Model tab: canvas, palette, inspector, scope, run toolbar | `sim_tab.py`, `canvas.py` |
@@ -29,7 +29,7 @@ them (grep, go-to-definition), don't read them whole.**
 | `evans.ui.tabs` | the classical analysis tabs (System, Time, Frequency, Stability…) | the tab's own module |
 | `evans.ui.tabs.modern` | the state-space views (Modern tab) | `modern_tab.py`, `context.py` |
 | `evans.ui.diagram` | the fixed course-architecture diagram | `fixed_diagram.py` |
-| `evans.ui.assistant` | Cedric's side panel and the Ask Cedric buttons | `panel.py` |
+| `evans.ui.assistant` | Cedric's panel (the last side-panel tab of every workspace), what he reads (`sources.py`) and the Ask Cedric buttons | `panel.py` |
 
 ## Large files: search, don't read
 
@@ -40,7 +40,7 @@ them (grep, go-to-definition), don't read them whole.**
 | `console/lib_*.py` | 500–1800 each | commands, grouped: `lib_plot`, `lib_optim`, `lib_files`, `lib_stats`, `lib_signal`, `lib_dates`, `lib_tables`, `lib_sparse`, `lib_system`, `lib_text`, `lib_cells`, `lib_lang`, `lib_sim`, `lib_types`, `lib_ui`, `lib_classes` |
 | `console/figure_mpl.py` | 1100 | matplotlib rendering (3-D, pies, PDF/EPS) |
 | `ui/console/figure_view.py` | 1450 | pyqtgraph rendering of 2-D figures, data tips |
-| `ui/mainwindow.py` | 1500 | the window: menus, docks, layout, quit, recovery |
+| `ui/mainwindow.py` | 1900 | the window: menus, side panels, layout, quit, recovery |
 | `ui/plots.py` | 1200 | plot widgets shared by the analysis tabs |
 | `sim/solver.py` | 1200 | the simulation engine (steps, zero crossings, sample hits) |
 
@@ -54,7 +54,10 @@ them (grep, go-to-definition), don't read them whole.**
 - **A Simulink block**: `sim/blocks/<category>.py`; the contract is `sim/block.py`; how
   the canvas draws it is `ui/sim/items.py`.
 - **A menu action**: `ui/mainwindow.py` `_build_menus`.
-- **Something saved between sessions**: `ui/persist.py` (QSettings keys).
+- **Something saved between sessions**: `ui/persist.py` (QSettings keys); window layout,
+  side panels included (`side/<workspace>/open|tab|width`), in `MainWindow.save_layout`.
+- **A workspace's side panel** (Loop, Properties, Workspace, Cedric…): `ui/side_panel.py`;
+  the main window builds them and moves Cedric between them (`_place_cedric`).
 - **Theme colours and spacing**: `ui/theme.py`, `ui/design.py`.
 
 ## Tests by area

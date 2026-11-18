@@ -1,5 +1,5 @@
 """
-Layout regressions: size, context bar, model panel, persistence.
+Layout regressions: size, context bar, side panels, persistence.
 
 The first test here is the one the project did not have. The application's
 minimum width had grown to **2038 px** — wider than a 1920 monitor — because
@@ -57,7 +57,9 @@ def reset(request, app):
         yield
         return
     window = request.getfixturevalue("win")
-    window._model_dock.hide()
+    # Every side panel back to its default: Analyse closed on Loop, Model
+    # and Console open on their first tab.
+    window._reset_side_panels()
     # App docks too: one test leaving the PID Tuner open changes the next
     # test's minimum window size, which is exactly what this file measures.
     for dock in window._app_docks.values():
@@ -229,35 +231,132 @@ def test_the_context_bar_survives_a_broken_model(app, win):
 
 
 # ──────────────────────────────────────────────────────────────
-#  Model panel
+#  Side panels (R2): the loop editor is Analyse's Loop tab
 # ──────────────────────────────────────────────────────────────
 
-def test_the_model_panel_is_hidden_until_asked_for(win):
-    assert not win._model_dock.isVisible()
+def test_the_loop_panel_is_closed_until_asked_for(win):
+    side = win.side_panel_of(Workspace.ANALYSE)
+    assert not side.is_open and side.current == "loop"
+    assert side.keys == ("loop", "design", "cedric")
 
 
-def test_toggling_the_model_panel_shows_the_diagram_and_editor(app, win):
-    win.toggle_model_panel()
+def test_toggling_the_side_panel_shows_the_diagram_and_editor(app, win):
+    win.toggle_side_panel()
     _settle(app, 3)
-    assert win._model_dock.isVisible()
-    assert win._act_model.isChecked()
+    side = win.side_panel_of(Workspace.ANALYSE)
+    assert side.is_open and side.isVisible()
+    assert win._act_side.isChecked()
     assert win._diagram.isVisible() and win._editor.isVisible()
 
-    win.toggle_model_panel()
+    win.toggle_side_panel()
     _settle(app, 3)
-    assert not win._model_dock.isVisible()
-    assert not win._act_model.isChecked()
+    assert not side.is_open and not side.isVisible()
+    assert not win._act_side.isChecked()
 
 
-def test_the_context_bar_button_opens_the_model_panel(app, win):
+def test_the_context_bar_button_opens_the_loop_tab(app, win):
+    side = win.side_panel_of(Workspace.ANALYSE)
+    side.set_current("design")
+    win.show_workspace(Workspace.CONSOLE)
+    assert win._context._edit_btn.text() == "Edit loop"
     win._context.edit_requested.emit()
     _settle(app, 3)
-    assert win._model_dock.isVisible()
+    assert win._stack.current is Workspace.ANALYSE
+    assert side.is_open and side.current == "loop"
+    assert win._diagram.isVisible()
+
+
+def test_every_workspace_has_its_own_side_panel(win):
+    keys = {w: win.side_panel_of(w).keys for w in Workspace}
+    assert keys == {
+        Workspace.ANALYSE: ("loop", "design", "cedric"),
+        Workspace.MODEL: ("properties", "cedric"),
+        Workspace.CONSOLE: ("workspace", "history", "cedric"),
+    }
+    assert win.side_panel_of(Workspace.MODEL) is win._sim_tab.side_panel
+    for workspace in Workspace:
+        side = win.side_panel_of(workspace)
+        assert side.accessibleName()
+        assert side._close.accessibleName() == "Close side panel"
+        assert side.is_open == (workspace is not Workspace.ANALYSE)
+
+
+def test_no_dock_is_left_but_the_apps(win):
+    from PySide6.QtWidgets import QDockWidget
+
+    docks = set(win.findChildren(QDockWidget))
+    assert docks == set(win._app_docks.values())
+    assert not hasattr(win, "_model_dock") and not hasattr(win, "_act_model")
+
+
+def test_the_view_menu_toggle_follows_the_workspace(app, win):
+    """The trap: nothing restores it now, so every switch must resync."""
+    win.show_workspace(Workspace.ANALYSE)
+    assert not win._act_side.isChecked()
+    win.show_workspace(Workspace.MODEL)
+    assert win._act_side.isChecked()
+    win._act_side.trigger()                      # Ctrl+backslash on Model
+    assert not win.side_panel_of(Workspace.MODEL).is_open
+    win.show_workspace(Workspace.CONSOLE)
+    assert win._act_side.isChecked()
+    win.show_workspace(Workspace.MODEL)
+    assert not win._act_side.isChecked()
+    assert win._act_side.shortcut().toString() == "Ctrl+\\"
+
+
+#: The window's minimum in 0.27.0, before the side panels.
+MIN_BEFORE_R2 = (1146, 331)
+
+
+def _open_every_panel(app, win):
+    for workspace in Workspace:
+        win.side_panel_of(workspace).set_open(True)
+    _settle(app)
+
+
+def test_the_minimum_size_does_not_grow_with_every_panel_open(app, win):
+    _open_every_panel(app, win)
+    for workspace in Workspace:
+        win.show_workspace(workspace)
+        _settle(app, 5)
+        hint = win.minimumSizeHint()
+        assert hint.width() <= MIN_BEFORE_R2[0], (workspace, hint)
+        assert hint.height() <= MIN_BEFORE_R2[1], (workspace, hint)
+        win.resize(TARGET_W, TARGET_H)
+        _settle(app, 5)
+        assert (win.width(), win.height()) == (TARGET_W, TARGET_H)
+        assert win.side_panel.isVisible()
+        assert win.side_panel.width() >= win.side_panel.MINIMUM_WIDTH
+
+
+def test_the_rail_stays_at_the_left_edge_with_a_panel_open(app, win):
+    """The loop dock used to dock left of the rail, putting it mid-window."""
+    _open_every_panel(app, win)
+    for workspace in Workspace:
+        win.show_workspace(workspace)
+        _settle(app, 5)
+        rail = win._stack.rail
+        assert rail.mapTo(win, rail.rect().topLeft()).x() == 0, workspace
+        side = win.side_panel
+        right = side.mapTo(win, side.rect().topRight()).x()
+        assert right > win.width() - 40, (workspace, right)
+
+
+def test_a_panel_opened_on_analyse_stays_on_analyse(app, win):
+    win.show_workspace(Workspace.ANALYSE)
+    win.set_side_panel_open(True)
+    _settle(app, 3)
+    analyse = win.side_panel_of(Workspace.ANALYSE)
+    assert analyse.isVisible()
+    win.show_workspace(Workspace.MODEL)
+    _settle(app, 3)
+    assert not analyse.isVisible() and analyse.is_open
+    assert not win._diagram.isVisible()
 
 
 def test_editing_a_block_still_reaches_every_tab(app, win):
-    """Moving the editor into a dock must not break the wiring."""
-    win.toggle_model_panel()
+    """Moving the editor into the side panel must not break the wiring."""
+    win.toggle_side_panel()
     _settle(app, 3)
     win._on_tf_edited("K2", ctl.tf([5], [1]))
     _settle(app, 3)
@@ -301,14 +400,14 @@ def test_layout_is_saved_and_restored(app, win, scratch_settings):
     win._grid.panes[0].set_kind("frequency")
     win._grid.panes[1].set_kind("bode")
     win._grid.panes[1].set_source(Source.PLANT)
-    win.toggle_model_panel()
+    win.toggle_side_panel()
     _settle(app)
     win.save_layout()
 
     win.resize(900, 600)
     win.set_pane_layout(1)
     win._grid.panes[0].set_kind("step")
-    win._model_dock.hide()
+    win.side_panel_of(Workspace.ANALYSE).set_open(False)
     _settle(app)
 
     assert win.restore_layout()
@@ -316,7 +415,7 @@ def test_layout_is_saved_and_restored(app, win, scratch_settings):
     assert win._grid.keys == ("frequency", "bode")
     assert win._grid.sources[1] is Source.PLANT
     assert win._layout_buttons[2].isChecked()
-    assert win._model_dock.isVisible()
+    assert win.side_panel_of(Workspace.ANALYSE).is_open
 
 
 def test_a_corrupt_saved_pane_layout_is_ignored(app, win, scratch_settings):
@@ -335,13 +434,21 @@ def test_restore_reports_when_there_is_nothing_saved(win, scratch_settings):
 
 
 def test_reset_layout_clears_the_saved_state(app, win, scratch_settings):
-    win.toggle_model_panel()
+    win.toggle_side_panel()
+    win.side_panel_of(Workspace.MODEL).set_open(False)
+    win.side_panel_of(Workspace.CONSOLE).set_current("cedric")
     win.save_layout()
     _settle(app)
 
     win.reset_layout()
     _settle(app)
-    assert not win._model_dock.isVisible()
+    sides = {w: win.side_panel_of(w) for w in Workspace}
+    assert (sides[Workspace.ANALYSE].is_open,
+            sides[Workspace.ANALYSE].current) == (False, "loop")
+    assert (sides[Workspace.MODEL].is_open,
+            sides[Workspace.MODEL].current) == (True, "properties")
+    assert (sides[Workspace.CONSOLE].is_open,
+            sides[Workspace.CONSOLE].current) == (True, "workspace")
     # R0: Reset layout goes to the 2x2 default, not a single step response.
     assert win._grid.keys == DEFAULT_LAYOUT
     assert win._grid.count == 4
@@ -351,18 +458,80 @@ def test_reset_layout_clears_the_saved_state(app, win, scratch_settings):
 def test_the_view_menu_agrees_with_the_window_after_a_restore(app, win,
                                                              scratch_settings):
     """
-    `restoreState` brings dock visibility back on its own, so the menu check
-    marks have to be re-synchronised or they silently disagree.
+    The side panels come back from their own keys, so the menu check marks
+    have to be re-synchronised or they silently disagree.
     """
-    win.toggle_model_panel()
+    win.toggle_side_panel()
     win.save_layout()
-    win._model_dock.hide()
-    win._act_model.setChecked(False)
+    win.side_panel_of(Workspace.ANALYSE).set_open(False)
+    win._act_side.setChecked(False)
     _settle(app)
 
     win.restore_layout()
     _settle(app)
-    assert win._act_model.isChecked() == win._model_dock.isVisible()
+    assert win._stack.current is Workspace.ANALYSE
+    assert win._act_side.isChecked() == win.side_panel.is_open
+    assert win._act_side.isChecked()
+
+
+def test_each_side_panel_round_trips_open_tab_and_width(
+        app, win, scratch_settings):
+    win.resize(1400, 850)
+    sides = {w: win.side_panel_of(w) for w in Workspace}
+    sides[Workspace.ANALYSE].set_current("design")
+    sides[Workspace.ANALYSE].set_open(True)
+    sides[Workspace.ANALYSE].set_preferred_width(300)
+    sides[Workspace.MODEL].set_open(False)
+    sides[Workspace.CONSOLE].set_current("history")
+    sides[Workspace.CONSOLE].set_preferred_width(410)
+    _settle(app)
+    win.save_layout()
+    settings = QSettings(MainWindow.SETTINGS_ORG, MainWindow.SETTINGS_APP)
+    assert settings.value("side/analyse/tab") == "design"
+    assert int(settings.value("side/console/width")) == 410
+
+    win._reset_side_panels()
+    _settle(app)
+    assert win.restore_layout()
+    _settle(app)
+    assert (sides[Workspace.ANALYSE].is_open,
+            sides[Workspace.ANALYSE].current) == (True, "design")
+    assert sides[Workspace.ANALYSE].preferred_width == 300
+    assert not sides[Workspace.MODEL].is_open
+    assert (sides[Workspace.CONSOLE].is_open,
+            sides[Workspace.CONSOLE].current) == (True, "history")
+    assert sides[Workspace.CONSOLE].preferred_width == 410
+
+
+def test_the_old_dock_keys_are_migrated_once(app, win, scratch_settings):
+    """Before R2: modelPanel (the loop dock) and cedricPanel (Cedric's)."""
+    win.save_layout()
+    settings = QSettings(MainWindow.SETTINGS_ORG, MainWindow.SETTINGS_APP)
+    settings.remove("side")
+    settings.setValue("modelPanel", "true")
+    settings.setValue("cedricPanel", True)
+    settings.sync()
+
+    assert win.restore_layout()
+    _settle(app)
+    analyse = win.side_panel_of(Workspace.ANALYSE)
+    console = win.side_panel_of(Workspace.CONSOLE)
+    assert (analyse.is_open, analyse.current) == (True, "loop")
+    assert (console.is_open, console.current) == (True, "cedric")
+    settings = QSettings(MainWindow.SETTINGS_ORG, MainWindow.SETTINGS_APP)
+    assert not settings.contains("modelPanel")
+    assert not settings.contains("cedricPanel")
+
+
+def test_a_version_one_window_state_is_ignored(app, win, scratch_settings):
+    """A layout from before R2 names docks that are gone: not half applied."""
+    assert MainWindow.STATE_VERSION == 2
+    assert win.restoreState(win.saveState(1), MainWindow.STATE_VERSION) \
+        is False
+    win.save_layout()
+    settings = QSettings(MainWindow.SETTINGS_ORG, MainWindow.SETTINGS_APP)
+    settings.setValue("windowState", win.saveState(1))
+    assert win.restore_layout()                  # the rest still comes back
 
 
 # ──────────────────────────────────────────────────────────────

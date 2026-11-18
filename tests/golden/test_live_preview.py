@@ -432,13 +432,19 @@ def test_the_dialog_fits_a_small_screen(app):
 
 
 def test_the_preview_does_not_widen_the_live_tab(app, editor, engine):
-    """The toolbar sets the tab's minimum width (test_ui_layout checks it
-    fits 1280 px); the split must not add to it."""
+    """
+    The split must keep the Live tab narrow. Until R2 the button row set the
+    tab's minimum (about 1000 px) and the split only had to stay under it;
+    the row is now a toolbar that overflows, so the split sets the minimum
+    and must leave room for the rail and the Console side panel inside the
+    1280 px budget (test_ui_layout checks the whole window).
+    """
     off = editor.minimumSizeHint().width()
     editor.set_preview(True)
     _settle(app)
-    assert editor.minimumSizeHint().width() <= off
-    assert editor._split.minimumSizeHint().width() < off
+    assert off <= 640
+    assert editor.minimumSizeHint().width() <= 640
+    assert editor._split.minimumSizeHint().width() <= 640
 
 
 def test_live_tab_files_are_left_alone(tmp_path):

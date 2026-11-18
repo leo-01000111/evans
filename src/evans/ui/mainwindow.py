@@ -7,7 +7,7 @@ Main application window.
   ┌──────────────────────────────────────────────────────────┐
   │ ▣ File Export View …              Evans — …          ─ □ ✕ │  title bar
   ├──────────────────────────────────────────────────────────┤
-  │ G(s) = …   K₂(s) = …   ● stable   PM 60°   [Edit model ▾]│  context bar
+  │ G(s) = …   K₂(s) = …   ● stable   PM 60°   [Edit loop]   │  context bar
   ├──────────────────────────────────────────────────────────┤
   │ 📌 Snapshot  [ … ]  Restore  Delete  Compare   (hideable)│
   ├──────────────────────────────────────────────────────────┤
@@ -16,14 +16,17 @@ Main application window.
   │                    the analysis area                     │
   └──────────────────────────────────────────────────────────┘
 
-The architecture diagram and the block editor are a **dock** (Ctrl+\),
-not a permanent column. They used to occupy 420–760 px on every tab — 21 %
-of the window — including on the two tabs that analyse a different model
-entirely. What is always visible instead is the context bar, which answers
-"what is loaded and is it stable?" in one strip.
+Each workspace page is ``[content | side panel]`` (:mod:`.side_panel`), the
+panel opened and closed with View ▸ Side panel (Ctrl+\). On Analyse its
+*Loop* tab holds the architecture diagram and the block editor, which used
+to occupy 420–760 px on every tab and then a dock left of the rail; what is
+always visible instead is the context bar, which answers "what is loaded and
+is it stable?" in one strip. Cedric is the last tab of every panel: one
+assistant panel, moved into the workspace in view.
 
-Geometry, dock layout and the current tab are saved on close and restored on
-launch; View ▸ Reset layout puts them back to the defaults.
+Geometry, each side panel (open, tab, width) and the current workspace are
+saved on close and restored on launch; View ▸ Reset layout puts them back to
+the defaults.
 
 The title bar (:mod:`.titlebar`) carries the menus. On Windows it replaces
 the native caption while keeping the native frame (:mod:`.winframe`), so the
@@ -72,15 +75,16 @@ from ..core.tf_utils import (
 from ..sim.model import is_model_file, preferred_file
 from . import help, iconset, keys, persist, recovery, theme, winframe
 from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
-from .assistant import AssistantDock
+from .assistant import AssistantPanel, LoopSource, ModelSource
 from .block_editor import BlockEditor
 from .console import ConsolePanel, FigureArea
 from .context_bar import ContextBar
-from .design import TIGHT
+from .design import TIGHT, EmptyState
 from .diagram.fixed_diagram import FixedDiagramView
 from .loop_undo import ReplaceLoop
 from .panes import DEFAULT_LAYOUT, LAYOUTS, PANE_KINDS, PaneGrid, Source
 from .persist import RecentFiles
+from .side_panel import SidePanel, page_with_panel
 from .sim.sim_tab import SimTab
 from .tabs.modern import ModernTab
 from .titlebar import TitleBar
@@ -219,6 +223,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self._stack)
         self._stack.changed.connect(self._on_workspace_changed)
         self._stack.rail.help_requested.connect(help.open_help)
+        self._stack.rail.cedric_requested.connect(
+            lambda: self.set_cedric_visible(True))
 
         self._stack.add_page(Workspace.ANALYSE, self._build_analyse())
         # The Simulink tab becomes the Model workspace outright: it is a
@@ -229,6 +235,13 @@ class MainWindow(QMainWindow):
             lambda _path: self._sync_undo_group())
         self._stack.add_page(Workspace.MODEL, self._sim_tab)
         self._stack.add_page(Workspace.CONSOLE, self._build_console())
+        #: Each workspace's side panel; Cedric is the last tab of each.
+        self._side_panels: dict[Workspace, SidePanel] = {
+            Workspace.ANALYSE: self._analyse_side,
+            Workspace.MODEL: self._sim_tab.side_panel,
+            Workspace.CONSOLE: self._console_side,
+        }
+        self._build_cedric()
 
         # ── Connections ──
         self._diagram.block_selected.connect(self._on_block_selected)
@@ -252,11 +265,11 @@ class MainWindow(QMainWindow):
         # ── the model context bar ──
         #
         # What used to be a permanent 420–760 px column is now one strip. The
-        # diagram and the block editor live in a dock that opens on demand
-        # (Ctrl+\), so the analysis area gets the width instead of a picture
-        # of an architecture that two of the eight tabs do not even analyse.
+        # diagram and the block editor are the side panel's Loop tab, opened
+        # on demand (Ctrl+\), so the analysis area gets the width instead of
+        # a picture of an architecture most panes do not need.
         self._context = ContextBar(self._arch)
-        self._context.edit_requested.connect(self.toggle_model_panel)
+        self._context.edit_requested.connect(self.show_loop_editor)
         main_lay.addWidget(self._context)
 
         # ── the snapshot bar ──
@@ -279,27 +292,23 @@ class MainWindow(QMainWindow):
         main_lay.addWidget(self._wrap_grid(), stretch=1)
         self._sync_layout_buttons()
 
-        # ── the model panel, as a dock ──
-        self._model_dock = QDockWidget("Model", self)
-        self._model_dock.setObjectName("ModelDock")
-        self._model_dock.setAllowedAreas(Qt.LeftDockWidgetArea |
-                                         Qt.RightDockWidgetArea)
-        panel = QWidget()
-        panel_lay = QVBoxLayout(panel)
-        panel_lay.setContentsMargins(0, 0, 0, 0)
-        panel_lay.setSpacing(TIGHT)
+        # ── the side panel: Loop · Design · Cedric, closed by default ──
+        side = SidePanel("analyse")
+        loop = side.add_tab("loop", "Loop")
         # The diagram is inherently wide and short (roughly 3.3:1), so cap its
         # height and give the space it cannot use to the block editor.
         self._diagram = FixedDiagramView(self._arch)
         self._diagram.setMinimumHeight(150)
         self._diagram.setMaximumHeight(260)
-        panel_lay.addWidget(self._diagram, stretch=0)
+        loop.layout().addWidget(self._diagram, stretch=0)
         self._editor = BlockEditor()
-        panel_lay.addWidget(self._editor, stretch=1)
-        self._model_dock.setWidget(panel)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self._model_dock)
-        self._model_dock.hide()
-        return central
+        loop.layout().addWidget(self._editor, stretch=1)
+        side.add_tab("design", "Design", EmptyState(
+            "Design tools arrive here",
+            "Gain, compensator and PID design move into this tab."))
+        side.set_open(False)
+        self._analyse_side = side
+        return page_with_panel(central, side)
 
 
     def _wrap_grid(self) -> QWidget:
@@ -420,68 +429,133 @@ class MainWindow(QMainWindow):
         self._console.figure_area_wanted.connect(self._figures.setVisible)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
-        self._build_cedric()
-        return split
+        # The workspace and history beside every Console tab, not only the
+        # first: the side panel is outside the console's own tabs.
+        side = SidePanel("console")
+        side.add_tab("workspace", "Workspace", self._console.workspace)
+        side.add_tab("history", "History", self._console.history)
+        self._console.side_requested.connect(self._show_console_side)
+        self._console_side = side
+        return page_with_panel(split, side)
+
+    def _show_console_side(self, key: str) -> None:
+        self._console_side.set_current(key)
+        self._console_side.set_open(True)
+        self._sync_side_action()
 
     def _reveal_figures(self) -> None:
         if not self._console.console.in_model_script:
             self._stack.set_current(Workspace.CONSOLE)
 
+    # ── Side panels and Cedric ────────────────────────────────
+
     def _build_cedric(self) -> None:
         """
-        Cedric, the assistant, as a dock on the right of the Console
-        workspace. Hidden until asked for; shown only while the Console
-        workspace is, since the code he reads lives there.
+        Cedric, the assistant: one panel, the last tab of every workspace's
+        side panel. It is moved into the workspace in view
+        (`_place_cedric`), so the conversation is the same object wherever
+        it is read.
         """
-        self._cedric_dock = AssistantDock(self)
-        self._cedric_dock.setAllowedAreas(Qt.RightDockWidgetArea |
-                                          Qt.LeftDockWidgetArea)
-        self.addDockWidget(Qt.RightDockWidgetArea, self._cedric_dock)
-        self._cedric_dock.hide()
-        #: Whether the user wants him open (shown on the Console workspace).
-        self._cedric_wanted = False
-        self._cedric_syncing = False
-        self._cedric_dock.visibilityChanged.connect(self._on_cedric_visibility)
-        panel = self._cedric_dock.panel
-        panel.set_source(self._console.assistant_source)
+        self._cedric_panel = AssistantPanel()
+        self._loop_source = LoopSource(lambda: self._arch,
+                                       lambda: self._context.describe())
+        self._model_source = ModelSource(
+            lambda: self._sim_tab._canvas.root_model())
+        for workspace, side in self._side_panels.items():
+            side.add_tab("cedric", "Cedric")
+            side.toggled.connect(
+                lambda _on, w=workspace: self._on_side_changed(w))
+            side.tab_changed.connect(
+                lambda _key, w=workspace: self._on_side_changed(w))
+        panel = self._cedric_panel
         panel.run_command.connect(self._console.execute)
         panel.paste_command.connect(self._console.recall)
         self._console.cedric_requested.connect(self._ask_cedric)
+        self._place_cedric(self._stack.current)
+
+    def _place_cedric(self, workspace) -> None:
+        """Move Cedric into ``workspace``'s panel; read what it shows."""
+        if getattr(self, "_cedric_panel", None) is None:
+            return                                  # still being built
+        holder = self._side_panels[workspace].holder("cedric")
+        if self._cedric_panel.parentWidget() is not holder:
+            holder.layout().addWidget(self._cedric_panel)
+        self._cedric_panel.set_source({
+            Workspace.ANALYSE: self._loop_source,
+            Workspace.MODEL: self._model_source,
+            Workspace.CONSOLE: self._console.assistant_source,
+        }[workspace])
+
+    @property
+    def side_panel(self) -> SidePanel:
+        """The side panel of the workspace in view."""
+        return self._side_panels[self._stack.current]
+
+    def side_panel_of(self, workspace) -> SidePanel:
+        return self._side_panels[workspace]
+
+    def set_side_panel_open(self, on: bool) -> None:
+        """Open or close the side panel of the workspace in view."""
+        self.side_panel.set_open(on)
+        self._sync_side_action()
+
+    def toggle_side_panel(self, *_ignored) -> None:
+        """View ▸ Side panel (Ctrl+backslash): the current workspace's."""
+        self.set_side_panel_open(not self.side_panel.is_open)
+
+    def show_loop_editor(self, *_ignored) -> None:
+        """*Edit loop*: the Analyse panel, open on Loop."""
+        side = self._side_panels[Workspace.ANALYSE]
+        if self._stack.current is not Workspace.ANALYSE:
+            self._stack.set_current(Workspace.ANALYSE)
+        side.set_current("loop")
+        side.set_open(True)
+        self._sync_side_action()
 
     def _ask_cedric(self, context, source, action: str) -> None:
-        """*Ask Cedric* on a selection: open his panel and pass it on."""
+        """
+        *Ask Cedric* on a console selection or error: his context is on the
+        Console, so go there, open him and pass it on.
+        """
+        if self._stack.current is not Workspace.CONSOLE:
+            self._stack.set_current(Workspace.CONSOLE)
         self.set_cedric_visible(True)
-        self._cedric_dock.panel.request(context, source, action)
+        self._cedric_panel.request(context, source, action)
 
     def set_cedric_visible(self, wanted: bool) -> None:
-        """Open or close Cedric's panel (it shows on the Console workspace)."""
-        self._cedric_wanted = bool(wanted)
-        if wanted and self._stack.current is not Workspace.CONSOLE:
-            self._stack.set_current(Workspace.CONSOLE)
-        self._sync_cedric()
+        """
+        Open the current workspace's side panel on Cedric, or close it if
+        it is showing him. Stays on the workspace in view.
+        """
+        side = self.side_panel
+        if wanted:
+            side.set_current("cedric")
+            side.set_open(True)
+        elif side.is_open and side.current == "cedric":
+            side.set_open(False)
+        self._sync_side_action()
 
-    def _sync_cedric(self) -> None:
-        show = self._cedric_wanted and self._stack.current is Workspace.CONSOLE
-        self._cedric_syncing = True
-        try:
-            self._cedric_dock.setVisible(show)
-            if show:
-                self._cedric_dock.raise_()
-        finally:
-            self._cedric_syncing = False
-        if hasattr(self, "_act_cedric"):
-            self._act_cedric.blockSignals(True)
-            self._act_cedric.setChecked(self._cedric_wanted)
-            self._act_cedric.blockSignals(False)
+    @property
+    def cedric_showing(self) -> bool:
+        """Whether Cedric is the open tab of the current side panel."""
+        side = self.side_panel
+        return side.is_open and side.current == "cedric"
 
-    def _on_cedric_visibility(self, visible: bool) -> None:
-        """Closed with its own × (not hidden by a workspace switch)."""
-        if self._cedric_syncing or visible:
+    def _on_side_changed(self, workspace) -> None:
+        if workspace is self._stack.current:
+            self._sync_side_action()
+
+    def _sync_side_action(self) -> None:
+        """The View menu's check marks follow the panel in view."""
+        if getattr(self, "_side_panels", None) is None:
             return
-        if self._stack.current is Workspace.CONSOLE \
-                and not self._cedric_dock.isVisible():
-            self._cedric_wanted = False
-            self._sync_cedric()
+        for name, checked in (("_act_side", self.side_panel.is_open),
+                              ("_act_cedric", self.cedric_showing)):
+            action = getattr(self, name, None)
+            if action is not None:
+                action.blockSignals(True)
+                action.setChecked(checked)
+                action.blockSignals(False)
 
     def _console_state(self) -> dict:
         """
@@ -529,14 +603,6 @@ class MainWindow(QMainWindow):
     SETTINGS_ORG = "Evans"
     SETTINGS_APP = "Evans"
 
-    def toggle_model_panel(self, *_ignored) -> None:
-        """Show or hide the architecture diagram and block editor."""
-        visible = not self._model_dock.isVisible()
-        self._model_dock.setVisible(visible)
-        if visible:
-            self._model_dock.raise_()
-        self._act_model.setChecked(visible)
-
     def _settings(self) -> QSettings:
         return QSettings(self.SETTINGS_ORG, self.SETTINGS_APP)
 
@@ -550,12 +616,17 @@ class MainWindow(QMainWindow):
         """
         settings = self._settings()
         settings.setValue("geometry", self.saveGeometry())
-        settings.setValue("windowState", self.saveState())
+        # Version 2 from R2 on: the docks a version-1 state names are gone,
+        # and an older layout is ignored rather than half applied.
+        settings.setValue("windowState", self.saveState(self.STATE_VERSION))
         settings.setValue("paneKeys", list(self._grid.keys))
         settings.setValue("paneSources",
                           [source.name for source in self._grid.sources])
-        settings.setValue("modelPanel", self._model_dock.isVisible())
-        settings.setValue("cedricPanel", self._cedric_wanted)
+        for workspace, side in self._side_panels.items():
+            key = self._side_key(workspace)
+            settings.setValue(f"{key}/open", side.is_open)
+            settings.setValue(f"{key}/tab", side.current)
+            settings.setValue(f"{key}/width", side.preferred_width)
         settings.setValue("workspace", self._stack.current.value)
 
     def restore_layout(self) -> bool:
@@ -568,7 +639,7 @@ class MainWindow(QMainWindow):
         if geometry is not None:
             self.restoreGeometry(geometry)
         if state is not None:
-            self.restoreState(state)
+            self.restoreState(state, self.STATE_VERSION)
         self._restore_panes(settings.value("paneKeys"),
                             settings.value("paneSources"))
         saved = settings.value("workspace")
@@ -577,14 +648,60 @@ class MainWindow(QMainWindow):
                 self._stack.set_current(Workspace(saved))
             except ValueError:
                 pass
-        # `restoreState` brings back dock *visibility* too, so the menu check
-        # marks have to be re-synchronised or they disagree with the window.
-        # Cedric's dock follows the saved wish and the workspace instead.
-        self._cedric_wanted = str(settings.value("cedricPanel", False)).lower() \
-            in ("true", "1")
-        self._sync_cedric()
+        self._restore_side_panels(settings)
         self._sync_view_menu()
         return True
+
+    #: The `saveState` version: 2 since the docks went into side panels.
+    STATE_VERSION = 2
+
+    #: Each side panel as Reset layout leaves it: (open, tab).
+    SIDE_DEFAULTS = {
+        Workspace.ANALYSE: (False, "loop"),
+        Workspace.MODEL: (True, "properties"),
+        Workspace.CONSOLE: (True, "workspace"),
+    }
+
+    @staticmethod
+    def _side_key(workspace) -> str:
+        return f"side/{workspace.name.lower()}"
+
+    def _restore_side_panels(self, settings: QSettings) -> None:
+        """
+        Each workspace's panel: open, tab and width. Then the keys of the
+        docks they replaced, once: ``modelPanel`` (the loop dock) opens
+        Analyse's panel on Loop, ``cedricPanel`` Console's on Cedric.
+        """
+        for workspace, side in self._side_panels.items():
+            key = self._side_key(workspace)
+            is_open = settings.value(f"{key}/open")
+            if is_open is not None:
+                side.set_open(_truthy(is_open))
+            tab = settings.value(f"{key}/tab")
+            if isinstance(tab, str):
+                side.set_current(tab)
+            try:
+                width = int(settings.value(f"{key}/width") or 0)
+            except (TypeError, ValueError):
+                width = 0
+            if width > 0:
+                side.set_preferred_width(width)
+        for old, workspace, tab in (("modelPanel", Workspace.ANALYSE, "loop"),
+                                    ("cedricPanel", Workspace.CONSOLE,
+                                     "cedric")):
+            if settings.contains(old):
+                if _truthy(settings.value(old)):
+                    side = self._side_panels[workspace]
+                    side.set_current(tab)
+                    side.set_open(True)
+                settings.remove(old)
+
+    def _reset_side_panels(self) -> None:
+        for workspace, (is_open, tab) in self.SIDE_DEFAULTS.items():
+            side = self._side_panels[workspace]
+            side.set_current(tab)
+            side.set_preferred_width(SidePanel.DEFAULT_WIDTH)
+            side.set_open(is_open)
 
     def _restore_panes(self, keys, sources) -> None:
         """
@@ -618,14 +735,9 @@ class MainWindow(QMainWindow):
         this, the only fix is deleting a registry key.
         """
         self._settings().clear()
-        for dock in (self._model_dock, *self._app_docks.values()):
+        for dock in self._app_docks.values():
             dock.hide()
-        self.removeDockWidget(self._model_dock)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self._model_dock)
-        self._cedric_wanted = False
-        self.removeDockWidget(self._cedric_dock)
-        self.addDockWidget(Qt.RightDockWidgetArea, self._cedric_dock)
-        self._sync_cedric()
+        self._reset_side_panels()
         self.resize(1400, 850)
         self._grid.set_layout_size(4, DEFAULT_LAYOUT, (None,) * 4)
         self._sync_layout_buttons()
@@ -634,9 +746,7 @@ class MainWindow(QMainWindow):
         self._status.showMessage("Layout reset", 4000)
 
     def _sync_view_menu(self) -> None:
-        self._act_model.blockSignals(True)
-        self._act_model.setChecked(self._model_dock.isVisible())
-        self._act_model.blockSignals(False)
+        self._sync_side_action()
 
         current = self._stack.current
         for workspace, action in self._workspace_actions.items():
@@ -1141,18 +1251,20 @@ class MainWindow(QMainWindow):
 
         # View menu
         view_menu = mb.addMenu("&View")
-        act_model = QAction("&Model panel", self, checkable=True)
-        act_model.setShortcut("Ctrl+\\")
-        act_model.setStatusTip(
-            "The architecture diagram and the block editor")
-        act_model.triggered.connect(self.toggle_model_panel)
-        self._act_model = act_model
-        view_menu.addAction(act_model)
+        act_side = QAction("&Side panel", self, checkable=True)
+        act_side.setShortcut("Ctrl+\\")
+        act_side.setStatusTip(
+            "This workspace's side panel: the loop, the block properties or "
+            "the variables, and Cedric")
+        act_side.triggered.connect(self.toggle_side_panel)
+        self._act_side = act_side
+        view_menu.addAction(act_side)
 
         act_cedric = QAction("&Cedric", self, checkable=True)
         act_cedric.setShortcut("Ctrl+Shift+A")
         act_cedric.setStatusTip(
-            "Cedric, the assistant: ask a free AI model about your code")
+            "Cedric, the assistant, in this workspace's side panel: ask a "
+            "free AI model about your code")
         act_cedric.triggered.connect(self.set_cedric_visible)
         # What the console's tab-bar button says (the menu keeps "Cedric").
         act_cedric.setIconText("Ask Cedric")
@@ -1206,7 +1318,7 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
         view_menu.addAction(QAction(
             "&Reset layout", self, triggered=self.reset_layout,
-            statusTip="Restore the default window and dock arrangement"))
+            statusTip="Restore the default window, side panels and panes"))
         view_menu.addSeparator()
         view_menu.addAction(QAction(
             "Send current plant to the console", self,
@@ -1429,7 +1541,9 @@ class MainWindow(QMainWindow):
             self._update_all_tabs()
         elif workspace is Workspace.CONSOLE:
             self._console.focus()
-        self._sync_cedric()
+        # Cedric follows the workspace, and the View menu's Side panel and
+        # Cedric marks follow its panel (there is no dock state to restore).
+        self._place_cedric(workspace)
         self._sync_view_menu()
         self._sync_model_status()
         self._sync_file_tips()
@@ -1747,6 +1861,13 @@ class MainWindow(QMainWindow):
 
 
 # ── Helpers ───────────────────────────────────────────────────
+
+def _truthy(value) -> bool:
+    """A saved bool: QSettings hands it back as "true" on some backends."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return bool(value)
+
 
 def _tf_short(tf: ctl.TransferFunction) -> str:
     """Very short string for status bar."""

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QWidget,
 )
 
@@ -72,6 +73,9 @@ class SnapshotBar(QWidget):
 
         self._status = QLabel("")
         self._status.setStyleSheet("color: palette(mid);")
+        # Takes the room that is left and asks for none: with the Analyse
+        # side panel open, this row must leave the window's minimum alone.
+        self._status.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         row.addWidget(self._status, stretch=1)
         self.refresh()
 

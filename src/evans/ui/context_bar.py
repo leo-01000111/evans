@@ -14,7 +14,7 @@ nothing about stability.
 
 The bar shows factored transfer functions, an internal-stability verdict and
 the headline margins, in one strip across the top. The diagram and the block
-editor move into a dock that opens on demand.
+editor are the *Loop* tab of the Analyse side panel, opened on demand.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from .design import NORMAL, SECTION, TIGHT, MetricLabel, Status, StatusBadge, mo
 class ContextBar(QFrame):
     """One strip: the plant, the controller, the verdict, the margins."""
 
-    #: The user asked to see the block editor.
+    #: The user asked to see the loop editor (*Edit loop*).
     edit_requested = Signal()
 
     def __init__(self, arch: CourseArchitecture, parent=None) -> None:
@@ -92,9 +92,11 @@ class ContextBar(QFrame):
 
         outer.addWidget(_divider())
 
-        self._edit_btn = QPushButton("Edit model")
+        self._edit_btn = QPushButton("Edit loop")
         self._edit_btn.setToolTip(keys.label(
-            "Show the architecture diagram and the block editor (Ctrl+\\)"))
+            "Open the side panel on Loop: the architecture diagram and the "
+            "block editor (Ctrl+\\)"))
+        self._edit_btn.setAccessibleName("Edit loop")
         self._edit_btn.clicked.connect(self.edit_requested)
         outer.addWidget(self._edit_btn)
 
@@ -175,6 +177,13 @@ class ContextBar(QFrame):
                 "the phase never reaches −180°, so the gain margin is infinite")
 
     # ── for tests and callers ───────────────────────────────────
+
+    def describe(self) -> str:
+        """The summary and the margins, as text (what Cedric reads)."""
+        margins = "  ".join(
+            f"{metric._name.text()} {metric._value.text()}"
+            for metric in (self._pm, self._gm, self._wc))
+        return f"{self.summary()}  {margins}".strip()
 
     @property
     def verdict(self) -> Status:

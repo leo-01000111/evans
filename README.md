@@ -88,13 +88,14 @@ A context bar across the top of Analyse shows what is loaded and whether it work
 
 ```
 G(s)  = 4 / (s² + 1.2s + 4)
-K₂(s) = 2 · (s + 0.5) / s     ● stable    PM 60.0°   GM 11.9 dB   [Edit model ▾]
+K₂(s) = 2 · (s + 0.5) / s     ● stable    PM 60.0°   GM 11.9 dB   [Edit loop]
 ```
 
 It gives the factored transfer functions, an internal-stability verdict and the headline
 margins. An undefined quantity shows as an em dash with a tooltip explaining why, so a
-phase margin that does not exist reads differently from `nan`. The architecture diagram
-and block editor open in a panel behind `Ctrl+\`.
+phase margin that does not exist reads differently from `nan`. *Edit loop* opens the
+side panel on its Loop tab, with the architecture diagram and the block editor. Every
+workspace has a side panel (`Ctrl+\`), and Cedric is its last tab.
 
 The analysis pane grid holds one, two or four panes, with seventeen contents each, all
 reading the same live architecture, so one edit moves every visible view at once. A fresh
@@ -289,7 +290,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-5412 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+5436 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

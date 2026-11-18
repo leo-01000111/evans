@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QTextBrowser,
+    QToolBar,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -673,7 +674,22 @@ class LiveScriptEditor(QWidget):
     # ── toolbar ─────────────────────────────────────────────────
 
     def _build_toolbar(self) -> QHBoxLayout:
+        """
+        The buttons in a ``QToolBar``, the file name beside it.
+
+        The buttons were one ``QHBoxLayout`` of about 1000 px, and that row
+        set the Console page's minimum width; with the Console side panel
+        beside it the window no longer fitted 1280 px. A toolbar puts what
+        does not fit behind its overflow button instead.
+        """
         row = QHBoxLayout()
+        bar = QToolBar()
+        bar.setMovable(False)
+        bar.setFloatable(False)
+        bar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        bar.setAccessibleName("Live script toolbar")
+        self._toolbar = bar
+        row.addWidget(bar)
 
         def button(text: str, tip: str, slot, icon: str = "") -> QPushButton:
             b = QPushButton(text)
@@ -681,8 +697,13 @@ class LiveScriptEditor(QWidget):
             if icon:
                 iconset.bind(b, icon)
             b.clicked.connect(slot)
-            row.addWidget(b)
+            bar.addWidget(b)
             return b
+
+        def gap() -> None:
+            spacer = QWidget()
+            spacer.setFixedWidth(8)
+            bar.addWidget(spacer)
 
         button("Run all", keys.label("Run every code cell from the top "
                                      "(Ctrl+Shift+Enter)"),
@@ -692,12 +713,12 @@ class LiveScriptEditor(QWidget):
         button("Run cell",
                keys.label("Run the selected code cell (Ctrl+Enter)"),
                self.run_current)
-        row.addSpacing(8)   # group gaps: 8 px keeps the row in the 1280 budget
+        gap()               # group gaps: 8 px keeps the row in the 1280 budget
         button("+ Code", "Insert a code cell below the selected one",
                lambda: self.add_cell(CellKind.CODE))
         button("+ Text", "Insert a text cell below the selected one",
                lambda: self.add_cell(CellKind.TEXT))
-        row.addSpacing(8)
+        gap()
         # Open and Save stay words: this row sets the Live tab's minimum
         # width, and two more icons put the window over its 1280 px budget.
         # "Open", not "Open…": the Save split button's arrow took the few
@@ -717,21 +738,21 @@ class LiveScriptEditor(QWidget):
         save_menu.addAction("Save", lambda: self.save())
         save_menu.addAction("Save as…", lambda: self.save_as())
         self.save_button.setMenu(save_menu)
-        row.addWidget(self.save_button)
+        bar.addWidget(self.save_button)
         export = QPushButton("Export")
         iconset.bind(export, "export")
         menu = QMenu(export)
         menu.addAction("Export report (LaTeX / PDF)…", self.export_report)
         menu.addAction("Report template…", self.edit_template)
         export.setMenu(menu)
-        row.addWidget(export)
+        bar.addWidget(export)
         self.preview_button = QPushButton("Preview")
         self.preview_button.setCheckable(True)
         self.preview_button.setToolTip(keys.label(
             f"Show the PDF beside the script ({PREVIEW_SHORTCUT}); "
             "Ctrl+Enter rebuilds it"))
         self.preview_button.toggled.connect(self.set_preview)
-        row.addWidget(self.preview_button)
+        bar.addWidget(self.preview_button)
         # The file name takes the room that is left and asks for none: it is
         # what gave the Preview button its place in the 1280 px budget. The
         # whole path is in its tooltip.

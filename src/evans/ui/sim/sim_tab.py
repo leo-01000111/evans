@@ -59,6 +59,7 @@ from ...sim.workspace import resolve_model
 from .. import iconset, keys, persist, theme
 from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
+from ..side_panel import SidePanel
 from ..unsaved import ask_to_save, marked
 from .arrange import ArrangePanel, hidden_actions
 from .canvas import SimCanvas
@@ -219,18 +220,20 @@ class SimTab(QWidget, GuardedPanel):
         # The inspector, so parameters can be edited with the diagram still
         # visible. They used to be a modal dialog on double-click: you could
         # not see the block you were editing, or compare two of them.
+        # It is the Model workspace's side panel's *Properties* tab; the
+        # main window adds Cedric as the last tab.
         self._inspector = BlockInspector()
         self._inspector.setMinimumWidth(0)
-        side = QWidget()
-        side.setMinimumWidth(0)
-        side.setMaximumWidth(340)
-        side_layout = QVBoxLayout(side)
-        side_layout.setContentsMargins(0, 0, 0, 0)
-        side_layout.setSpacing(2)
-        side_layout.addWidget(self._inspector, stretch=1)
-        side_layout.addWidget(self._global_button, alignment=Qt.AlignLeft)
-        splitter.addWidget(side)
+        #: The Model workspace's side panel: Properties, then Cedric.
+        self.side_panel = SidePanel("model")
+        properties = self.side_panel.add_tab("properties", "Properties")
+        properties.layout().addWidget(self._inspector, stretch=1)
+        properties.layout().addWidget(self._global_button,
+                                      alignment=Qt.AlignLeft)
+        splitter.addWidget(self.side_panel)
         splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 0)
+        splitter.setCollapsible(2, False)
 
         root.addWidget(splitter, stretch=1)
 

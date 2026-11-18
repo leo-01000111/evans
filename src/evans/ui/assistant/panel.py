@@ -30,7 +30,6 @@ from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QComboBox,
-    QDockWidget,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -812,17 +811,3 @@ class CommandCard(QFrame):
             b.setEnabled(False)
         self.status.show()
         self.status.setText(message)
-
-
-# ──────────────────────────────────────────────────────────────
-#  The dock
-# ──────────────────────────────────────────────────────────────
-
-class AssistantDock(QDockWidget):
-    """The panel as a dock; its object name lets the layout remember it."""
-
-    def __init__(self, parent: QWidget | None = None, **panel_options) -> None:
-        super().__init__("Cedric", parent)
-        self.setObjectName("assistantDock")
-        self.panel = AssistantPanel(self, **panel_options)
-        self.setWidget(self.panel)

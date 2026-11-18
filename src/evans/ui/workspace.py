@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import iconset, keys
+from . import iconset, keys, theme
 from .cedric import CedricButton
 from .design import NORMAL, TIGHT
 
@@ -74,7 +74,10 @@ class NavigationRail(QFrame):
     """A narrow column of destinations down the left edge."""
 
     changed = Signal(object)          # Workspace
+    #: The *Docs* button at the foot: the documentation.
     help_requested = Signal()
+    #: Cedric at the foot: open his panel.
+    cedric_requested = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -108,11 +111,27 @@ class NavigationRail(QFrame):
 
         column.addStretch()
 
-        # The rail is on screen whatever you are doing, so the way to help
-        # lives at its foot.
+        # The rail is on screen whatever you are doing, so the ways to help
+        # live at its foot: Cedric, who opens his panel in this workspace,
+        # and under him the documentation.
         self.cedric = CedricButton()
-        self.cedric.clicked.connect(self.help_requested)
+        self.cedric.setToolTip(keys.label("Ask Cedric (Ctrl+Shift+A)"))
+        self.cedric.setAccessibleName("Cedric")
+        self.cedric.clicked.connect(self.cedric_requested)
         column.addWidget(self.cedric)
+
+        self.docs = QToolButton()
+        self.docs.setText("Docs")
+        self.docs.setAutoRaise(True)
+        self.docs.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        # Small: a way out to the manual, not a destination like the three.
+        self.docs.setFont(theme.label_font(8))
+        self.docs.setProperty("_hp_font", True)          # past the theme's hook
+        self.docs.setToolTip("Documentation (F1)")
+        self.docs.setAccessibleName("Documentation")
+        self.docs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.docs.clicked.connect(self.help_requested)
+        column.addWidget(self.docs)
 
         self._group.idClicked.connect(self._on_clicked)
         self.set_current(Workspace.ANALYSE)

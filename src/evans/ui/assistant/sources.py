@@ -250,6 +250,106 @@ class SwitchSource(Source):
         self._pick().apply(context, edit)
 
 
+class DescriptionSource(Source):
+    """
+    A read-only source: a description of what a workspace shows, as text.
+
+    The description goes along as the question's code with the origin
+    ``"description"`` and no region, so the context is not editable: an
+    edit Cedric proposes for it is refused (the base class's ``apply``), and
+    his panel shows it without an Apply button.
+    """
+
+    where = "workspace"
+
+    def describe(self) -> str:
+        raise NotImplementedError
+
+    def context(self) -> Context:
+        try:
+            text = self.describe().strip()
+        except Exception as exc:                        # noqa: BLE001
+            text = f"(could not be described: {type(exc).__name__}: {exc})"
+        truncated = len(text) > ctx.MAX_CODE_CHARS
+        if truncated:
+            text = text[:ctx.MAX_CODE_CHARS]
+        return Context(where=self.where, language="matlab", code=text,
+                       origin="description" if text else "", region=None,
+                       truncated=truncated)
+
+    def apply(self, context: Context, edit: Edit) -> None:
+        raise StaleEdit("This is a description of the screen, not code: "
+                        "there is nothing here to edit.")
+
+
+class LoopSource(DescriptionSource):
+    """
+    The Analyse workspace: the loop's blocks as transfer functions, and the
+    verdict and margins the context bar shows. ``arch`` and ``summary`` are
+    callables, read at question time, so nothing goes stale.
+    """
+
+    where = "loop"
+
+    def __init__(self, arch: Callable[[], Any],
+                 summary: Callable[[], str] = str) -> None:
+        self._arch = arch
+        self._summary = summary
+
+    def describe(self) -> str:
+        from ...core.tf_utils import factored_str
+
+        arch = self._arch()
+        lines = ["The feedback loop on the Analyse workspace "
+                 "(r → K1 → Σ → K2 → G → y, with H in the feedback path):"]
+        for block in ("G", "K1", "K2", "H"):
+            try:
+                text = factored_str(arch.block_tf(block))
+            except Exception as exc:                    # noqa: BLE001
+                text = f"— ({type(exc).__name__})"
+            lines.append(f"{block}(s) = {text}")
+        summary = self._summary().strip()
+        if summary:
+            lines.append(f"Context bar: {summary}")
+        return "\n".join(lines)
+
+
+class ModelSource(DescriptionSource):
+    """
+    The Model workspace: the block diagram's name, each block with its type
+    and parameters, and its wires. ``model`` returns the root model now.
+    """
+
+    where = "model"
+
+    def __init__(self, model: Callable[[], Any]) -> None:
+        self._model = model
+
+    def describe(self) -> str:
+        model = self._model()
+        if model is None:
+            return ""
+        blocks = list(model.blocks.values())
+        lines = [f"Block diagram '{model.name}' on the Model workspace, "
+                 f"{len(blocks)} block{'s' if len(blocks) != 1 else ''}:"]
+        for block in blocks:
+            params = ", ".join(f"{name}={_short(value)}"
+                               for name, value in block.raw_params().items())
+            lines.append(f"- {block.block_id} ({block.type_name})"
+                         + (f": {params}" if params else ""))
+        wires = model.connections
+        if wires:
+            lines.append("Wires:")
+            lines.extend(f"- {wire}" for wire in wires)
+        return "\n".join(lines)
+
+
+def _short(value: Any, limit: int = 60) -> str:
+    text = repr(value) if not isinstance(value, str) else value
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
 def looks_matlab(command: str) -> str | None:
     """'matlab' or 'python' for a console command, ``None`` if unsure."""
     try:

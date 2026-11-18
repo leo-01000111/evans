@@ -498,13 +498,19 @@ def test_run_again_from_the_context_menu(app, win, history):
 
 
 def test_the_history_is_a_tab_beside_the_workspace(app, win):
+    """Since R2 in the Console side panel, beside every Console tab."""
+    from evans.ui.workspace import Workspace
+
     panel = win._console
-    tabs = panel._side
-    assert [tabs.tabText(i) for i in range(tabs.count())] == [
-        "Workspace", "History"]
+    side = win.side_panel_of(Workspace.CONSOLE)
+    assert [side.title(key) for key in side.keys] == [
+        "Workspace", "History", "Cedric"]
+    assert side.holder("workspace").isAncestorOf(panel.workspace)
+    assert side.holder("history").isAncestorOf(panel.history)
+    side.set_open(False)
     panel.show_history()
-    assert tabs.currentWidget() is panel.history
-    tabs.setCurrentWidget(panel.workspace)
+    assert side.is_open and side.current == "history"
+    side.set_current("workspace")
 
 
 # ──────────────────────────────────────────────────────────────

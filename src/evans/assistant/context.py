@@ -66,8 +66,9 @@ class Context:
     code: str = ""
     #: What ``code`` is: ``"selection"``, ``"section"``, ``"line"``,
     #: ``"cell"`` (a live-script cell), ``"prompt"`` (the console's input
-    #: line, typed but not run), ``"failed"`` (what raised the last error)
-    #: or ``""``.
+    #: line, typed but not run), ``"failed"`` (what raised the last error),
+    #: ``"description"`` (a read-only account of what a workspace shows: the
+    #: loop, a block diagram) or ``""``.
     origin: str = ""
     region: Region | None = None
     variables: list[Variable] = field(default_factory=list)
@@ -85,8 +86,9 @@ class Context:
         parts = []
         if self.code:
             lines = self.code.count("\n") + 1
-            what = {"prompt": "prompt line",
-                    "failed": "failed code"}.get(self.origin, self.origin)
+            what = {"prompt": "prompt line", "failed": "failed code",
+                    "description": "what is on screen"}.get(self.origin,
+                                                            self.origin)
             parts.append(f"{what} ({lines} line{'s' if lines != 1 else ''}"
                          f"{', cut' if self.truncated else ''})")
         if self.attachment:
@@ -256,7 +258,10 @@ def build(where: str, *, language: str = "python", text: str = "",
 def render(context: Context) -> str:
     """The context as the text block that precedes the question."""
     place = {"console": "the console", "script": "a script",
-             "live": "a live script"}.get(context.where, context.where)
+             "live": "a live script",
+             "loop": "the Analyse workspace (the control loop)",
+             "model": "the Model workspace (a block diagram)",
+             }.get(context.where, context.where)
     out = [f"[Evans: {place}, {context.language}]"]
     if context.code:
         what = {"selection": "Selected code", "section": "Current %% section",
@@ -265,9 +270,12 @@ def render(context: Context) -> str:
                           "(one line: an edit must stay on one line)",
                 "failed": "The code that failed (an edit replaces it; "
                           "in the console, keep it to one line)",
+                "description": "What the user is looking at (a description, "
+                               "not code: do not propose an edit to it)",
                 }.get(context.origin, "Code")
         cut = " (cut short; do not propose an edit)" if context.truncated else ""
-        out.append(f"{what}{cut}:\n```{context.language}\n{context.code}\n```")
+        fence = "text" if context.origin == "description" else context.language
+        out.append(f"{what}{cut}:\n```{fence}\n{context.code}\n```")
     if context.attachment:
         out.append("Console output the user selected (do not edit it):\n"
                    f"```text\n{context.attachment}\n```")

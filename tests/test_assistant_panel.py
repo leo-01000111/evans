@@ -281,8 +281,12 @@ class TestAsking:
         assert "[stopped]" in panel.cards()[-1].text()
 
 
-def test_dock_has_a_stable_object_name(qapp):
-    from evans.ui.assistant import AssistantDock
-    dock = AssistantDock(key_reader=lambda: None)
-    assert dock.objectName() == "assistantDock"
-    assert dock.panel is dock.widget()
+def test_the_panel_is_a_side_panel_page_not_a_dock(qapp):
+    """R2: the dock went; one panel moves between the side panels."""
+    from PySide6.QtWidgets import QDockWidget
+
+    import evans.ui.assistant as assistant
+    assert not hasattr(assistant, "AssistantDock")
+    panel = assistant.AssistantPanel(key_reader=lambda: None)
+    assert not isinstance(panel, QDockWidget)
+    assert panel.parent() is None

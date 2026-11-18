@@ -1,5 +1,6 @@
 """
-Cedric in the window: his dock on the Console workspace, what each Console
+Cedric in the window: the last tab of every workspace's side panel (one
+panel, moved into the workspace in view), what each workspace and Console
 tab hands him, the floating Ask Cedric button, and his proposals landing in
 the console, a script tab and a live cell.
 
@@ -82,7 +83,7 @@ class Fake:
 def cedric(win, app, monkeypatch):
     """Cedric's panel with a key and a fake OpenRouter, threads in line."""
     fake = Fake()
-    panel = win._cedric_dock.panel
+    panel = win._cedric_panel
     monkeypatch.setattr(panel, "_client_factory",
                         lambda key: Client(key, transport=httpx.MockTransport(fake)))
     monkeypatch.setattr(panel, "_key_reader", lambda: "sk-or-test")
@@ -115,50 +116,93 @@ def _select(widget, text: str) -> None:
     widget.setTextCursor(cursor)
 
 
-# ── the dock ───────────────────────────────────────────────────────
+# ── the side panel tab ─────────────────────────────────────────────
 
-class TestDock:
+class TestPanel:
     def test_hidden_until_asked_for(self, win, console):
-        assert not win._cedric_dock.isVisible()
+        assert not win.cedric_showing
+        assert not win._cedric_panel.isVisible()
         assert not win._act_cedric.isChecked()
 
     def test_the_tab_bar_button_carries_the_action(self, win, console):
         assert console.cedric_button.defaultAction() is win._act_cedric
         assert win._act_cedric.shortcut().toString() == "Ctrl+Shift+A"
 
-    def test_shown_only_on_the_console_workspace(self, win, console, app):
-        win._act_cedric.trigger()
-        _settle(app)
-        assert win._cedric_dock.isVisible()
-        win.show_workspace(Workspace.ANALYSE)
-        _settle(app)
-        assert not win._cedric_dock.isVisible()
-        assert win._act_cedric.isChecked()              # still wanted
-        win.show_workspace(Workspace.CONSOLE)
-        _settle(app)
-        assert win._cedric_dock.isVisible()
-        win._act_cedric.trigger()
-        _settle(app)
-        assert not win._cedric_dock.isVisible()
+    def test_cedric_is_the_last_tab_everywhere(self, win):
+        for workspace in Workspace:
+            assert win.side_panel_of(workspace).keys[-1] == "cedric"
 
-    def test_closing_the_dock_forgets_the_wish(self, win, console, app):
+    def test_ctrl_shift_a_opens_him_in_the_workspace_in_view(self, win, app):
+        for workspace in Workspace:
+            win.show_workspace(workspace)
+            win._act_cedric.trigger()
+            _settle(app)
+            side = win.side_panel_of(workspace)
+            assert win._stack.current is workspace       # no jump to Console
+            assert side.is_open and side.current == "cedric"
+            assert win._cedric_panel.isVisible()
+            assert side.holder("cedric").isAncestorOf(win._cedric_panel)
+            assert win._act_cedric.isChecked()
+            win._act_cedric.trigger()                     # and closes again
+            _settle(app)
+            assert not win.cedric_showing
+            assert not win._act_cedric.isChecked()
+        win._reset_side_panels()
+
+    def test_the_same_conversation_follows_the_workspace(
+            self, win, cedric, app):
+        panel, fake = cedric
+        panel.ask("hello")
+        _settle(app)
+        cards = len(panel.cards())
+        assert cards
+        for workspace in (Workspace.ANALYSE, Workspace.MODEL,
+                          Workspace.CONSOLE, Workspace.ANALYSE):
+            win.show_workspace(workspace)
+            win.set_cedric_visible(True)
+            _settle(app)
+            assert win._cedric_panel is panel
+            assert win.side_panel.holder("cedric").isAncestorOf(panel)
+            assert len(panel.cards()) == cards
+        win._reset_side_panels()
+
+    def test_closing_the_panel_unchecks_the_action(self, win, console, app):
         win.set_cedric_visible(True)
         _settle(app)
-        win._cedric_dock.close()
+        win.side_panel._close.click()
         _settle(app)
+        assert not win.side_panel.is_open
         assert not win._act_cedric.isChecked()
         win.show_workspace(Workspace.ANALYSE)
         win.show_workspace(Workspace.CONSOLE)
         _settle(app)
-        assert not win._cedric_dock.isVisible()
+        assert not win._cedric_panel.isVisible()
+        win._reset_side_panels()
 
-    def test_opening_from_another_workspace_goes_to_the_console(self, win, app):
+    def test_ask_cedric_on_a_console_error_opens_him_on_the_console(
+            self, win, console, cedric, app):
+        panel, fake = cedric
+        win.set_cedric_visible(False)
+        console.execute("undefined_thing_pq + 1")
+        _settle(app)
         win.show_workspace(Workspace.ANALYSE)
-        win.set_cedric_visible(True)
+        source = console.assistant_source.resolve()
+        context = source.context()
+        console.cedric_requested.emit(context, source, "ask")
         _settle(app)
         assert win._stack.current is Workspace.CONSOLE
-        assert win._cedric_dock.isVisible()
-        win.set_cedric_visible(False)
+        side = win.side_panel_of(Workspace.CONSOLE)
+        assert side.is_open and side.current == "cedric"
+        assert panel.pinned is not None
+        assert fake.sent == []                         # Ask… waits
+
+    def test_the_rail_shrimp_opens_him(self, win, app):
+        win.show_workspace(Workspace.MODEL)
+        win._stack.rail.cedric_requested.emit()
+        _settle(app)
+        assert win._stack.current is Workspace.MODEL
+        assert win.cedric_showing
+        win._reset_side_panels()
 
     def test_the_hidden_panel_never_touches_the_network(self, app):
         from evans.ui.assistant import AssistantPanel
@@ -214,6 +258,44 @@ class TestSources:
         context = console.assistant_source.context()
         assert (context.where, context.origin) == ("live", "cell")
         assert context.code == "x = 1;\ny = x + 1;"
+
+    def test_analyse_sends_the_loop_read_only(self, win, app):
+        from evans.assistant.context import render
+        from evans.assistant.protocol import Edit, StaleEdit
+
+        win.show_workspace(Workspace.ANALYSE)
+        _settle(app)
+        source = win._cedric_panel.source()
+        context = source.context()
+        assert (context.where, context.origin) == ("loop", "description")
+        for block in ("G(s)", "K1(s)", "K2(s)", "H(s)"):
+            assert block in context.code
+        assert "PM" in context.code and "stable" in context.code
+        assert not context.editable
+        assert "not code" in render(context)
+        with pytest.raises(StaleEdit):
+            source.apply(context, Edit(code="G = 1"))
+
+    def test_model_sends_the_diagram_read_only(self, win, app):
+        from evans.assistant.protocol import Edit, StaleEdit
+
+        win.show_workspace(Workspace.MODEL)
+        _settle(app)
+        source = win._cedric_panel.source()
+        context = source.context()
+        model = win._sim_tab._canvas.root_model()
+        assert (context.where, context.origin) == ("model", "description")
+        assert model.name in context.code
+        for block in model.blocks.values():
+            assert f"{block.block_id} ({block.type_name})" in context.code
+        if model.connections:
+            assert str(model.connections[0]) in context.code
+        assert not context.editable
+        with pytest.raises(StaleEdit):
+            source.apply(context, Edit(code="x"))
+
+    def test_console_keeps_the_console_source(self, win, console):
+        assert win._cedric_panel.source() is console.assistant_source
 
     def test_values_never_leave(self, console):
         console.push(secret_gain=271828.18)
