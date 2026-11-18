@@ -9,6 +9,44 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.27.0 - 2026-11-18
+
+Undo for the loop, a File menu that follows the workspace, cleaner analysis
+plots, and 32 console answers that now match MATLAB.
+
+### Added
+- **Undo for the loop.** A new Edit menu with Undo (Ctrl+Z) and Redo (Ctrl+Y or
+  Ctrl+Shift+Z). On Analyse each change to the loop is one step: editing a
+  block, applying a controller, loading a preset, restoring a snapshot,
+  linearising, a console command that changes the loop, opening a loop or
+  starting a new one. On Model the same keys undo the canvas, inside
+  subsystems too. The bottom bar says what was undone.
+- **Drop files on the window.** A model opens on Model, a script on Console.
+
+### Changed
+- **The File menu acts on the workspace in view.** New (Ctrl+N), Open (Ctrl+O),
+  Save (Ctrl+S) and Save as (Ctrl+Shift+S) make, open or save the loop on
+  Analyse, the model on Model, and the script on Console (a live script on the
+  Live tab). File > New session is now File > New.
+- **Analyse opens with four panes** (step, Bode, root locus, metrics) the first
+  time and after Reset layout, and a saved layout is restored at launch.
+- **One name for applying a design:** every such button says *Apply to loop*.
+- **Examples open fitted** to the Model canvas.
+
+### Fixed
+- **Root locus of a plant whose branches lie on one vertical line** (the
+  default plant) had an unreadable axis with ticks like `-1.0000000000000002`.
+- **Legends** move to the emptiest corner of a pane, and a lone legend is
+  hidden in a narrow pane.
+- **Bode annotations** (peak, BW, wc) no longer overlap.
+- **32 console results that were silently wrong**, checked against outputs
+  recorded in MATLAB R2023a: char matrices such as `['ab'; 'cd']`, `x(2) = 7`
+  after `x = 5`, `double("3.5")`, `sum` and `prod` of integers (a double, not
+  saturated), `1/-0`, `rem(5,0)`, `size(1:0)`, reductions of empty matrices and
+  over `[1 2]`, `eps(x)`, an empty for loop's variable, `num2str`, `int2str`,
+  `mat2str`, `sprintf`, `strcmp`, `strcat`, `string`, `interp1` nearest ties,
+  `pole` (a real column), `freqresp` (ny x nu x N) and `margin` at unit DC gain.
+
 ## 0.26.1 - 2026-11-12
 
 Two fixes: model scripts stay out of the way, and plot axes read plainly.
