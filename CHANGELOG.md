@@ -9,6 +9,16 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.27.1 - 2026-11-18
+
+The 0.27.0 release, published. 0.27.0 was tagged but never published: two
+tests failed on the build machines, so no installer was made. Everything in
+0.27.0 below is in this release.
+
+### Fixed
+- **`s(5) = 'e'` on a 3-character string** stopped with a Python error on
+  newer numpy instead of padding with char 0.
+
 ## 0.27.0 - 2026-11-18
 
 Undo for the loop, a File menu that follows the workspace, cleaner analysis
