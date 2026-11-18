@@ -169,6 +169,10 @@ def finish(name: str, args: tuple, result):
         return plain(result)
     if name in KEEP:
         cls = dominant(typed)
+        if name in ("sum", "prod") and cls in INTS:
+            # MATLAB (R2023a, recorded) sums and multiplies integers into a
+            # double, without saturating: sum(int8([100 100])) is 200.
+            return plain(result)
         if type(result) is tuple:
             return (_keep(result[0], cls),) + tuple(
                 plain(r) for r in result[1:])

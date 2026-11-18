@@ -298,6 +298,15 @@ def margin(sys):
     source of confusion. ``allmargin`` below returns a labelled mapping.
     """
     gm, pm, _sm, wpc, wgc, _wms = ctl.stability_margins(sys)
+    if not np.isfinite(wgc) and not ctl.isdtime(sys, strict=True):
+        # The gain is exactly 1 at DC and falls from there: the crossover
+        # sits at 0 rad/s and MATLAB reports Pm = -180 there (R2023a).
+        try:
+            dc = complex(sys(0.0))
+        except Exception:
+            dc = None
+        if dc is not None and abs(dc - 1.0) < 1e-9:
+            pm, wgc = -180.0, 0.0
     return gm, pm, wpc, wgc
 
 

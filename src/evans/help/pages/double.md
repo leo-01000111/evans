@@ -10,7 +10,7 @@ Convert to a number.
 
 `double(x)` of a symbolic value with no variables left gives its value as an ordinary number, or a numeric array for a symbolic matrix: `double(sym(pi))` is 3.1416, and a complex result stays complex. An expression that still has a variable is an error; substitute values for the variables first with [subs](subs).
 
-`double` of a number returns it unchanged, `double(true)` is 1, and `double('A')` gives the character codes. Of an integer or `single` value it gives the same number as a plain double, so `double(int8(5)) / 2` is 2.5, not 3.
+`double` of a number returns it unchanged, `double(true)` is 1, and `double('A')` gives the character codes, while `double("3.5")` reads a string as a number (`NaN` when it is not one). Of an integer or `single` value it gives the same number as a plain double, so `double(int8(5)) / 2` is 2.5, not 3.
 
 ## Example
 

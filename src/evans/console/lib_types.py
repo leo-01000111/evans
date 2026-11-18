@@ -19,6 +19,7 @@ from . import matlab_runtime as _mr  # noqa: F401
 from . import numtypes as nt
 from .matlab_runtime import (
     Cell,
+    CharMatrix,
     MatlabError,
     Str,
     StrArray,
@@ -56,6 +57,14 @@ def _bits(a) -> tuple[np.ndarray, str | None]:
     return arr.astype(np.uint64), None
 
 
+def _string_to_double(text: str) -> float:
+    """``double("3.5")``: a string scalar is read as a number (NaN if not)."""
+    try:
+        return float(str(text).strip())
+    except ValueError:
+        return float("nan")
+
+
 class TypesLibrary:
     """Mixed into ``_Library``."""
 
@@ -64,6 +73,14 @@ class TypesLibrary:
     del _n
 
     def f_double(self, x=0):
+        if isinstance(x, CharMatrix):
+            return x.codes()
+        if isinstance(x, StrArray):
+            r, c = x.dims
+            vals = [_string_to_double(v) for v in x]
+            return _normalise(np.array(vals).reshape((c, r)).T)
+        if isinstance(x, Str):
+            return _string_to_double(x)
         if isinstance(x, str):
             x = np.array([ord(c) for c in x], dtype=float)
         out = nt.cast(x, "double")
@@ -114,6 +131,24 @@ class TypesLibrary:
         if name == "single":
             return np.float32(2 ** 24)
         return float(2 ** 53)
+
+    def f_eps(self, x=None):
+        """``eps`` is 2^-52; ``eps(x)`` the gap to the next float above |x|,
+        in the class of ``x`` (``eps(single(1))`` is a ``single``)."""
+        if x is None or isinstance(x, str) and x == "double":
+            return float(np.finfo(float).eps)
+        if isinstance(x, str):
+            if x == "single":
+                return np.float32(np.finfo(np.float32).eps)
+            raise MatlabError(f"Invalid class name '{x}'.")
+        single = nt.num_class(x) == "single"
+        a = np.abs(np.asarray(x, dtype=np.float32 if single else float))
+        with np.errstate(all="ignore"):
+            out = np.spacing(a)
+        out = np.where(np.isfinite(a), out, np.nan)
+        out = out.astype(np.float32 if single else float)
+        return out[()] if out.ndim == 0 and single else (
+            float(out) if out.ndim == 0 else _normalise(out))
 
     def f_realmax(self, name=None):
         name = self._class_of(name, "double")
@@ -248,5 +283,7 @@ def _text(v) -> str:
             return "NaN"
         if v in (float("inf"), float("-inf")):
             return "Inf" if v > 0 else "-Inf"
-        return f"{v:.15g}"
+        # R2023a: five significant digits to the first digit, like num2str
+        # (string(1/3) is "0.33333").
+        return _mr._num2str(v, None)
     return _number(v)

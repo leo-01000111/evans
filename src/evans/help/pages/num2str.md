@@ -14,7 +14,7 @@ Convert a number to text.
 
 `num2str(x, precision)` uses at most `precision` significant digits: `num2str(pi, 8)` is `'3.1415927'`. `num2str(x, formatSpec)` formats with a [sprintf](sprintf) format, such as `'%10.5f'`.
 
-Text passed to `num2str` comes back unchanged. A vector becomes one line of numbers separated by two spaces. A matrix in Evans also becomes a single line, with its rows one after the other, where MATLAB returns one line of text per row.
+Text passed to `num2str` comes back unchanged. A vector of whole numbers becomes one line of numbers separated by two spaces. A matrix, or a vector with fractions, is laid out in columns of equal width, one line of text per row (a character matrix), as MATLAB does: `num2str([1.5 2.25; 3 4])` has two rows.
 
 The usual use is joining a number into a message: `['Kp = ' num2str(Kp)]`.
 

@@ -21,7 +21,7 @@ Gain margin, phase margin and the two crossover frequencies of an open loop.
 
 The order follows MATLAB, and it trips people up: the frequency of the gain margin comes before that of the phase margin. If you would rather read margins by name, use [allmargin](allmargin).
 
-Pass the open loop `L = C*G`, not the closed loop. With unity feedback, positive margins mean the closed loop `feedback(L, 1)` is stable, provided `L` itself has no poles in the right half-plane. When a crossover does not exist the margin is `Inf` and its frequency `NaN`.
+Pass the open loop `L = C*G`, not the closed loop. With unity feedback, positive margins mean the closed loop `feedback(L, 1)` is stable, provided `L` itself has no poles in the right half-plane. When a crossover does not exist the margin is `Inf` and its frequency `NaN`, except when the gain is exactly 1 at DC and falls from there: the phase margin is then -180 degrees at 0 rad/s, as MATLAB reports.
 
 Evans does not support MATLAB's `margin(mag, phase, w)` form on frequency-response data. With several systems only the first is used.
 

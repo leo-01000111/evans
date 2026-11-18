@@ -8,7 +8,7 @@ Format values into text and return it, without printing.
 
 ## Description
 
-`sprintf` takes the same format and arguments as [fprintf](fprintf) and returns the text instead of printing it. The conversions (`%d`, `%f`, `%e`, `%g`, `%s`, `%c`, `%%`), the widths and precisions, the escapes such as `\n`, and the reuse of the format for vector arguments all work the same way.
+`sprintf` takes the same format and arguments as [fprintf](fprintf) and returns the text instead of printing it. A format given as a string (`"%d"`) returns a string, one given as a character vector (`'%d'`) returns a character vector. `%s` of a whole number writes the character with that code, so `sprintf('%s', 65)` is `'A'`. The conversions (`%d`, `%f`, `%e`, `%g`, `%s`, `%c`, `%%`), the widths and precisions, the escapes such as `\n`, and the reuse of the format for vector arguments all work the same way.
 
 Use it to build a plot title or legend entry that includes a number, or a label you print later with [disp](disp). For a single number with default formatting, [num2str](num2str) is shorter.
 

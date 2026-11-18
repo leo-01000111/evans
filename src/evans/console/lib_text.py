@@ -26,6 +26,7 @@ import numpy as np
 from . import matlab_runtime as _mr  # noqa: F401
 from .matlab_runtime import (
     Cell,
+    CharMatrix,
     MatlabError,
     Struct,
     StructArray,
@@ -63,6 +64,8 @@ def _map(x, fn, fname: str):
     """``fn`` over a char vector, or over each string of a cellstr."""
     if isinstance(x, str):
         return fn(x)
+    if isinstance(x, CharMatrix):
+        return x.map(fn)
     if _is_cellstr(x):
         return Cell([fn(v) for v in x], rows=x.rows)
     raise MatlabError(f"Input to {fname} must be a character vector or a "

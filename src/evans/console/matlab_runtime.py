@@ -211,6 +211,71 @@ class StrArray(Cell):
         return f"  {r}×{c} string array\n\n" + "\n".join(lines)
 
 
+class CharMatrix:
+    """
+    A char array of more than one row, ``['ab'; 'cd']``: the rows are
+    equal-length strings. A one-row char array stays a plain ``str``.
+    """
+
+    __array_ufunc__ = None
+    __hash__ = None
+    ml_class = "char"
+
+    def __init__(self, rows) -> None:
+        self.rows = [str(r) for r in rows]
+
+    def ml_shape(self) -> tuple[int, int]:
+        return (len(self.rows), len(self.rows[0]) if self.rows else 0)
+
+    def __len__(self) -> int:
+        r, c = self.ml_shape()
+        return r * c
+
+    def __eq__(self, other):
+        return isinstance(other, CharMatrix) and self.rows == other.rows
+
+    def codes(self) -> np.ndarray:
+        """The character codes as a 2-D double array."""
+        return np.array([[ord(c) for c in row] for row in self.rows],
+                        dtype=float).reshape(self.ml_shape())
+
+    def map(self, fn) -> CharMatrix:
+        return CharMatrix([fn(r) for r in self.rows])
+
+    @staticmethod
+    def _pick(arg, n):
+        if arg is COLON or arg is None:
+            return np.arange(n)
+        return np.atleast_1d(Runtime._indices(None, arg, n))
+
+    def __call__(self, *args, **_):
+        r, c = self.ml_shape()
+        grid = np.array([list(row) for row in self.rows]).reshape(r, c)
+        if not args:
+            return self
+        if len(args) == 1:
+            flat = grid.reshape(-1, order="F")
+            if args[0] is COLON or args[0] is None:
+                return _char_from_grid(flat.reshape(-1, 1))
+            out = flat[self._pick(args[0], flat.size)]
+            return "".join(out)
+        sub = grid[np.ix_(self._pick(args[0], r), self._pick(args[1], c))]
+        return _char_from_grid(sub)
+
+    def __repr__(self) -> str:
+        r, c = self.ml_shape()
+        body = "\n".join(f"    '{row}'" for row in self.rows)
+        return f"  {r}×{c} char array\n\n" + body
+
+
+def _char_from_grid(grid):
+    """A char value from a 2-D array of characters."""
+    rows = ["".join(row) for row in grid]
+    if len(rows) == 1:
+        return rows[0]
+    return CharMatrix(rows)
+
+
 def _strarray(items, rows: int = 1):
     """A string array of ``items``, or a string scalar when there is one."""
     items = [Str(v) for v in items]
@@ -1122,7 +1187,7 @@ def display(value) -> str:
     """How MATLAB shows a value after ``name =``."""
     if isinstance(value, Str):
         return f'"{value}"'
-    if isinstance(value, StrArray):
+    if isinstance(value, (StrArray, CharMatrix)):
         return repr(value)
     if isinstance(value, str):
         return f"'{value}'"
@@ -2176,6 +2241,20 @@ class Runtime:
         raise MatlabError("Too many output arguments.")
 
     def index(self, x, args: tuple):
+        out = self._index(x, args)
+        if isinstance(x, np.ndarray) and x.dtype.kind == "c":
+            # A piece of a complex array with no imaginary part is real:
+            # a = [1+2i 3]; a(2) is 3, not 3+0i.
+            if (isinstance(out, np.ndarray) and out.dtype.kind == "c"
+                    and not np.any(out.imag)):
+                return np.ascontiguousarray(out.real)
+            if (isinstance(out, (complex, np.complexfloating))
+                    and out.imag == 0):
+                return (out.real if isinstance(out, np.generic)
+                        else float(out.real))
+        return out
+
+    def _index(self, x, args: tuple):
         if isinstance(x, MapObject):
             if len(args) != 1:
                 raise MatlabError("Only a single key can be given when "
@@ -2498,6 +2577,16 @@ class Runtime:
             obj[k] = value[0] if isinstance(value, Cell) and len(value) == 1 \
                 else value
             return obj
+        if isinstance(obj, str) and not isinstance(obj, Str) and (
+                isinstance(value, str) and not isinstance(value, Str)
+                or isinstance(value, np.ndarray) and value.size == 0):
+            # s(5) = 'e' on a char vector: edit the character codes, so
+            # growing pads with char 0 as MATLAB does.
+            codes = np.array([ord(c) for c in obj], dtype=float)
+            if isinstance(value, str):
+                value = np.array([ord(c) for c in value], dtype=float)
+            out = np.atleast_1d(self._assign_array(codes, key, value))
+            return "".join(chr(int(v)) for v in out.reshape(-1))
         if not owned:
             return self._assign_array(obj, key, value)
         in_place = _owned(obj)
@@ -2601,7 +2690,9 @@ class Runtime:
         if obj is None:
             a = np.zeros(0)
         elif _is_number(obj):
-            a = np.array([obj])
+            # A Python int is a MATLAB double, not an int64 (x = 5; x(2) = 7).
+            a = (np.array([obj], dtype=float) if type(obj) is int
+                 else np.array([obj]))
         else:
             a = obj if in_place else np.array(obj, copy=True)
         v = value
@@ -2815,7 +2906,13 @@ class Runtime:
             return StructArray.from_grid(grid)
         if any(isinstance(x, str) for x in flat):
             texts = ["".join(_as_text(x) for x in row) for row in rows if row]
-            return texts[0] if len(texts) == 1 else Cell(texts)
+            texts = [t for t in texts if t] or texts[:1]
+            if len(texts) == 1:
+                return texts[0]
+            if len({len(t) for t in texts}) > 1:
+                raise MatlabError("Dimensions of arrays being concatenated "
+                                  "are not consistent.")
+            return CharMatrix(texts)
         if any(_is_nd(x) for x in flat):
             return self.cat_arrays(1, [self.cat_arrays(2, row)
                                        for row in rows if row])
@@ -2870,7 +2967,7 @@ class Runtime:
                              _scalar_of(stop))
         if step == 0 or (step > 0 and start > stop) or (step < 0
                                                         and start < stop):
-            out = np.zeros(0)
+            out = np.zeros((1, 0))        # 1:0 is 1×0, not 0×0
         else:
             n = int(math.floor((stop - start) / step + 1e-10)) + 1
             out = start + step * np.arange(n, dtype=float)
@@ -2885,7 +2982,7 @@ class Runtime:
             _cls.show_object(self, name, value)
             return
         text = display(value)
-        if isinstance(value, StrArray):
+        if isinstance(value, (StrArray, CharMatrix)):
             print(f"{name} =\n\n{text}\n")
         elif "\n" in text or (isinstance(value, np.ndarray) and value.size > 1) \
                 or _is_lti(value) or _is_sym(value) or isinstance(value, Str):
@@ -2930,6 +3027,11 @@ class Runtime:
             raise MatlabError("Conversion to logical from cell is not "
                               "possible.")
         return bool(x)
+
+    @staticmethod
+    def empty_loop_var():
+        """What ``k`` holds after ``for k = 1:0``: an empty row."""
+        return np.zeros((1, 0))
 
     @classmethod
     def iterate(cls, x):
@@ -3207,6 +3309,8 @@ class Runtime:
         if isinstance(a, (Str, StrArray)):
             raise MatlabError("Operator '-' is not supported for operands "
                               "of type 'string'.")
+        if type(a) is int and a == 0:
+            return -0.0                  # a double: 1 / -0 is -Inf
         return -a
 
     @staticmethod
@@ -3444,7 +3548,8 @@ def _divide(a, b):
             return a / b
         except ZeroDivisionError:
             with np.errstate(divide="ignore", invalid="ignore"):
-                return float(np.true_divide(float(np.real(a)), 0.0))
+                zero = math.copysign(0.0, float(np.real(b)))
+                return float(np.true_divide(float(np.real(a)), zero))
     with np.errstate(divide="ignore", invalid="ignore"):
         return a / b
 
@@ -3612,7 +3717,6 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
     f_pi = math.pi
     f_Inf = f_inf = math.inf
     f_NaN = f_nan = math.nan
-    f_eps = float(np.finfo(float).eps)
     f_i = f_j = 1j
 
     # true and false are functions, as in MATLAB: plain ``true`` is the
@@ -3779,7 +3883,8 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
                 kind = "cell" if isinstance(a, Cell) else "struct"
                 raise MatlabError(f"Function is not defined for '{kind}' "
                                   f"inputs.")
-        return _sprintf(str(fmt), args)
+        text = _sprintf(str(fmt), args)
+        return Str(text) if isinstance(fmt, Str) else text
 
     def f_num2str(self, x, spec=None) -> str:
         if isinstance(x, (Cell, Struct, StructArray)):
@@ -3788,18 +3893,41 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
             return x
         if isinstance(spec, str):
             return self.f_sprintf(spec, x)
-        values = np.atleast_1d(np.asarray(x)).reshape(-1)
+        arr = np.asarray(x)
+        if (spec is None and arr.ndim in (1, 2) and arr.size > 1
+                and arr.dtype != object and not np.iscomplexobj(arr)):
+            a2 = arr if arr.ndim == 2 else arr.reshape(1, -1)
+            fin = a2[np.isfinite(a2)]
+            whole = bool(np.all(fin == np.fix(fin))) and fin.size == a2.size
+            if a2.shape[0] > 1 or not whole:
+                return _num2str_matrix(a2.astype(float))
+        values = np.atleast_1d(arr).reshape(-1)
         return "  ".join(_num2str(v, spec) for v in values)
 
-    def f_int2str(self, x) -> str:
-        values = np.atleast_1d(np.round(np.asarray(x, float))).reshape(-1)
-        return "  ".join(str(int(v)) for v in values)
+    def f_int2str(self, x):
+        a = np.atleast_1d(np.asarray(x, float))
+        # round half away from zero, as MATLAB does (not half to even)
+        a = np.sign(a) * np.floor(np.abs(a) + 0.5)
+        if a.ndim == 1 and a.size > 1:
+            a = a.reshape(1, -1)
+        if a.ndim == 2 and a.size > 1:
+            return _num2str_matrix(a, negative_pad=False)
+        return str(int(a.reshape(-1)[0])) if a.size else ""
 
     def f_mat2str(self, x, precision=15) -> str:
+        if isinstance(x, (bool, np.bool_)):
+            return "true" if x else "false"
         if _is_number(x):
             return f"{x:.{precision}g}"
+        raw = np.asarray(x)
+        if raw.dtype == bool:
+            def word(v):
+                return "true" if v else "false"
+        else:
+            def word(v):
+                return f"{v:.{precision}g}"
         a = _as2d(x)
-        rows = [" ".join(f"{v:.{precision}g}" for v in row) for row in a]
+        rows = [" ".join(word(v) for v in row) for row in a]
         text = ";".join(rows)
         return text if a.size == 1 else f"[{text}]"
 
@@ -3809,15 +3937,62 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
     f_str2double = f_str2num
 
     def f_strcat(self, *parts):
+        cells = [p for p in parts
+                 if isinstance(p, Cell) and not isinstance(p, StrArray)]
+        if cells:
+            # With a cell among the inputs the result is a cell, and
+            # trailing blanks are kept: strcat({'a '}, 'b') is {'a b'}.
+            big = max(cells, key=len)
+            n = len(big)
+            for c in cells:
+                if len(c) not in (1, n):
+                    raise MatlabError("Dimensions of arrays being "
+                                      "concatenated are not consistent.")
+            out = []
+            for k in range(n):
+                out.append("".join(
+                    _as_text(p[k if len(p) > 1 else 0])
+                    if isinstance(p, Cell) else _as_text(p)
+                    for p in parts))
+            return Cell(out, rows=big.rows)
         return "".join(p.rstrip() if isinstance(p, str) else _as_text(p)
                        for p in parts)
 
+    def _compare_text(self, a, b, same):
+        """``strcmp`` and friends: a logical per element when either side
+        is a cell, one value otherwise."""
+        ca, cb = isinstance(a, Cell), isinstance(b, Cell)
+        if not ca and not cb:
+            return isinstance(a, str) and isinstance(b, str) and same(a, b)
+        shape = a if ca else b
+        if ca and cb and len(a) != len(b):
+            if len(a) == 1:
+                shape = b
+            elif len(b) != 1:
+                raise MatlabError("Inputs must be the same size or either "
+                                  "one can be a scalar cell array.")
+
+        def pick(c, k):
+            if isinstance(c, Cell):
+                return c[k] if len(c) > 1 else c[0]
+            return c
+
+        n = max(len(a) if ca else 1, len(b) if cb else 1)
+        values = [bool(isinstance(pick(a, k), str)
+                       and isinstance(pick(b, k), str)
+                       and same(pick(a, k), pick(b, k))) for k in range(n)]
+        r, c = shape.dims
+        if values:
+            out = np.array(values, dtype=bool).reshape((c, r)).T
+        else:
+            out = np.zeros((0, 0), dtype=bool)
+        return _normalise(out)
+
     def f_strcmp(self, a, b):
-        return isinstance(a, str) and isinstance(b, str) and a == b
+        return self._compare_text(a, b, lambda x, y: x == y)
 
     def f_strcmpi(self, a, b):
-        return isinstance(a, str) and isinstance(b, str) and \
-            a.lower() == b.lower()
+        return self._compare_text(a, b, lambda x, y: x.lower() == y.lower())
 
     def f_newline(self):
         return "\n"
@@ -3871,7 +4046,8 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         return self.f_class(x) in _NUMERIC_CLASSES
 
     def f_ischar(self, x):
-        return isinstance(x, str) and not isinstance(x, Str)
+        return isinstance(x, CharMatrix) or (isinstance(x, str)
+                                             and not isinstance(x, Str))
 
     def f_iscell(self, x):
         return isinstance(x, Cell) and not isinstance(x, StrArray)
@@ -4242,7 +4418,8 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
     f_isinf = _ew(np.isinf)
     f_isfinite = _ew(np.isfinite)
     f_mod = _ew(lambda a, b: np.where(np.asarray(b) == 0, a, np.mod(a, b)))
-    f_rem = _ew(lambda a, b: np.where(np.asarray(b) == 0, a, np.fmod(a, b)))
+    f_rem = _ew(lambda a, b: np.where(np.asarray(b) == 0, np.nan,
+                                      np.fmod(a, b)))
     f_mag2db = _ew(lambda m: 20 * np.log10(m))
     f_db = f_mag2db
     f_db2mag = _ew(lambda d: 10 ** (np.asarray(d) / 20))
@@ -4289,7 +4466,28 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         a = np.asarray(x)
         if a.ndim == 0:
             a = a.reshape(1)
+        if isinstance(dim, np.ndarray) and dim.size > 1:
+            # sum(A, [1 2]): reduce over several dimensions at once
+            axes = tuple(sorted({int(d) - 1 for d in dim.reshape(-1)}))
+            if axes[0] < 0:
+                raise MatlabError("Dimension argument must be a positive "
+                                  "integer scalar.")
+            if a.ndim <= axes[-1]:
+                a = a.reshape(a.shape + (1,) * (axes[-1] + 1 - a.ndim))
+            if a.ndim == 1:
+                a = a.reshape(1, -1)
+            return _nd(np.expand_dims(fn(a, axis=axes), axes))
         if a.size == 0:
+            if a.ndim == 2 and a.shape != (0, 0):
+                # zeros(0, 3) sums to 1×3, mean to 1×3 NaN (not one value)
+                axis = (int(dim) - 1 if dim is not None
+                        else next(i for i, n in enumerate(a.shape) if n != 1))
+                if axis < 2:
+                    import warnings
+                    with warnings.catch_warnings(), np.errstate(all="ignore"):
+                        warnings.simplefilter("ignore")
+                        out = np.expand_dims(fn(a, axis=axis), axis)
+                    return _nd(out)
             return fn(np.zeros(0))
         if a.ndim > 2:
             return self._reduce_nd(fn, a, dim)
@@ -4546,7 +4744,15 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
             f = interpolate.PchipInterpolator(x, V, axis=0)
         elif method == "makima":
             f = interpolate.Akima1DInterpolator(x, V, axis=0, method="makima")
-        elif method in ("linear", "nearest", "previous", "next"):
+        elif method == "nearest":
+            # a tie between two samples goes to the upper one, as MATLAB's
+            # does (scipy's goes down)
+            mid = (x[:-1] + x[1:]) / 2
+
+            def f(t, x=x, V=V, mid=mid):
+                return V[np.clip(np.searchsorted(mid, t, side="right"),
+                                 0, len(x) - 1)]
+        elif method in ("linear", "previous", "next"):
             f = interpolate.interp1d(x, V, kind=method, axis=0,
                                      bounds_error=False,
                                      fill_value="extrapolate" if extrapolate
@@ -5347,13 +5553,28 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
     def f_evalfr(self, sys, x):
         return _scalar(complex(sys(x)))
 
+    def f_pole(self, sys):
+        """``pole(sys)``: a column, real when no pole has an imaginary part."""
+        p = api.pole(sys).reshape(-1, 1)
+        return np.real_if_close(p)
+
     def f_freqresp(self, sys, w):
-        w = np.atleast_1d(np.asarray(w, float))
+        """The response at each frequency, ``ny × nu × numel(w)``: a SISO
+        model gives ``1 × 1 × n`` (``squeeze`` it for a vector)."""
+        w = np.atleast_1d(np.asarray(w, float)).reshape(-1)
         if ctl.isdtime(sys, strict=True):
             # A discrete model's frequency ω sits on the unit circle.
             ts = 1.0 if sys.dt is True else float(sys.dt)
-            return np.array([complex(sys(np.exp(1j * x * ts))) for x in w])
-        return np.array([complex(sys(1j * x)) for x in w])
+            points = [np.exp(1j * x * ts) for x in w]
+        else:
+            points = [1j * x for x in w]
+        ny, nu = sys.noutputs, sys.ninputs
+        out = np.empty((ny, nu, len(w)), dtype=complex)
+        for k, s in enumerate(points):
+            out[:, :, k] = np.asarray(sys(s), dtype=complex).reshape(ny, nu)
+        if len(w) == 1:
+            return _nd(out[:, :, 0].reshape(ny, nu))
+        return _nd(out)
 
     def f_isstable(self, sys):
         poles = api.pole(sys)
@@ -6216,7 +6437,13 @@ def _convert(m: re.Match, value) -> str:
     conv = m.group("conv")
     head = "%" + flags + width
     if conv == "s":
-        text = value if isinstance(value, str) else _num2str(value, None)
+        if isinstance(value, str):
+            text = value
+        elif (_is_number(value) and not isinstance(value, complex)
+                and float(value).is_integer() and 0 <= float(value) < 0x110000):
+            text = chr(int(value))           # sprintf('%s', 65) is 'A'
+        else:
+            text = _num2str(value, None)
         return (head + (f".{prec}" if prec else "") + "s") % text
     if conv == "c":
         text = value if isinstance(value, str) else chr(int(value))
@@ -6233,6 +6460,41 @@ def _convert(m: re.Match, value) -> str:
             return (head + code) % int(value)
         return (head + (f".{prec}" if prec else "") + "e") % float(value)
     return (head + (f".{prec}" if prec else "") + conv) % float(value)
+
+
+def _num2str_matrix(a: np.ndarray, negative_pad: bool = True):
+    """
+    ``num2str`` of a matrix (or a row of non-integers): every column gets
+    the same width, then the blank columns common to all rows are dropped.
+    ``[1.5 2.25; 3 4]`` is ``['1.5        2.25'; '  3           4']``.
+    """
+    finite = np.abs(a[np.isfinite(a)])
+    top = float(finite.max()) if finite.size else 0.0
+    neg = bool(np.any(a < 0))
+    whole = bool(np.all(np.isfinite(a))) and bool(np.all(a == np.fix(a)))
+    if whole:
+        digits = int(math.floor(math.log10(top))) + 1 if top else 1
+        width = digits + 2 + (1 if neg and negative_pad else 0)
+
+        def cell(v):
+            return f"{int(v):>{width}d}"
+    else:
+        ndgt = int(math.floor(math.log10(top))) if top else 0
+        ndgt = min(max(ndgt + 5, 5), 16)
+        width = ndgt + 7 + (1 if neg else 0)
+
+        def cell(v):
+            if math.isnan(v):
+                return "NaN".rjust(width)
+            if math.isinf(v):
+                return ("Inf" if v > 0 else "-Inf").rjust(width)
+            return f"{v:.{ndgt}g}".rjust(width)
+    rows = ["".join(cell(float(v)) for v in row) for row in a]
+    lead = min(len(r) - len(r.lstrip(" ")) for r in rows)
+    rows = [r[lead:] for r in rows]
+    tail = min(len(r) - len(r.rstrip(" ")) for r in rows)
+    rows = [r[:len(r) - tail] if tail else r for r in rows]
+    return rows[0] if len(rows) == 1 else CharMatrix(rows)
 
 
 def _num2str(v, spec) -> str:

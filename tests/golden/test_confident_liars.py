@@ -569,3 +569,138 @@ def test_an_anonymous_function_keeps_the_values_it_was_made_with(it):
             " h = @(z) z + k; k = 0; q = h(1);")
     assert val(it, "r") == 3
     assert val(it, "q") == 11
+
+
+# ──────────────────────────────────────────────────────────────
+#  Silent wrong answers found by the MATLAB reference corpus
+#  (tools/matlab_reference/evans_reference.mat, R2023a; probe ids in the
+#  ids). Each case checks class, size and value as MATLAB recorded them.
+# ──────────────────────────────────────────────────────────────
+
+def _numbers(x):
+    return np.atleast_1d(np.asarray(x)).reshape(-1, order="F")
+
+
+def _check(it, code, cls, size, value=None):
+    """Run ``code`` (which sets ``out``), then compare ``out`` with MATLAB's."""
+    run(it, code)
+    run(it, "c__ = class(out); s__ = size(out);")
+    assert val(it, "c__") == cls, code
+    assert _numbers(val(it, "s__")).tolist() == list(size), code
+    if value is None:
+        return
+    out = val(it, "out")
+    if isinstance(value, str):
+        assert str(out) == value, code
+    else:
+        got = _numbers(out)
+        want = np.asarray(value)
+        assert got.shape == want.shape, code
+        np.testing.assert_allclose(got.astype(complex), want.astype(complex),
+                                   equal_nan=True, err_msg=code)
+
+
+REFERENCE_CASES = [
+    # id, code, class, size, value
+    (252, 'out = double("3.5");', "double", (1, 1), [3.5]),
+    (319, "x = 5; x(2) = 7; out = x;", "double", (1, 2), [5, 7]),
+    (34, "out = 1 / -0;", "double", (1, 1), [-np.inf]),
+    (6, "out = [mod(5.5, 2) mod(5, 0) rem(5, 0)];", "double", (1, 3),
+     [1.5, 5, np.nan]),
+    (69, "out = size(1:0);", "double", (1, 2), [1, 0]),
+    (110, "out = sum(zeros(0, 3));", "double", (1, 3), [0, 0, 0]),
+    (114, "out = mean(zeros(0, 3));", "double", (1, 3),
+     [np.nan, np.nan, np.nan]),
+    (151, "out = sum(ones(2, 3, 4), [1 2]);", "double", (1, 1, 4),
+     [6, 6, 6, 6]),
+    (30, "out = eps(single(1));", "single", (1, 1), [1.1920929e-07]),
+    (318, "for k = 1:0, end, out = exist('k', 'var');", "double", (1, 1), [1]),
+    (158, "s = 'abc'; s(5) = 'e'; out = double(s);", "double", (1, 5),
+     [97, 98, 99, 0, 101]),
+    (176, "out = ['ab'; 'cd'];", "char", (2, 2)),
+    (228, "out = lower(['A'; 'B']);", "char", (2, 1)),
+    (185, "out = num2str([1.5 2.25; 3 4]);", "char", (2, 15)),
+    (189, "out = int2str([2.5 -2.5]);", "char", (1, 4), "3 -3"),
+    (188, "out = mat2str(logical([1 0]));", "char", (1, 12), "[true false]"),
+    (206, "out = sprintf('%s', 65);", "char", (1, 1), "A"),
+    (226, "out = strcmp({'a', 'b'}, 'a');", "logical", (1, 2), [1, 0]),
+    (221, r"out = regexp('key=val', '(\w+)=(\w+)', 'tokens');", "cell",
+     (1, 1)),
+    (175, "out = strcat({'a '}, 'b');", "cell", (1, 1)),
+    (251, "out = string(1/3);", "string", (1, 1), "0.33333"),
+    (264, 'out = sprintf("%d", 4);', "string", (1, 1), "4"),
+    (265, 'out = class(sprintf("%d", 4));', "char", (1, 6), "string"),
+    (412, "out = sort(pole(tf(1, [1 3 2])));", "double", (2, 1), [-2, -1]),
+    (440, "G = tf([1 2], [1 3 2]); out = sort(pole(G));", "double", (2, 1),
+     [-2, -1]),
+    (435, "out = squeeze(freqresp(tf(1, [1 1]), [0 1]))';", "double", (1, 2),
+     [1, 0.5 + 0.5j]),
+    (367, "out = interp1([1 2 3], [10 20 30], 2.5, 'nearest');", "double",
+     (1, 1), [30]),
+]
+
+
+@pytest.mark.parametrize("probe, code, cls, size, value", [
+    pytest.param(*(c if len(c) == 5 else c + (None,)), id=f"probe{c[0]}")
+    for c in REFERENCE_CASES])
+def test_reference_corpus_case(it, probe, code, cls, size, value):
+    _check(it, code, cls, size, value)
+
+
+def test_char_matrix_rows_and_codes(it):
+    """Probes 176, 228: ``['ab'; 'cd']`` is a 2×2 char, not a cell."""
+    run(it, "x = ['ab'; 'cd']; r = x(2, :); k = x(:, 1); d = double(x);")
+    assert val(it, "r") == "cd"
+    assert str(val(it, "k").rows) == "['a', 'c']"
+    assert _numbers(val(it, "d")).tolist() == [97, 99, 98, 100]
+    run(it, "y = upper(lower(['A'; 'B']));")
+    assert val(it, "y").rows == ["A", "B"]
+    assert "not consistent" in error_of(it, "['ab'; 'c']")
+
+
+def test_num2str_matrix_rows(it):
+    """Probe 185: two rows, the blank columns they share dropped."""
+    run(it, "x = num2str([1.5 2.25; 3 4]);")
+    assert val(it, "x").rows == ["1.5        2.25", "  3           4"]
+
+
+def test_regexp_tokens_are_one_level_deep(it):
+    """Probe 221: ``{ {'key', 'val'} }``, the 1×2 cell inside a 1×1."""
+    run(it, r"t = regexp('key=val', '(\w+)=(\w+)', 'tokens'); "
+            "a = t{1}{1}; b = t{1}{2}; n = numel(t{1});")
+    assert (val(it, "a"), val(it, "b"), val(it, "n")) == ("key", "val", 2)
+
+
+def test_strcat_with_a_cell_keeps_trailing_blanks(it):
+    """Probe 175: ``strcat({'a '}, 'b')`` is ``{'a b'}``; chars lose them."""
+    run(it, "c = strcat({'a '}, 'b'); s = strcat('a ', 'b');")
+    assert list(val(it, "c")) == ["a b"]
+    assert val(it, "s") == "ab"
+
+
+def test_margin_at_unit_dc_gain(it):
+    """Probe 418: gain exactly 1 at DC gives Pm = -180 at Wcp = 0. (The gain
+    margin is 8 here, MATLAB's 8.0011 is its own approximation: probe 419.)"""
+    run(it, "[Gm, Pm, Wcg, Wcp] = margin(tf(1, [1 3 3 1]));")
+    assert val(it, "Pm") == -180
+    assert val(it, "Wcp") == 0
+    assert val(it, "Gm") == pytest.approx(8.0)
+    assert val(it, "Wcg") == pytest.approx(np.sqrt(3))
+
+
+def test_rlocus_columns_are_real_when_every_root_is(it):
+    """Probe 446: ``r(:, 1)`` is the real column ``[-2; -1]`` at K = 0 and
+    the complex pair ``-1.5 ± 1.9365i`` at K = 4."""
+    run(it, "[r, k] = rlocus(tf(1, [1 3 2]), [0 1 4]); "
+            "a = sort(r(:, 1)); b = sort(r(:, 3)); sa = size(a);")
+    assert _numbers(val(it, "sa")).tolist() == [2, 1]
+    assert not np.iscomplexobj(val(it, "a"))
+    assert _numbers(val(it, "a")).tolist() == [-2, -1]
+    assert _numbers(val(it, "b")).tolist() == pytest.approx(
+        [-1.5 - 1.93649167j, -1.5 + 1.93649167j])
+
+
+def test_freqresp_is_ny_by_nu_by_n(it):
+    """Probe 435: a SISO response at 3 frequencies is 1×1×3."""
+    run(it, "H = freqresp(tf(1, [1 1]), [0 1 2]); s = size(H);")
+    assert _numbers(val(it, "s")).tolist() == [1, 1, 3]

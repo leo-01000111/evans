@@ -1541,8 +1541,15 @@ class _Emitter:
                 self._block(s.orelse, i + 1, s.line)
         elif isinstance(s, _For):
             var = _py_name(s.var)
-            self._put(i, f"for {var} in {_RT}.iterate("
-                         f"{self.expr(s.iterable)}):", s.line)
+            self._switch_count += 1
+            cols = f"_for{self._switch_count}"
+            self._put(i, f"{cols} = {_RT}.iterate("
+                         f"{self.expr(s.iterable)})", s.line)
+            # A loop over nothing still leaves the variable behind, empty.
+            self._put(i, f"if not {cols}:", s.line)
+            self._put(i + 1, f"{var} = {_RT}.empty_loop_var()", s.line)
+            self._write_back(s.var, i + 1, s.line)
+            self._put(i, f"for {var} in {cols}:", s.line)
             # A global or persistent loop variable is written each time
             # round, as an assignment to it would be.
             self._write_back(s.var, i + 1, s.line)

@@ -158,9 +158,21 @@ def test_class_of_everything_that_is_not_an_integer_stays_double(it):
 
 # ── library functions on typed values ──────────────────────────
 
+def test_sum_and_prod_of_integers_are_doubles_without_saturation(it):
+    """Reference probes 51, 52, 405: MATLAB R2023a gave a ``double`` 200 for
+    ``sum(int8([100 100]))`` and a ``double`` 40000 for ``prod(int16([200
+    200]))``. ``single`` keeps its class."""
+    assert cls(it, "sum(int8([100 100]))") == "double"
+    assert float(value(it, "sum(int8([100 100]))")) == 200
+    assert cls(it, "prod(int16([200 200]))") == "double"
+    assert float(value(it, "prod(int16([200 200]))")) == 40000
+    assert cls(it, "sum(uint8([200 200 200]), 2)") == "double"
+    assert cls(it, "sum(single([1 2]))") == "single"
+    assert cls(it, "cumsum(uint8([200 100]))") == "uint8"
+
 def test_functions_keep_the_class_of_their_input(it):
-    assert cls(it, "sum(int8([100 100]))") == "int8"
-    assert int(value(it, "sum(int8([100 100]))")) == 127
+    # sum and prod of integers are not here: MATLAB R2023a returns a double
+    # holding the true value (reference probes 51, 52, 405); see below.
     assert int(value(it, "abs(int8(-128))")) == 127
     assert cls(it, "max(uint8([3 9 2]))") == "uint8"
     assert cls(it, "sort(int16([3 1 2]))") == "int16"

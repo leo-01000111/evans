@@ -639,8 +639,9 @@ the cheap items are done; the large types are not.
       `intmax`/`intmin`/`flintmax`/`realmax`/`realmin`, `isinteger`/`isfloat`,
       `idivide`, `bitand`/`bitor`/`bitxor`/`bitshift`/`bitcmp`, `zeros(…,'int8')`
       and `'like'`, and `imshow` of `uint8` spans 0–255. Library functions
-      keep an integer input's class only when MATLAB's do (`sum`, `max`,
-      `abs`, `sort`, `reshape` …); the rest hand back doubles. Display is
+      keep an integer input's class only when MATLAB's do (`max`, `abs`,
+      `sort`, `reshape` …; not `sum` and `prod`, which give a double, see the
+      reference corpus); the rest hand back doubles. Display is
       the classic form (`x = 5`, no `int8` banner). Not done: `typecast`,
       integer-valued `containers.Map` keys (still stored as doubles), N-D.*
 - [x] `containers.Map`. **S–M** *Done 2026-11-09. A handle; text or double keys
@@ -923,21 +924,36 @@ Professional users need this before Evans can be used for paid work.
             self-check at the start falls back to a simpler recorder if the
             main one misbehaves on that MATLAB. Not testable here beyond a dry
             run inside Evans (no MATLAB on this machine).
-      - [ ] **Silent wrong answers (32).** The worst kind; fix these before 1.0. **M**
+      - [x] **Silent wrong answers (32).** The worst kind; fix these before 1.0. **M**
+            *Fixed 2026-11-18, all 32; each has a case in
+            `tests/golden/test_confident_liars.py` (class, size and value as
+            recorded) and `test_types.py`.*
             - Char matrices: `['ab'; 'cd']` and `lower(['A';'B'])` give a cell,
-              not a 2×2 / 2×1 char (176, 228).
-            - `x = 5; x(2) = 7` makes the array `int64` (319).
-            - `double("3.5")` gives the character codes, not 3.5 (252).
+              not a 2×2 / 2×1 char (176, 228). (fixed 2026-11-18: a
+              `CharMatrix` value for char arrays of more than one row; it
+              indexes, converts with `double`, shows as `2×2 char array`, and
+              rows of different lengths are an error. Not yet: `char(a, b)`,
+              `strvcat`, and char matrices inside other functions.)
+            - `x = 5; x(2) = 7` makes the array `int64` (319). (fixed
+              2026-11-18)
+            - `double("3.5")` gives the character codes, not 3.5 (252). (fixed
+              2026-11-18)
             - `sum`/`prod` of integers saturate in the integer class; R2023a
-              gave the true value as a `double` (51, 52, 405). This contradicts
-              the Phase 4 note on `sum` keeping an integer class: check `which
-              sum` first (above).
+              gave the true value as a `double` (51, 52, 405). (fixed
+              2026-11-18. Settled from the recording, not from `which sum`:
+              `evans_reference.mat` holds class `double` and the unsaturated
+              values 200 and 40000 for probes 51, 52 and 405, so the Phase 4
+              note that `sum` keeps the integer class was wrong for `sum` and
+              `prod`; `cumsum`, `max`, `abs` … still keep it, and `single`
+              stays `single`. The `which sum` re-record below is still worth
+              doing, to rule out a shadowing `sum` on that machine.)
             - Edge cases: `1/-0` is `+Inf` (34); `rem(5,0)` is not NaN (6);
               `size(1:0)` is `[0 0]`, not `[1 0]` (69); `sum`/`mean` of
               `zeros(0,3)` give one value, not 1×3 (110, 114); `sum(x, [1 2])`
               adds over the wrong dimensions (151); `eps(single(1))` is a
               `double` (30); after `for k = 1:0`, `k` should exist as `[]` (318);
               `s(5) = 'e'` on a 3-char string should pad with char 0 (158).
+              (all fixed 2026-11-18; `eps` is now a function, `eps(x)` works)
             - Text: `num2str` of a matrix gives one row (185); `int2str(2.5)`
               rounds to 2, not 3 (189); `mat2str` of logicals should say
               `true`/`false` (188); `sprintf('%s', 65)` gives `'65'`, not `'A'`
