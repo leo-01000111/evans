@@ -312,10 +312,12 @@ def test_only_the_file_menu_owns_the_file_shortcuts(app, win):
 
 
 def test_model_toolbar_tooltips_name_the_file_shortcuts(app, win):
+    from evans.ui import keys
     tips = {a.text(): a.toolTip() for a in win._sim_tab.findChildren(QAction)}
-    assert "Ctrl+O" in tips["Open…"]
-    assert "Ctrl+S" in tips["Save"]
-    assert "Ctrl+Shift+S" in tips["Save As…"]
+    # Through keys.label, as the tooltips are: a Mac shows ⌘O, not Ctrl+O.
+    assert keys.label("Ctrl+O") in tips["Open…"]
+    assert keys.label("Ctrl+S") in tips["Save"]
+    assert keys.label("Ctrl+Shift+S") in tips["Save As…"]
 
 
 def test_file_menu_items_are_renamed_and_tipped_by_workspace(app, win):
