@@ -16,10 +16,10 @@
             <tr><td><strong>Console</strong></td><td>Command window, workspace variables, figures and scripts</td></tr>
           </tbody>
         </table></div>
-        <p>A context bar across the top of Analyse shows what is loaded and whether it works:</p>
+        <p>A context bar across the top of Analyse shows what is loaded:</p>
 <pre><code>G(s)  = 4 / (s² + 1.2s + 4)
-K₂(s) = 2 · (s + 0.5) / s     ● stable    PM 60.0°   GM 11.9 dB   [Edit loop]</code></pre>
-        <p>It gives the factored transfer functions, an internal-stability verdict and the headline margins. An undefined quantity shows as an em dash with a tooltip explaining why, so a phase margin that does not exist reads differently from <code>nan</code>. <em>Edit loop</em> opens the side panel on its Loop tab, with the architecture diagram and the block editor. Every workspace has a side panel (<kbd>Ctrl+\</kbd>), and Cedric is its last tab.</p>
+K₂(s) = 2 · (s + 0.5) / s                          [Plant] [Edit loop]</code></pre>
+        <p>It gives the factored transfer functions (on one line when both fit, on two otherwise), a <em>Plant</em> menu with the presets and the systems in the console, and <em>Edit loop</em>, which opens the side panel on its Loop tab, with the architecture diagram and the block editor. The bottom bar shows the internal-stability verdict and the headline margins on Analyse (<code>● stable   PM 60.0°   GM 11.9 dB</code>), the solver and file on Model, and Idle or Running on Console. An undefined quantity shows as an em dash with a tooltip explaining why, so a phase margin that does not exist reads differently from <code>nan</code>. Every workspace has a side panel (<kbd>Ctrl+\</kbd>), and Cedric is its last tab. The menus are File, Edit, View and Help; the settings are in Edit ▸ Preferences.</p>
       </div>
     </section>
 
@@ -123,6 +123,6 @@ bode(G)</code></pre>
       <div class="card prose">
         <h2>Snapshots and layout</h2>
         <p>A snapshot bar above the analysis area saves the whole architecture under a name and restores it from anywhere. <em>Compare</em> ticks every stored design in every plot pane.</p>
-        <p>Window geometry, workspace, side panels and pane arrangement are remembered between runs, and View ▸ Reset layout puts them back. View ▸ Theme picks Day, Night or the system setting. The window fits a 1280 × 720 screen and is tested at 1366 × 768 and 1920 × 1080 as well.</p>
+        <p>Window geometry, workspace, side panels and pane arrangement are remembered between runs, and View ▸ Reset layout puts them back. Edit ▸ Preferences picks Day, Night or the system setting. The window fits a 1280 × 720 screen and is tested at 1366 × 768 and 1920 × 1080 as well.</p>
       </div>
     </section>

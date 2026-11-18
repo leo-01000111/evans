@@ -530,6 +530,9 @@ class ConsolePanel(QWidget):
     cedric_requested = Signal(object, object, str)
     #: A side-panel tab should show (``"workspace"``, ``"history"``).
     side_requested = Signal(str)
+    #: A typed command or a script started (True) or finished (False); the
+    #: window's status bar says Idle or Running from it.
+    run_state_changed = Signal(bool)
 
     def __init__(self, figures: FigureArea, extra: dict | None = None,
                  parent=None) -> None:
@@ -957,6 +960,7 @@ class ConsolePanel(QWidget):
         self.console.folder = self._folder()
         document.code.set_error_line(None)
         self._running_script = True            # not a typed command
+        self.run_state_changed.emit(True)
         return document
 
     def _end_run(self) -> None:
@@ -964,6 +968,7 @@ class ConsolePanel(QWidget):
         self.editor.set_busy(None)
         self._run_document = None
         self._sync_breakpoints()
+        self.run_state_changed.emit(False)
 
     def _offer_to_save_scripts(self) -> bool:
         """
@@ -1113,6 +1118,7 @@ class ConsolePanel(QWidget):
             running = tracer.running
         self.editor.set_run_state(running, self._pause_loop is not None
                                   or tracer.paused is not None)
+        self.run_state_changed.emit(bool(running))
 
     def _offer_to_save_figures(self) -> list[Path] | None:
         """

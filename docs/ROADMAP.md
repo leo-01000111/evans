@@ -1093,7 +1093,7 @@ Each of these is a project of its own. Decide whether each is in scope before st
 - [ ] **An extension mechanism:** user toolboxes on the path, and a place to share
       them. **L**
 
-## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 4 of 10 packages done**
+## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 5 of 10 packages done**
 
 Planned 2026-11-16 from a UI audit (research into comparable tools, a code inventory
 and offscreen renders of every workspace) and two rounds of decisions with Leon. It
@@ -1641,7 +1641,7 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
   slider with four panes following, the Compare menus and their legends in a
   small pane, and the shortened header combos at 1280 wide.
 
-- [ ] **R4 — Menus, preferences, bottom bar, a slimmer context bar.** *sonnet.* **M**
+- [x] **R4 — Menus, preferences, bottom bar, a slimmer context bar.** *sonnet.* **M**
   Needs R2 and R3.
   - **Menu bar: File · Edit · View · Help.** Rebuild `MainWindow._build_menus`:
     - *File:* New ▸ (R7 fills it; until then *New loop*), Open… (Ctrl+O), Open
@@ -1708,6 +1708,62 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
     is reachable from the dialog, the Plant menu or the File menu; the lamp is
     visible on Analyse and hidden on Model and Console; a transient
     `showMessage` leaves the lamp visible.
+  *Done 2026-11-18:* `ui/preferences.py` (`PreferencesDialog`,
+  `preferences_dialog(window)`), `LoopStatus` and the elided, two-line-capable
+  context bar in `ui/context_bar.py`, the four menus and the Plant menu in
+  `MainWindow` (`_build_menus`, `_build_export_menu`, `_build_plant_menu`,
+  `_build_status_bar`, `_sync_status_bar`), tests in
+  `tests/golden/test_r4_menus.py` (33). Decisions where the spec met the code:
+  - **File ▸ New stays the single per-workspace New** (Leon, 2026-11-18), not
+    a "New ▸" submenu; Open, Save and Save as dispatch as in R0. R7 makes the
+    submenu. Autosave is no longer a menu: `MainWindow` keeps
+    `_autosave_enabled` / `_autosave_interval` (read from `recovery`), and
+    `set_autosave` is the one place they change.
+  - **Export ▸ is a File submenu** with the six items unchanged; the PNG item
+    is *Export pane as PNG…* on Ctrl+Shift+E and still saves the whole pane
+    grid, as before. Ctrl+Shift+P is free for R5.
+  - **Block palette (Ctrl+B)** was a Model-toolbar action only. The shortcut
+    moved to View ▸ Block palette (two actions with one shortcut fire
+    neither); the toolbar button stays. `SimTab.palette_changed` keeps the
+    menu check in step. The shortcut works on any workspace but only the
+    Model has a palette to show.
+  - **Preferences** is one non-modal dialog (`MainWindow.preferences_dialog()`
+    builds it once, `show_preferences()` shows it), a form of three groups,
+    every control applied at once and an accessible name on each. Its
+    controls follow changes made elsewhere through `sync()`, which the
+    window's setters call. The theme combo goes through `choose_theme`; a
+    declined restart puts the old choice back. The integrated title bar shows
+    the saved preference (it stays unticked and disabled off Windows). New
+    persist keys, with getters and setters that refuse a bad value:
+    `startup/show` (`start` default, `reopen`; nothing reads it until R8) and
+    `model/scopeOpensIn` (`window` default, `panel`; R6 reads it).
+  - **Edit** has Undo, Redo, *Send loop to the console*, Preferences… (Ctrl+,
+    with `QAction.PreferencesRole`). `keys.label` now rewrites `Ctrl+,` and
+    `Ctrl+/` for the Mac. Keyboard shortcuts (Ctrl+/) is omitted until R5.
+  - **Bottom bar.** `LoopStatus` (lamp, PM, GM, ωc) is built by `ContextBar`
+    (`ContextBar.status`, so `verdict`, `summary()` and `describe()` still
+    work) and put in the status bar by `addPermanentWidget`, visible on
+    Analyse only. The verdict note is the lamp's tooltip. The Console shows
+    *Idle* / *Running* from a new `ConsolePanel.run_state_changed(bool)`,
+    emitted for typed commands and for scripts (`_begin_run` / `_end_run`).
+  - **The context bar is slimmer and cannot widen the window.** G(s) and
+    K₂(s) are elided labels (`text()` and the tooltip stay whole) in a box
+    that goes beside each other when both fit and stacks otherwise. That is
+    what brought the R3 case (a wide loop needing 1284 px) back inside
+    1280×720: the labels used to ask for their full text width. The Plant
+    button is a `QToolButton` with an instant popup (Qt draws its arrow; no
+    glyph in the label).
+  Changed assertions: `test_title_bar.py` (four menu titles; the title-bar
+  toggle is read from the dialog); `test_block_shapes.py` and `test_theme.py`
+  (the classic-boxes and theme controls are the dialog's); `test_recovery.py`
+  (autosave on/off and interval are the dialog's); `test_update.py` (Check for
+  updates automatically is no longer in a menu, it is in the dialog);
+  `test_ui_layout.py` (the margin labels are `_context.status._pm`; the
+  snapshot-bar action is `_act_snapshot_bar`, and the dialog follows it).
+  Check by eye on a real screen: the Plant button and its arrow, the context
+  bar going from one line to two as the window narrows, the lamp and margins
+  in the status bar in both themes, the Preferences dialog's look, and
+  Ctrl+, and Ctrl+Shift+E from each workspace.
 
 - [ ] **R5 — Search: the command palette, and the shortcut sheet.** *sonnet.* **M–L**
   Needs R4.

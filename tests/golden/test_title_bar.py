@@ -73,8 +73,7 @@ def test_the_title_bar_is_the_menu_widget_and_holds_the_menus(win):
     assert win.menuBar() is bar.menu_bar
     assert bar.menu_bar.parentWidget() is bar
     titles = [a.text().replace("&", "") for a in win.menuBar().actions()]
-    assert titles == ["File", "Edit", "Export", "View", "Presets",
-                      "Settings", "Help"]
+    assert titles == ["File", "Edit", "View", "Help"]
 
 
 def test_menu_bar_does_not_replace_the_title_bar(win):
@@ -284,26 +283,27 @@ def test_offscreen_is_the_fallback(win):
     assert not win.integrated_title_bar
     assert not win.title_bar.close_button.isVisible()
     assert win.title_bar.isVisible(), "the menus must stay reachable"
-    assert not win._act_title_bar.isEnabled()
+    assert not win.preferences_dialog().title_bar.isEnabled()
 
 
-def test_the_view_menu_has_the_toggle(win):
+def test_preferences_has_the_toggle_and_the_view_menu_does_not(win):
     from PySide6.QtWidgets import QMenu
 
     view = next(m for m in win.menuBar().findChildren(QMenu)
                 if m.title().replace("&", "") == "View")
     texts = [a.text().replace("&", "") for a in view.actions()]
-    assert "Integrated title bar" in texts
+    assert "Integrated title bar" not in texts
+    assert win.preferences_dialog().title_bar.accessibleName() ==         "Integrated title bar"
 
 
 def test_the_toggle_persists(win):
     try:
         win.set_integrated_title_bar(False)
         assert persist.integrated_title_bar(default=True) is False
-        assert not win._act_title_bar.isChecked()
+        assert not win.preferences_dialog().title_bar.isChecked()
         win.set_integrated_title_bar(True)
         assert persist.integrated_title_bar(default=False) is True
-        assert win._act_title_bar.isChecked()
+        assert win.preferences_dialog().title_bar.isChecked()
     finally:
         persist.settings().remove(persist.INTEGRATED_TITLE_BAR_KEY)
 

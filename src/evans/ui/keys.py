@@ -17,7 +17,7 @@ import sys
 
 #: ``Ctrl``, then any of Shift and Alt, then one key.
 _SHORTCUT = re.compile(
-    r"Ctrl((?:\+(?:Shift|Alt))*)\+(Enter|Return|Space|[A-Z0-9`\\])")
+    r"Ctrl((?:\+(?:Shift|Alt))*)\+(Enter|Return|Space|[A-Z0-9`\\,/])")
 
 #: The Mac's modifier order is fixed: ⌃ ⌥ ⇧ ⌘, then the key.
 _MAC_MODIFIERS = (("Alt", "⌥"), ("Shift", "⇧"))

@@ -266,6 +266,40 @@ def set_global_scope_open(on: bool) -> None:
     settings().setValue(GLOBAL_SCOPE_KEY, bool(on))
 
 
+#: Preferences ▸ General ▸ On launch: the Start page (R8 builds it) or the
+#: workspace and files left open last time.
+STARTUP_SHOW_KEY = "startup/show"
+STARTUP_CHOICES = ("start", "reopen")
+
+
+def startup_show() -> str:
+    value = str(settings().value(STARTUP_SHOW_KEY) or "")
+    return value if value in STARTUP_CHOICES else "start"
+
+
+def set_startup_show(choice: str) -> None:
+    if choice not in STARTUP_CHOICES:
+        raise ValueError(f"startup choice must be one of {STARTUP_CHOICES}")
+    settings().setValue(STARTUP_SHOW_KEY, choice)
+
+
+#: Preferences ▸ Model ▸ Scope opens in: its own window (default) or the Model
+#: workspace's side panel (R6 reads this).
+SCOPE_OPENS_IN_KEY = "model/scopeOpensIn"
+SCOPE_CHOICES = ("window", "panel")
+
+
+def scope_opens_in() -> str:
+    value = str(settings().value(SCOPE_OPENS_IN_KEY) or "")
+    return value if value in SCOPE_CHOICES else "window"
+
+
+def set_scope_opens_in(choice: str) -> None:
+    if choice not in SCOPE_CHOICES:
+        raise ValueError(f"scope choice must be one of {SCOPE_CHOICES}")
+    settings().setValue(SCOPE_OPENS_IN_KEY, choice)
+
+
 #: Model files whose scripts run without asking: the ones saved from Evans
 #: and the ones the user chose to trust (see ``sim/scripts.py``).
 TRUSTED_MODELS_KEY = "model/trustedModels"

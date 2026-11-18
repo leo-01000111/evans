@@ -379,6 +379,7 @@ def test_a_copy_from_source_only_points_at_the_release(updater, monkeypatch):
 def test_the_help_menu_offers_updates():
     from PySide6.QtWidgets import QApplication, QMenu
 
+    from evans.ui import persist
     from evans.ui.mainwindow import MainWindow
 
     QApplication.instance() or QApplication([])
@@ -387,7 +388,8 @@ def test_the_help_menu_offers_updates():
         texts = [action.text() for menu in win.findChildren(QMenu)
                  for action in menu.actions()]
         assert "Check for &updates…" in texts
-        assert "Check for updates &automatically" in texts
+        assert "Check for updates &automatically" not in texts
+        assert win.preferences_dialog().auto_update.isChecked() ==             persist.update_auto_check()
     finally:
         win.close()
         win.deleteLater()

@@ -21,7 +21,7 @@ them (grep, go-to-definition), don't read them whole.**
 | `evans.help` | help pages, one Markdown file per command in `help/pages/` | `__init__.py` |
 | `evans.examples` | sample `.evx` models (rebuilt by `tools/build_examples.py`) | `__init__.py` |
 | `evans.assistant` | Cedric's OpenRouter client and prompt protocol, Qt-free | `client.py`, `protocol.py` |
-| `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave; `side_panel.py` is each workspace's right-hand tabbed panel (`SidePanel`); `design_panel.py` is the Analyse panel's Design tab (Gain · Compensator · PID, live apply to K₂); `panes.py` the pane grid and each plot pane's Compare menu | `mainwindow.py` |
+| `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave; `side_panel.py` is each workspace's right-hand tabbed panel (`SidePanel`); `design_panel.py` is the Analyse panel's Design tab (Gain · Compensator · PID, live apply to K₂); `preferences.py` is the Preferences dialog (`preferences_dialog(window)`; theme, title bar, block boxes, snapshot bar, autosave, updates, startup, scope); `panes.py` the pane grid and each plot pane's Compare menu | `mainwindow.py` |
 | `evans.ui.console` | command window, workspace, script editor, live editor, figures | `console_dock.py` |
 | `evans.ui.code` | code editing: highlighting, completion popup, hover/Ctrl+click | `editor.py`, `completion.py` |
 | `evans.ui.sim` | the Model tab: canvas, palette, inspector, scope, run toolbar | `sim_tab.py`, `canvas.py` |
@@ -53,7 +53,9 @@ them (grep, go-to-definition), don't read them whole.**
   `test_confident_liars.py`.
 - **A Simulink block**: `sim/blocks/<category>.py`; the contract is `sim/block.py`; how
   the canvas draws it is `ui/sim/items.py`.
-- **A menu action**: `ui/mainwindow.py` `_build_menus`.
+- **A menu action**: `ui/mainwindow.py` `_build_menus` (File · Edit · View · Help; the
+  settings are in `ui/preferences.py`, the presets in `_build_plant_menu`, the stability
+  lamp and margins in `LoopStatus`, `ui/context_bar.py`, shown in the status bar).
 - **Something saved between sessions**: `ui/persist.py` (QSettings keys); window layout,
   side panels included (`side/<workspace>/open|tab|width`), in `MainWindow.save_layout`.
 - **A workspace's side panel** (Loop, Properties, Workspace, Cedric…): `ui/side_panel.py`;

@@ -146,6 +146,9 @@ class SimTab(QWidget, GuardedPanel):
     #: A model file was opened or saved — the recent-files list listens.
     file_used = Signal(object)             # Path
     files_dropped = Signal(list)           # local files dropped on the canvas
+    #: The block palette was shown (True) or folded away (False); View ▸
+    #: Block palette follows it.
+    palette_changed = Signal(bool)
     #: A run finished; the console writes it to the workspace as ``out``.
     simulated = Signal(object)             # SimResult
 
@@ -310,7 +313,8 @@ class SimTab(QWidget, GuardedPanel):
         iconset.bind(self._palette_action, "blocks")
         self._palette_action.setCheckable(True)
         self._palette_action.setChecked(True)
-        self._palette_action.setShortcut("Ctrl+B")
+        # Ctrl+B belongs to View ▸ Block palette (two actions with one
+        # shortcut are ambiguous in Qt, and neither fires).
         self._palette_action.setToolTip(
             keys.label("Show or hide the block palette (Ctrl+B)"))
         self._palette_action.triggered.connect(
@@ -527,6 +531,7 @@ class SimTab(QWidget, GuardedPanel):
         self._palette_action.blockSignals(True)
         self._palette_action.setChecked(not collapsed)
         self._palette_action.blockSignals(False)
+        self.palette_changed.emit(not collapsed)
         if not self._restoring_palette:
             QSettings(self.SETTINGS_ORG, self.SETTINGS_APP).setValue(
                 "sim/palette_collapsed", collapsed)

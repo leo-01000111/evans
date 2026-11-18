@@ -175,15 +175,15 @@ def test_a_shaped_diagram_exports(app, tmp_path, classic, suffix):
         shapes.set_classic(False)
 
 
-def test_the_view_menu_switches_classic_boxes(app):
+def test_preferences_switch_classic_boxes(app):
     from evans.ui.mainwindow import MainWindow
     win = MainWindow()
     try:
-        action = win._act_classic_boxes
-        assert not action.isChecked()
-        action.trigger()
+        box = win.preferences_dialog().classic_boxes
+        assert not box.isChecked()
+        box.setChecked(True)
         assert shapes.classic() and persist.classic_block_boxes()
-        action.trigger()
+        box.setChecked(False)
         assert not shapes.classic()
     finally:
         shapes.set_classic(False)

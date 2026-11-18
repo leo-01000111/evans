@@ -192,7 +192,7 @@ def test_the_console_clear_buttons_fit_their_labels(app):
         widget.deleteLater()
 
 
-def test_the_main_window_offers_a_theme_menu(app, recorded):
+def test_preferences_offer_the_theme(app, recorded):
     from evans.core.architecture import CourseArchitecture
     from evans.core.tf_utils import second_order, unity
     from evans.ui.mainwindow import MainWindow
@@ -202,15 +202,20 @@ def test_the_main_window_offers_a_theme_menu(app, recorded):
     win = MainWindow(arch)
     before = theme.saved_mode()
     try:
-        actions = win._theme_actions
-        assert set(actions) == set(theme.Mode)
+        combo = win.preferences_dialog().theme
+        assert {combo.itemData(i) for i in range(combo.count())} == {
+            mode.value for mode in theme.Mode}
+
+        def pick(mode):
+            combo.setCurrentIndex(combo.findData(mode.value))
+
         current = theme.tokens()
 
         # "Go back and save work": nothing changes, the old choice stays ticked.
         win._ask_theme_restart = lambda mode: False
-        actions[theme.Mode.NIGHT].trigger()
+        pick(theme.Mode.NIGHT)
         assert theme.tokens() is current
-        assert actions[theme.mode()].isChecked()
+        assert combo.currentData() == theme.mode().value
         assert theme.saved_mode() is before
 
         # "Restart": saved for the next start, applied by relaunching, and the
@@ -225,7 +230,7 @@ def test_the_main_window_offers_a_theme_menu(app, recorded):
         real_quit = QApplication.quit
         QApplication.quit = lambda *a: quit_calls.append(1)
         try:
-            actions[theme.Mode.NIGHT].trigger()
+            pick(theme.Mode.NIGHT)
         finally:
             QApplication.quit = real_quit
         assert theme.saved_mode() is theme.Mode.NIGHT

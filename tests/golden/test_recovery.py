@@ -209,16 +209,18 @@ def test_later_keeps_and_discard_removes(win, tmp_path, monkeypatch):
     assert not crashed.folder.exists()
 
 
-def test_autosave_menu_turns_it_off_and_on(win, tmp_path):
+def test_preferences_turn_autosave_off_and_on(win, tmp_path):
+    prefs = win.preferences_dialog()
     win.start_recovery(root=tmp_path)
     try:
         assert win._recovery.running
-        win._act_autosave.setChecked(False)
+        prefs.autosave.setChecked(False)
         assert not win._recovery.running
         assert not recovery.saved_enabled()
-        win._autosave_interval_actions[300].trigger()
+        prefs.autosave_interval.setCurrentIndex(
+            prefs.autosave_interval.findData(300))
         assert recovery.saved_interval() == 300
-        win._act_autosave.setChecked(True)
+        prefs.autosave.setChecked(True)
         assert win._recovery.running
         assert win._recovery.interval == 300
     finally:

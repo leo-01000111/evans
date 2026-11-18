@@ -5,23 +5,25 @@ Main application window.
 ::
 
   ┌──────────────────────────────────────────────────────────┐
-  │ ▣ File Export View …              Evans — …          ─ □ ✕ │  title bar
+  │ ▣ File Edit View Help             Evans — …          ─ □ ✕ │  title bar
   ├──────────────────────────────────────────────────────────┤
-  │ G(s) = …   K₂(s) = …   ● stable   PM 60°   [Edit loop]   │  context bar
+  │ G(s) = …   K₂(s) = …                  [Plant] [Edit loop] │  context bar
   ├──────────────────────────────────────────────────────────┤
   │ 📌 Snapshot  [ … ]  Restore  Delete  Compare   (hideable)│
   ├──────────────────────────────────────────────────────────┤
   │ System │ Time │ Frequency │ … │ Simulink │ Modern        │
   │                                                          │
   │                    the analysis area                     │
+  ├──────────────────────────────────────────────────────────┤
+  │ message                      ● stable   PM 60°  GM  ωc   │  status bar
   └──────────────────────────────────────────────────────────┘
 
 Each workspace page is ``[content | side panel]`` (:mod:`.side_panel`), the
 panel opened and closed with View ▸ Side panel (Ctrl+\). On Analyse its
 *Loop* tab holds the architecture diagram and the block editor, which used
 to occupy 420–760 px on every tab and then a dock left of the rail; what is
-always visible instead is the context bar, which answers "what is loaded and
-is it stable?" in one strip. Cedric is the last tab of every panel: one
+always visible instead is the context bar (what is loaded) and, in the status
+bar, the stability lamp and the margins. Cedric is the last tab of every panel: one
 assistant panel, moved into the workspace in view.
 
 Geometry, each side panel (open, tab, width) and the current workspace are
@@ -30,8 +32,8 @@ the defaults.
 
 The title bar (:mod:`.titlebar`) carries the menus. On Windows it replaces
 the native caption while keeping the native frame (:mod:`.winframe`), so the
-window still snaps, resizes and casts its shadow; View ▸ Integrated title bar
-turns that off, and everywhere else the caption is the system's own.
+window still snaps, resizes and casts its shadow; Edit ▸ Preferences turns
+that off, and everywhere else the caption is the system's own.
 """
 
 from __future__ import annotations
@@ -43,11 +45,12 @@ from pathlib import Path
 
 import control as ctl
 from PySide6.QtCore import QProcess, QSettings, Qt, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QUndoGroup, QUndoStack
+from PySide6.QtGui import QAction, QUndoGroup, QUndoStack
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMenu,
     QMenuBar,
@@ -112,6 +115,11 @@ class MainWindow(QMainWindow):
         self._loop_undo.setUndoLimit(200)
         self._loop_baseline = session_dict(self._arch)
         self._undo_seen: dict = {}
+        #: Autosave for crash recovery; Preferences changes it (`set_autosave`).
+        self._autosave_enabled = recovery.saved_enabled()
+        self._autosave_interval = recovery.saved_interval()
+        #: Preferences, built on first use (`preferences_dialog`).
+        self._prefs = None
         #: Snapshots are shared: the bar above the tabs, the Compare button
         #: and the console all read the same store.
         self.snapshots = SnapshotStore()
@@ -183,11 +191,7 @@ class MainWindow(QMainWindow):
         if not active:
             self._native_frame.uninstall()
             self._title_bar.set_chrome_visible(False)
-        action = getattr(self, "_act_title_bar", None)
-        if action is not None:
-            action.blockSignals(True)
-            action.setChecked(on)
-            action.blockSignals(False)
+        self._sync_preferences()
         return active
 
     def nativeEvent(self, event_type, message):   # noqa: N802 (Qt API)
@@ -231,6 +235,7 @@ class MainWindow(QMainWindow):
             lambda _path: self._sync_undo_group())
         self._stack.add_page(Workspace.MODEL, self._sim_tab)
         self._stack.add_page(Workspace.CONSOLE, self._build_console())
+        self._context.set_plant_menu(self._build_plant_menu())
         #: Each workspace's side panel; Cedric is the last tab of each.
         self._side_panels: dict[Workspace, SidePanel] = {
             Workspace.ANALYSE: self._analyse_side,
@@ -340,10 +345,11 @@ class MainWindow(QMainWindow):
         return self._grid
 
     def set_snapshot_bar_visible(self, on: bool) -> None:
-        """Settings ▸ Show snapshot bar, remembered for the next launch."""
+        """View ▸ Snapshot bar (or Preferences), remembered for next launch."""
         persist.set_snapshot_bar(on)
         self._snapshot_bar.setVisible(on)
-        self._act_snapshots.setChecked(on)
+        self._set_checked(self._act_snapshot_bar, on)
+        self._sync_preferences()
 
     def set_pane_layout(self, count: int) -> None:
         """1, 2 or 4 panes. A fresh 2×2 opens on step, Bode, locus, metrics."""
@@ -786,35 +792,6 @@ class MainWindow(QMainWindow):
 
     # ── Crash recovery ───────────────────────────────────────
 
-    def _build_autosave_menu(self) -> QMenu:
-        """File ▸ Autosave: on or off, and how often."""
-        menu = QMenu("&Autosave for crash recovery", self)
-        menu.setToolTipsVisible(True)
-        self._act_autosave = QAction("&On", self, checkable=True)
-        self._act_autosave.setChecked(recovery.saved_enabled())
-        self._act_autosave.setToolTip(
-            "Keep a copy of unsaved scripts, the live script and the model, "
-            "to offer back if Evans closes without being asked to")
-        self._act_autosave.toggled.connect(
-            lambda on: self.set_autosave(on, self._autosave_interval))
-        menu.addAction(self._act_autosave)
-        menu.addSeparator()
-        self._autosave_interval = recovery.saved_interval()
-        group = QActionGroup(self)
-        self._autosave_interval_actions = {}
-        for seconds in recovery.INTERVALS:
-            label = f"Every {seconds} s" if seconds < 60 \
-                else f"Every {seconds // 60} min"
-            action = QAction(label, self, checkable=True)
-            action.setChecked(seconds == self._autosave_interval)
-            action.triggered.connect(
-                lambda _c=False, s=seconds:
-                self.set_autosave(self._act_autosave.isChecked(), s))
-            group.addAction(action)
-            menu.addAction(action)
-            self._autosave_interval_actions[seconds] = action
-        return menu
-
     def recovery_items(self) -> list:
         """Every document with changes not on disk."""
         return [*self._console.editor.recovery_items(),
@@ -830,16 +807,16 @@ class MainWindow(QMainWindow):
         self._recovery = recovery.RecoveryController(
             self.recovery_items, root, self._autosave_interval)
         left = self._recovery.orphans()
-        if self._act_autosave.isChecked():
+        if self._autosave_enabled:
             self._recovery.start()
         if left:
             self.offer_recovery(left)
 
     def set_autosave(self, on: bool, interval: int) -> None:
+        self._autosave_enabled = bool(on)
         self._autosave_interval = interval
         recovery.remember(on, interval)
-        if self._autosave_interval_actions.get(interval) is not None:
-            self._autosave_interval_actions[interval].setChecked(True)
+        self._sync_preferences()
         controller = getattr(self, "_recovery", None)
         if controller is None:
             return
@@ -1024,29 +1001,9 @@ class MainWindow(QMainWindow):
 
     # ── Menus ────────────────────────────────────────────────
 
-    def _build_theme_menu(self) -> QMenu:
-        """View ▸ Theme: System / Day / Night, one of them always checked."""
-        menu = QMenu("&Theme", self)
-        group = QActionGroup(self)
-        group.setExclusive(True)
-        self._theme_actions: dict[theme.Mode, QAction] = {}
-        for mode, text, tip in (
-            (theme.Mode.SYSTEM, "&System", "Follow the operating system"),
-            (theme.Mode.DAY, "&Day", "Dry concrete: light ground, black ink"),
-            (theme.Mode.NIGHT, "&Night", "Asphalt: dark ground, pale ink"),
-        ):
-            action = QAction(text, self, checkable=True, statusTip=tip)
-            action.setChecked(theme.mode() is mode)
-            action.triggered.connect(
-                lambda _checked=False, m=mode: self.choose_theme(m))
-            group.addAction(action)
-            menu.addAction(action)
-            self._theme_actions[mode] = action
-        return menu
-
     def choose_theme(self, mode: theme.Mode) -> bool:
         """
-        A theme picked from the menu: saved, then applied by a restart.
+        A theme picked in Preferences: saved, then applied by a restart.
 
         The theme is not switched in place any more. Restyling every live
         widget and then dragging a splitter could hang the window, so the
@@ -1056,7 +1013,7 @@ class MainWindow(QMainWindow):
         if mode is theme.mode():
             return False
         if not self._ask_theme_restart(mode):
-            self._theme_actions[theme.mode()].setChecked(True)
+            self._sync_preferences()
             return False
         theme.save_mode(mode)
         return self._restart()
@@ -1122,10 +1079,13 @@ class MainWindow(QMainWindow):
         return bool(ok[0] if isinstance(ok, tuple) else ok)
 
     def _build_menus(self) -> None:
+        """File, Edit, View and Help; the settings are in Preferences."""
         mb = self.menuBar()
 
         # File menu
         file_menu = mb.addMenu("&File")
+        # One New, as before: a default loop on Analyse, an untitled model on
+        # Model, a script on Console. R7 turns it into a submenu.
         act_new  = QAction("&New",            self); act_new.setShortcut("Ctrl+N")
         self._act_file_new = act_new
         act_open = QAction("&Open…",          self); act_open.setShortcut("Ctrl+O")
@@ -1142,11 +1102,8 @@ class MainWindow(QMainWindow):
         act_save.triggered.connect(self.file_save)
         act_save_as.triggered.connect(self.file_save_as)
         act_quit.triggered.connect(self.close)
-        for a in [act_new, act_open, act_save, act_save_as, None]:
-            if a is None:
-                file_menu.addSeparator()
-            else:
-                file_menu.addAction(a)
+        file_menu.addAction(act_new)
+        file_menu.addAction(act_open)
         self._recent_menu = file_menu.addMenu("Open &recent")
         self._recent_menu.setToolTipsVisible(True)
         self._recent_menu.aboutToShow.connect(self._fill_recent_menu)
@@ -1155,7 +1112,10 @@ class MainWindow(QMainWindow):
         self._examples_menu.setToolTipsVisible(True)
         self._fill_examples_menu()
         file_menu.addSeparator()
-        file_menu.addMenu(self._build_autosave_menu())
+        file_menu.addAction(act_save)
+        file_menu.addAction(act_save_as)
+        file_menu.addSeparator()
+        file_menu.addMenu(self._build_export_menu(file_menu))
         file_menu.addSeparator()
         file_menu.addAction(act_quit)
         self._sync_file_tips()
@@ -1175,34 +1135,24 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(act_undo)
         edit_menu.addAction(act_redo)
         edit_menu.addSeparator()
+        act_send = QAction("Send loop to the &console", self,
+                           triggered=self._push_to_console)
+        act_send.setStatusTip(
+            "Put G, K2, L, T, arch and model in the console's workspace")
+        self._act_send_loop = act_send
+        edit_menu.addAction(act_send)
+        edit_menu.addSeparator()
+        act_prefs = QAction("&Preferences…", self)
+        act_prefs.setShortcut("Ctrl+,")
+        act_prefs.setMenuRole(QAction.PreferencesRole)
+        act_prefs.setStatusTip(
+            "Theme, title bar, block boxes, autosave, updates and the rest")
+        act_prefs.triggered.connect(self.show_preferences)
+        self._act_preferences = act_prefs
+        edit_menu.addAction(act_prefs)
         self._edit_menu = edit_menu
         self._undo_group.indexChanged.connect(self._on_undo_index)
         self._sync_undo_group()
-
-        # Export menu
-        export_menu = mb.addMenu("&Export")
-        act_copy = QAction("&Copy analysis report", self)
-        act_copy.setShortcut("Ctrl+Shift+C")
-        act_copy.triggered.connect(self._copy_report)
-        act_report = QAction("Save analysis &report…", self)
-        act_report.triggered.connect(self._save_report)
-        act_png = QAction("Export current tab as &PNG…", self)
-        act_png.setShortcut("Ctrl+Shift+P")
-        act_png.triggered.connect(self._export_plot_png)
-        for a in (act_copy, act_report, act_png):
-            export_menu.addAction(a)
-        export_menu.addSeparator()
-        act_diagram = QAction("Model &diagram…", self)
-        act_diagram.setToolTip("The Model tab's block diagram as SVG, PDF "
-                               "or PNG")
-        act_diagram.triggered.connect(self._sim_tab.export_diagram)
-        act_print = QAction("Print model diagram…", self)
-        act_print.triggered.connect(self._sim_tab.print_diagram)
-        act_data = QAction("Model &scope data…", self)
-        act_data.setToolTip("The last run's signals as CSV or .mat")
-        act_data.triggered.connect(self._sim_tab.export_data)
-        for a in (act_diagram, act_print, act_data):
-            export_menu.addAction(a)
 
         # View menu
         view_menu = mb.addMenu("&View")
@@ -1252,60 +1202,29 @@ class MainWindow(QMainWindow):
         self.addAction(console_shortcut)
 
         view_menu.addSeparator()
-        view_menu.addMenu(self._build_theme_menu())
-        from .sim import shapes as block_shapes
-        act_classic = QAction("&Classic block boxes", self, checkable=True)
-        act_classic.setStatusTip(
-            "Draw every block on the Model tab as a plain rectangle")
-        act_classic.setChecked(block_shapes.classic())
-        act_classic.toggled.connect(block_shapes.set_classic)
-        self._act_classic_boxes = act_classic
-        view_menu.addAction(act_classic)
-        act_title_bar = QAction("Integrated &title bar", self, checkable=True)
-        act_title_bar.setStatusTip(
-            "Menus and window buttons in one strip (Windows)" if
-            winframe.supported() else
-            "Only on Windows; this system draws its own title bar")
-        act_title_bar.setEnabled(winframe.supported())
-        act_title_bar.triggered.connect(self.set_integrated_title_bar)
-        self._act_title_bar = act_title_bar
-        view_menu.addAction(act_title_bar)
+        act_snapshots = QAction("Snapshot &bar", self, checkable=True)
+        act_snapshots.setStatusTip(
+            "The Snapshot · Restore · Compare row above the analysis panes")
+        act_snapshots.setChecked(persist.snapshot_bar())
+        act_snapshots.triggered.connect(self.set_snapshot_bar_visible)
+        self._act_snapshot_bar = act_snapshots
+        view_menu.addAction(act_snapshots)
+        # The Model toolbar's Blocks button, from the menu; Ctrl+B moved here
+        # from the button, and works on the Model workspace only.
+        act_palette = QAction("Block &palette", self, checkable=True)
+        act_palette.setShortcut("Ctrl+B")
+        act_palette.setStatusTip(
+            "Show or hide the block palette on the Model workspace")
+        act_palette.setChecked(self._sim_tab.palette_visible)
+        act_palette.triggered.connect(self._sim_tab.set_palette_visible)
+        self._sim_tab.palette_changed.connect(
+            lambda on: self._set_checked(act_palette, on))
+        self._act_palette = act_palette
+        view_menu.addAction(act_palette)
         view_menu.addSeparator()
         view_menu.addAction(QAction(
             "&Reset layout", self, triggered=self.reset_layout,
             statusTip="Restore the default window, side panels and panes"))
-        view_menu.addSeparator()
-        view_menu.addAction(QAction(
-            "Send current plant to the console", self,
-            triggered=self._push_to_console))
-
-        # Presets menu
-        preset_menu = mb.addMenu("&Presets")
-        preset_menu.addAction(QAction("1st order  K/(τs+1)", self,
-                                       triggered=self._preset_first_order))
-        preset_menu.addAction(QAction("2nd order underdamped", self,
-                                       triggered=self._preset_so_under))
-        preset_menu.addAction(QAction("2nd order overdamped", self,
-                                       triggered=self._preset_so_over))
-        preset_menu.addAction(QAction("Double integrator 1/s²", self,
-                                       triggered=self._preset_double_int))
-        preset_menu.addAction(QAction("Unstable plant 1/(s-1)", self,
-                                       triggered=self._preset_unstable))
-        preset_menu.addAction(QAction("Non-minimum phase (−s+1)/(s+1)", self,
-                                       triggered=self._preset_nmp))
-        preset_menu.addAction(QAction("Satellite (double integrator)", self,
-                                       triggered=self._preset_satellite))
-
-        # Help menu
-        # Settings menu: preferences that outlast Reset layout.
-        settings_menu = mb.addMenu("&Settings")
-        act_snapshots = QAction("Show &snapshot bar", self, checkable=True)
-        act_snapshots.setChecked(persist.snapshot_bar())
-        act_snapshots.setStatusTip(
-            "The Snapshot · Restore · Compare row above the analysis panes")
-        act_snapshots.triggered.connect(self.set_snapshot_bar_visible)
-        self._act_snapshots = act_snapshots
-        settings_menu.addAction(act_snapshots)
 
         help_menu = mb.addMenu("&Help")
         help_menu.addAction(QAction("Documentation", self, shortcut="F1",
@@ -1315,31 +1234,158 @@ class MainWindow(QMainWindow):
             "Check for &updates…", self,
             triggered=lambda: self.updater.check(),
             statusTip="Look for a newer Evans on GitHub"))
-        act_auto_update = QAction("Check for updates &automatically", self,
-                                  checkable=True)
-        act_auto_update.setChecked(persist.update_auto_check())
-        act_auto_update.setStatusTip("Once a day, a few seconds after launch")
-        act_auto_update.triggered.connect(persist.set_update_auto_check)
-        help_menu.addAction(act_auto_update)
         help_menu.addSeparator()
         help_menu.addAction(QAction("About", self,
                                      triggered=self._show_about))
 
+    def _build_export_menu(self, parent: QMenu) -> QMenu:
+        """File ▸ Export: the report, the analysis image and the model's."""
+        menu = QMenu("&Export", parent)
+        act_copy = QAction("&Copy analysis report", self)
+        act_copy.setShortcut("Ctrl+Shift+C")
+        act_copy.triggered.connect(self._copy_report)
+        act_report = QAction("Save analysis &report…", self)
+        act_report.triggered.connect(self._save_report)
+        # Ctrl+Shift+P was this item's; the search palette (R5) takes it.
+        act_png = QAction("Export pane as &PNG…", self)
+        act_png.setShortcut("Ctrl+Shift+E")
+        act_png.triggered.connect(self._export_plot_png)
+        self._act_export_png = act_png
+        for a in (act_copy, act_report, act_png):
+            menu.addAction(a)
+        menu.addSeparator()
+        act_diagram = QAction("Model &diagram…", self)
+        act_diagram.setToolTip("The Model tab's block diagram as SVG, PDF "
+                               "or PNG")
+        act_diagram.triggered.connect(self._sim_tab.export_diagram)
+        act_print = QAction("Print model diagram…", self)
+        act_print.triggered.connect(self._sim_tab.print_diagram)
+        act_data = QAction("Model &scope data…", self)
+        act_data.setToolTip("The last run's signals as CSV or .mat")
+        act_data.triggered.connect(self._sim_tab.export_data)
+        for a in (act_diagram, act_print, act_data):
+            menu.addAction(a)
+        return menu
+
+    @staticmethod
+    def _set_checked(action: QAction, on: bool) -> None:
+        action.blockSignals(True)
+        action.setChecked(on)
+        action.blockSignals(False)
+
+    # ── Preferences ───────────────────────────────────────────
+
+    def preferences_dialog(self):
+        """The Preferences dialog, built once and not shown."""
+        if self._prefs is None:
+            from .preferences import preferences_dialog
+            self._prefs = preferences_dialog(self)
+        return self._prefs
+
+    def show_preferences(self, *_ignored):
+        """Edit ▸ Preferences…: shown, not modal; its changes apply at once."""
+        dialog = self.preferences_dialog()
+        dialog.sync()
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        return dialog
+
+    def _sync_preferences(self) -> None:
+        if self._prefs is not None:
+            self._prefs.sync()
+
+    # ── The Plant menu (the old Presets menu) ─────────────────
+
+    #: The presets, in menu order; the `_preset_*` methods apply them.
+    _PRESETS = (
+        ("1st order  K/(τs+1)", "_preset_first_order"),
+        ("2nd order underdamped", "_preset_so_under"),
+        ("2nd order overdamped", "_preset_so_over"),
+        ("Double integrator 1/s²", "_preset_double_int"),
+        ("Unstable plant 1/(s-1)", "_preset_unstable"),
+        ("Non-minimum phase (−s+1)/(s+1)", "_preset_nmp"),
+        ("Satellite (double integrator)", "_preset_satellite"),
+    )
+
+    def _build_plant_menu(self) -> QMenu:
+        """
+        The context bar's *Plant* menu: the presets, then the systems in the
+        console's workspace (what double-clicking one in the Workspace tab
+        does).
+        """
+        menu = QMenu("Plant", self)
+        menu.setToolTipsVisible(True)
+        for label, method in self._PRESETS:
+            action = QAction(label, menu)
+            action.triggered.connect(
+                lambda _checked=False, m=method: getattr(self, m)())
+            menu.addAction(action)
+        menu.addSeparator()
+        self._console_systems_menu = menu.addMenu("From the console workspace…")
+        self._console_systems_menu.setToolTipsVisible(True)
+        self._console_systems_menu.aboutToShow.connect(
+            self._fill_console_systems)
+        self._fill_console_systems()
+        return menu
+
+    def _console_systems(self) -> dict:
+        """The transfer functions and state-space models in the console."""
+        variables = self._console.interpreter.variables()
+        return {name: value for name, value in sorted(
+                    variables.items(), key=lambda item: item[0].lower())
+                if isinstance(value, (ctl.TransferFunction, ctl.StateSpace))}
+
+    def _fill_console_systems(self) -> None:
+        menu = self._console_systems_menu
+        menu.clear()
+        systems = self._console_systems()
+        for name, system in systems.items():
+            action = QAction(name, menu)
+            action.setToolTip(f"Load {name} as G(s)")
+            action.triggered.connect(
+                lambda _checked=False, n=name, s=system:
+                self._on_console_system(n, s))
+            menu.addAction(action)
+        if not systems:
+            empty = QAction("No systems in the workspace", menu)
+            empty.setEnabled(False)
+            menu.addAction(empty)
+
     def _build_status_bar(self) -> None:
         self._status = QStatusBar()
         self.setStatusBar(self._status)
-        # The Model page's status line and file name live here, shown only
-        # while that page is: a row of their own under the canvas cost the
-        # diagram height and left this bar empty.
+        # Per workspace, on the right, shown only on their own page. Permanent
+        # widgets, so a transient showMessage does not hide them.
+        #  - Analyse: the stability lamp and the margins (`LoopStatus`).
+        #  - Model: the status line and the file name, as ever.
+        #  - Console: Idle or Running.
         model_status, model_file = self._sim_tab.status_widgets()
         self._status.addWidget(model_status, 1)
         self._status.addPermanentWidget(model_file)
-        self._sync_model_status()
+        self._loop_status = self._context.status
+        self._status.addPermanentWidget(self._loop_status)
+        self._console_state_label = QLabel("Idle")
+        self._console_state_label.setAccessibleName("console state")
+        self._console_state_label.setToolTip(
+            "Whether the command window is running something")
+        self._status.addPermanentWidget(self._console_state_label)
+        self._console.run_state_changed.connect(self._sync_console_state)
+        self._sync_status_bar()
 
-    def _sync_model_status(self) -> None:
-        on_model = self._stack.current is Workspace.MODEL
+    def _sync_console_state(self, running: bool | None = None) -> None:
+        if running is None:
+            running = self._console.running
+        self._console_state_label.setText("Running" if running else "Idle")
+
+    def _sync_status_bar(self) -> None:
+        """Show the status widgets of the workspace in view, hide the rest."""
+        current = self._stack.current
         for widget in self._sim_tab.status_widgets():
-            widget.setVisible(on_model)
+            widget.setVisible(current is Workspace.MODEL)
+        self._loop_status.setVisible(current is Workspace.ANALYSE)
+        self._console_state_label.setVisible(current is Workspace.CONSOLE)
+        self._sync_console_state()
 
     # ── Event handlers ────────────────────────────────────────
 
@@ -1486,7 +1532,7 @@ class MainWindow(QMainWindow):
         # Cedric marks follow its panel (there is no dock state to restore).
         self._place_cedric(workspace)
         self._sync_view_menu()
-        self._sync_model_status()
+        self._sync_status_bar()
         self._sync_file_tips()
         self._sync_undo_group()
         self._status.showMessage(workspace.description, 4000)

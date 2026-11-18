@@ -213,8 +213,8 @@ def test_an_undefined_margin_reads_as_a_dash_not_nan(app, win):
     win._arch.set_block("K2", ctl.tf([1], [1]))
     win._context.refresh()
     _settle(app, 3)
-    assert win._context._pm._value.text() == "—"
-    assert "0 dB" in win._context._pm.toolTip()
+    assert win._context.status._pm._value.text() == "—"
+    assert "0 dB" in win._context.status._pm.toolTip()
 
 
 def test_the_context_bar_survives_a_broken_model(app, win):
@@ -1150,7 +1150,8 @@ def test_the_snapshot_bar_can_be_hidden_and_stays_hidden(app, win):
     _settle(app)
     assert not win._snapshot_bar.isVisible()
     assert persist.snapshot_bar() is False
-    assert not win._act_snapshots.isChecked()
+    assert not win._act_snapshot_bar.isChecked()
+    assert not win.preferences_dialog().snapshot_bar.isChecked()
     win.set_snapshot_bar_visible(True)
     _settle(app)
     assert win._snapshot_bar.isVisible() and persist.snapshot_bar()
