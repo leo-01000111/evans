@@ -40,6 +40,10 @@ def _interval_label(seconds: int) -> str:
     return f"Every {seconds} s" if seconds < 60 else f"Every {seconds // 60} min"
 
 
+#: Whether *On launch* is offered. False until the Start page exists (R8).
+SHOW_STARTUP_CHOICE = False
+
+
 class PreferencesDialog(QDialog):
     """One page, three groups: General, Appearance, Model."""
 
@@ -64,6 +68,10 @@ class PreferencesDialog(QDialog):
             "What Evans shows when it opens (the Start page arrives with the "
             "projects)")
         self._add(general, "On launch", self.startup, "On launch")
+        # Nothing reads startup/show until the Start page (Phase 8 R8):
+        # keep the control and its key, but do not offer a choice that does
+        # nothing. R8 shows the row again.
+        general.setRowVisible(self.startup, SHOW_STARTUP_CHOICE)
         self.autosave = QCheckBox("Keep copies of unsaved work")
         self.autosave.setToolTip(
             "Keep a copy of unsaved scripts, the live script and the model, "

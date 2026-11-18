@@ -2176,6 +2176,9 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
     Cards are rectangles with the 2 px frame; nothing floats, nothing is centred
     except the column itself. It must fit 1280×720 without horizontal scrolling
     and stack to one column under 900 px.
+  - **Turn the *On launch* preference back on:** it is hidden until this package
+    (`ui/preferences.py`, `SHOW_STARTUP_CHOICE = False`, set 2026-11-19 for the
+    0.28.0 release); set it to True and drop the test that asserts it is hidden.
   - **When it shows.** At launch: if `startup/show` is `start` (default), or
     nothing was open last time, show Start; with `reopen`, reopen the last project
     or the last workspace. Files given on the command line skip it.

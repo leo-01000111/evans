@@ -484,3 +484,17 @@ def test_the_bar_goes_back_to_one_line_when_the_loop_gets_short(app, win):
     win._context.refresh()
     _settle(app)
     assert not win._context.stacked
+
+
+def test_on_launch_is_hidden_until_the_start_page_exists(app, win):
+    # The startup/show key has no reader before R8, so the choice is not shown.
+    from evans.ui import preferences
+    dialog = win.preferences_dialog()
+    try:
+        dialog.show()
+        _settle(app, 2)
+        assert not preferences.SHOW_STARTUP_CHOICE
+        assert not dialog.startup.isVisible()
+        assert dialog.autosave.isVisible()
+    finally:
+        dialog.close()
