@@ -31,8 +31,19 @@ def _scratch_persistence():
         return
     persist.ORG, persist.APP = "EvansTest", "PersistTest"
     persist.settings().clear()
+    # The window layout and the Model tab's palette state live in their own
+    # QSettings store; without this, tests read (and some clear) the user's
+    # real layout, so a palette folded in the app failed a test.
+    from PySide6.QtCore import QSettings
+
+    from evans.ui.mainwindow import MainWindow
+    from evans.ui.sim.sim_tab import SimTab
+    for holder in (MainWindow, SimTab):
+        holder.SETTINGS_ORG, holder.SETTINGS_APP = "EvansTest", "LayoutTest"
+    QSettings("EvansTest", "LayoutTest").clear()
     yield
     persist.settings().clear()
+    QSettings("EvansTest", "LayoutTest").clear()
 
 
 @pytest.fixture(scope="session", autouse=True)
