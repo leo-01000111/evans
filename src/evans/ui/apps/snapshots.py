@@ -3,8 +3,8 @@ The snapshot bar — "remember this design, and show me what changed".
 
 The Design tab already kept a private list of controller transfer functions.
 This generalises it: a snapshot is the *whole* architecture, the store is
-shared, and comparing means handing the stored designs to the LTI Viewer
-rather than re-implementing an overlay in every tab.
+shared, and comparing means ticking the stored designs in each plot pane's
+Compare menu rather than re-implementing an overlay in every tab.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ class SnapshotBar(QWidget):
             ("Restore", self.restore, "Put this snapshot's blocks back."),
             ("Delete", self.delete, "Forget this snapshot."),
             ("Compare…", self.compare,
-             "Open every snapshot's closed-loop response in the LTI Viewer."),
+             "Draw every snapshot in each plot pane (its Compare menu)."),
         ):
             button = QPushButton(label)
             button.setToolTip(tip)

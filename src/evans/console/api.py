@@ -907,7 +907,8 @@ def pidtune(sys, kind: str = "PI", wc: float | None = None,
 
 def ltiview(*systems, **named):
     """
-    Open the LTI Viewer: ``ltiview(G, T)`` or ``ltiview(plant=G, loop=L)``.
+    Compare systems in a plot pane: ``ltiview(G, T)`` or
+    ``ltiview(plant=G, loop=L)``.
 
     Positional systems are named after their position; keyword arguments keep
     the name you give them, which is what makes a four-curve comparison
@@ -922,8 +923,8 @@ def ltiview(*systems, **named):
 
 def sisotool(plant=None, compensator=None):
     """
-    Open the Control System Designer: ``sisotool(G)``, or ``sisotool(G, C)``
-    to start from the compensator ``C`` instead of ``C = 1``.
+    Design on the root locus in the Design tab: ``sisotool(G)``, or
+    ``sisotool(G, C)`` to start from the compensator ``C``.
 
     With no argument it opens on the app's current plant.
     """
@@ -944,13 +945,16 @@ def sisotool(plant=None, compensator=None):
     return _emit(AppRequest("sisotool", systems))
 
 
-def pidtuner(plant=None, kind: str = "PI"):
-    """Open the PID Tuner: ``pidtuner(G, 'pid')``."""
+def pidtuner(plant=None, kind: str | None = None):
+    """
+    Tune a PID in the Design tab: ``pidtuner(G, 'pid')``. Without a type
+    the tab keeps the one chosen in it (PI the first time).
+    """
     from .apps import AppRequest
     from .apps import emit as _emit
     systems = {"plant": plant} if plant is not None else {}
-    return _emit(AppRequest("pidtuner", systems,
-                            {"kind": kind.upper()}))
+    options = {"kind": kind.upper()} if kind else {}
+    return _emit(AppRequest("pidtuner", systems, options))
 
 
 # ──────────────────────────────────────────────────────────────

@@ -417,47 +417,78 @@ def _match_branches(previous: np.ndarray | None,
 
 def marginal_gain(L: ctl.TransferFunction) -> tuple[float, float] | None:
     """
-    Exact ``(K_u, ω_u)`` where ``1 + K·L(s)`` first has roots on the imaginary
+    ``(K_u, ω_u)`` where ``1 + K·L(s)`` first has roots on the imaginary
     axis — the ultimate gain and frequency the Ziegler–Nichols oscillation
     method needs (ch.8, slide 37/44).
 
     Substituting ``s = jω`` into ``den(s) + K·num(s) = 0`` and splitting into
-    real and imaginary parts gives two real polynomial equations in
-    ``(K, ω)``; sympy solves them exactly. Returns ``None`` when the locus
-    never crosses the axis for ``K > 0`` — a genuinely valid answer, which the
-    caller should report rather than treat as a failure.
+    real and imaginary parts gives ``Dr + K·Nr = 0`` and ``Di + K·Ni = 0``.
+    Eliminating K leaves one real polynomial, ``Dr·Ni − Di·Nr = 0``, whose
+    positive real roots are the candidate ω; each is polished by Newton's
+    method and K read back from ``−D(jω)/N(jω)``. Returns ``None`` when the
+    locus never crosses the axis for ``K > 0`` — a genuinely valid answer,
+    which the caller should report rather than treat as a failure.
+
+    This used to hand the two equations to sympy with the coefficients made
+    exact rationals. For a loop with float coefficients (a tuned PID times a
+    third-order plant) the rationals had huge denominators and the solve ran
+    for minutes, freezing the root-locus pane; the elimination above is the
+    same answer to 1e-12 in milliseconds.
     """
-    s, w, K = sp.symbols("s omega K", real=True)
-    num = [sp.nsimplify(sp.Rational(repr(float(c)))) for c in np.atleast_1d(L.num[0][0])]
-    den = [sp.nsimplify(sp.Rational(repr(float(c)))) for c in np.atleast_1d(L.den[0][0])]
-    char = sp.Poly(den, s).as_expr() + K * sp.Poly(num, s).as_expr()
-
-    expr = sp.expand(char.subs(s, sp.I * w))
-    re_eq = sp.expand(sp.re(expr.rewrite(sp.cos)))
-    im_eq = sp.expand(sp.im(expr.rewrite(sp.cos)))
-
-    try:
-        sols = sp.solve([sp.Eq(re_eq, 0), sp.Eq(im_eq, 0)], [K, w], dict=True)
-    except Exception:
+    num = np.atleast_1d(np.asarray(L.num[0][0], dtype=float))
+    den = np.atleast_1d(np.asarray(L.den[0][0], dtype=float))
+    num_re, num_im = _split_on_axis(num)
+    den_re, den_im = _split_on_axis(den)
+    eliminated = np.polysub(np.polymul(den_re, num_im),
+                            np.polymul(den_im, num_re))
+    eliminated = np.trim_zeros(eliminated, "f")
+    if eliminated.size < 2 or not np.all(np.isfinite(eliminated)):
         return None
+    slope = np.polyder(eliminated)
 
     best: tuple[float, float] | None = None
-    for sol in sols:
-        if K not in sol or w not in sol:
+    for root in np.roots(eliminated):
+        if abs(root.imag) > 1e-6 * max(1.0, abs(root.real)):
             continue
-        try:
-            k_val = complex(sol[K])
-            w_val = complex(sol[w])
-        except (TypeError, ValueError):
+        w = abs(float(root.real))
+        if w <= 1e-9:                                   # the trivial ω = 0
             continue
-        if abs(k_val.imag) > 1e-9 or abs(w_val.imag) > 1e-9:
+        for _ in range(4):                              # polish
+            d = np.polyval(slope, w)
+            if d == 0 or not np.isfinite(d):
+                break
+            step = np.polyval(eliminated, w) / d
+            w -= step
+            if abs(step) <= 1e-15 * abs(w):
+                break
+        n_jw = np.polyval(num, 1j * w)
+        if abs(n_jw) < 1e-12 * max(1.0, abs(np.polyval(den, 1j * w))):
             continue
-        k_val, w_val = k_val.real, abs(w_val.real)
-        if k_val <= 1e-9 or w_val <= 1e-9:      # K ≤ 0 or the trivial ω = 0
+        k = -np.polyval(den, 1j * w) / n_jw
+        if abs(k.imag) > 1e-6 * max(1.0, abs(k.real)):
             continue
-        if best is None or k_val < best[0]:     # the *first* crossing
-            best = (float(k_val), float(w_val))
+        k_val = float(k.real)
+        if k_val <= 1e-9:                               # K ≤ 0
+            continue
+        if best is None or k_val < best[0]:             # the *first* crossing
+            best = (k_val, float(w))
     return best
+
+
+def _split_on_axis(coeffs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    ``p(jω) = R(ω) + j·I(ω)``: the real and imaginary parts of a polynomial
+    on the imaginary axis, as polynomials in ω (highest power first).
+    """
+    degree = len(coeffs) - 1
+    real = np.zeros(len(coeffs))
+    imag = np.zeros(len(coeffs))
+    for index, c in enumerate(coeffs):
+        power = degree - index
+        # j^power cycles 1, j, −1, −j.
+        real[index] = c * (1, 0, -1, 0)[power % 4]
+        imag[index] = c * (0, 1, 0, -1)[power % 4]
+    return real, imag
 
 
 def _estimate_max_K(L: ctl.TransferFunction) -> float:

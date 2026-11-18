@@ -1,6 +1,6 @@
 # sisotool
 
-Open the Control System Designer panel on a plant: a root locus you drag the closed-loop poles along, with the Bode plot and step response following.
+Design a compensator on the root locus: drag a closed-loop pole along it, and the analysis panes follow.
 
 ## Syntax
 
@@ -10,15 +10,15 @@ Open the Control System Designer panel on a plant: a root locus you drag the clo
 
 ## Description
 
-`sisotool(G)` opens the Control System Designer docked beside the analysis workspace, with `G` as the plant. The panel shows three linked plots: the root locus of the compensated loop, the Bode plot of the open loop with its margins, and the closed-loop step response. Dragging a closed-loop pole along the locus sets the compensator gain, and the other two plots follow.
+`sisotool(G)` loads `G` as the plant of the loop, switches to the Analyse workspace and opens its side panel on the **Design** tab, showing **Compensator**. The tab shows the root locus of the compensated loop, with the compensator's zeros and poles below it; **Gain**, the next view along, has the gain slider and buttons that set the gain for a damping ratio or an overshoot. Dragging the closed-loop pole marker along the locus sets the gain.
 
-The designer works on the app's shared loop. The sensor block H comes from the analysis workspace, and applying a design writes the compensator into the loop's controller block, so the other tabs show the result straight away.
+Every change applies at once: the compensator is written into the loop's controller block K2, so the panes beside the panel (step response, Bode, metrics and the rest) are the display, and a whole drag is one step of Edit ▸ Undo. **Reset** puts back the controller the loop had when the tab was opened. The sensor block H comes from the loop, and when the loop changes elsewhere (an undo, a preset, the Loop tab) the tab follows it.
 
-`sisotool` with no argument opens the designer on the plant G of the current analysis workspace. If the designer is already open, `sisotool(G)` replaces its plant.
+`sisotool` with no argument opens the tab on the plant G already in the loop.
 
-`sisotool(G, C)` opens the designer with `C` as the starting compensator: its gain, zeros and poles fill the designer's fields, and the plots show the loop with `C` in it. The designer tunes a gain `K` of 0 or more, so a compensator with a negative gain is refused with an error; move the sign into the plant, `sisotool(-G, -C)`.
+`sisotool(G, C)` also loads `C` as the controller K2, in the same undo step, so the tab starts from it: its gain, zeros and poles fill the fields. The designer tunes a gain `K` of 0 or more, so a compensator with a negative gain is refused with an error; move the sign into the plant, `sisotool(-G, -C)`.
 
-The command returns a short description of the request, such as `<sisotool: plant>`. In a script run without the app nothing opens; the request is recorded and the line still runs.
+The command returns a short description of the request, such as `<sisotool: plant>`. In a script run without the app nothing opens and the loop is not changed; the request is recorded and the line still runs.
 
 ## Example
 

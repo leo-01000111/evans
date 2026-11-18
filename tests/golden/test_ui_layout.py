@@ -60,10 +60,6 @@ def reset(request, app):
     # Every side panel back to its default: Analyse closed on Loop, Model
     # and Console open on their first tab.
     window._reset_side_panels()
-    # App docks too: one test leaving the PID Tuner open changes the next
-    # test's minimum window size, which is exactly what this file measures.
-    for dock in window._app_docks.values():
-        dock.hide()
     window.show_workspace(Workspace.ANALYSE)
     # A known starting view, or one test's four open plots and another's
     # pane selection change the next test's minimum size. The pane
@@ -281,11 +277,11 @@ def test_every_workspace_has_its_own_side_panel(win):
         assert side.is_open == (workspace is not Workspace.ANALYSE)
 
 
-def test_no_dock_is_left_but_the_apps(win):
+def test_no_dock_is_left(win):
+    """R2 removed the loop dock; R3 the three app docks."""
     from PySide6.QtWidgets import QDockWidget
 
-    docks = set(win.findChildren(QDockWidget))
-    assert docks == set(win._app_docks.values())
+    assert not win.findChildren(QDockWidget)
     assert not hasattr(win, "_model_dock") and not hasattr(win, "_act_model")
 
 
@@ -1010,50 +1006,48 @@ def test_the_model_status_lives_in_the_window_status_bar(app, win):
     assert not file_label.isVisible() and not status.isVisible()
 
 
-def test_docking_every_app_does_not_break_the_size_budget(app, win):
+def test_the_design_tab_does_not_break_the_size_budget(app, win):
     """
-    A dock adds its content's minimum to the window's. These apps were built
-    as ~1100 px windows, so docking two of them took the minimum width from
-    920 to 1634 — undoing UI-1 by way of UI-5. They scroll inside their docks.
+    The apps were ~1100 px windows; docked, two of them took the minimum
+    width from 920 to 1634. As the Design tab they live in the side panel,
+    which scrolls, so no view of it asks for more than the Loop tab does.
+
+    Measured against the Loop tab rather than the bare budget: what the
+    context bar asks for depends on the loop earlier tests left loaded.
     """
     win.show_workspace(Workspace.ANALYSE)
-    win._open_lti_viewer()
-    win._open_designer()
-    win._open_pid_tuner()
-    _settle(app, 15)
-
-    assert win.minimumSizeHint().width() <= TARGET_W, (
-        f"with the apps docked the window needs "
-        f"{win.minimumSizeHint().width()} px")
-    win.resize(TARGET_W, TARGET_H)
+    side = win.side_panel_of(Workspace.ANALYSE)
+    side.set_current("loop")
+    side.set_open(True)
     _settle(app, 10)
-    assert (win.width(), win.height()) == (TARGET_W, TARGET_H)
-
-
-def test_the_apps_open_as_docks_not_windows(app, win):
-    """
-    Three parentless top-level windows became three tabbed docks. With the
-    main window and the model dock that was five independent
-    surfaces, none of which remembered a position.
-    """
-    from PySide6.QtWidgets import QDockWidget
-
-    win._open_lti_viewer()
-    win._open_designer()
-    win._open_pid_tuner()
+    with_loop = win.minimumSizeHint()
+    for mode in ("gain", "compensator", "pid"):
+        win.show_design(mode)
+        _settle(app, 10)
+        hint = win.minimumSizeHint()
+        assert hint.width() <= with_loop.width(), (
+            f"with Design ({mode}) open the window needs {hint.width()} px, "
+            f"{with_loop.width()} with Loop")
+        assert hint.height() <= with_loop.height(), (mode, hint, with_loop)
+    width = max(TARGET_W, with_loop.width())
+    win.resize(width, TARGET_H)
     _settle(app, 10)
+    assert (win.width(), win.height()) == (width, TARGET_H)
 
-    assert set(win._app_docks) == {"ltiview", "sisotool", "pidtuner"}
-    assert all(isinstance(d, QDockWidget) for d in win._app_docks.values())
 
-    # The apps the user opened, specifically. Scanning every top-level widget
-    # instead would also catch the panes' own compact LTIViewers, which are
-    # created unparented and then added to a layout — those are pane content,
-    # not windows anybody sees.
-    floating = [key for key, widget in win._apps.items() if widget.isWindow()]
-    assert not floating, f"{floating} opened as separate windows"
-    for key, widget in win._apps.items():
-        assert widget.window() is win, f"{key} is not inside the main window"
+def test_the_design_tools_open_in_the_side_panel_not_windows(app, win):
+    """
+    Three parentless top-level windows became three tabbed docks, and the
+    docks became the Analyse side panel's Design tab.
+    """
+    for mode in ("gain", "compensator", "pid"):
+        design = win.show_design(mode)
+        _settle(app, 10)
+        side = win.side_panel_of(Workspace.ANALYSE)
+        assert side.current == "design" and side.is_open
+        for widget in (design, design.designer, design.tuner):
+            assert not widget.isWindow(), f"{mode} opened as a window"
+            assert widget.window() is win
 
 
 def test_opening_an_app_shows_the_workspace_its_edits_land_in(app, win):
@@ -1120,10 +1114,13 @@ def test_sisotool_opens_on_the_compensator_it_was_given(app, win):
     win.open_app(AppRequest("sisotool", {"plant": ctl.tf(1, [1, 1, 0]),
                                          "compensator": C}))
     _settle(app, 10)
-    comp = win._apps["sisotool"].compensator
+    comp = win._design.designer.compensator
     assert comp.gain == pytest.approx(5.0)
     assert comp.zeros == pytest.approx([-2.0])
     assert comp.poles == pytest.approx([-10.0])
+    # The Design tab applies live, so the loop has C as K2 too.
+    assert float(ctl.dcgain(win._arch.block_tf("K2"))) == pytest.approx(1.0)
+    assert list(win._arch.block_tf("K2").num[0][0]) == pytest.approx([5, 10])
 
 
 # ──────────────────────────────────────────────────────────────

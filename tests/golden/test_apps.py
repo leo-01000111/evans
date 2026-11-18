@@ -550,6 +550,9 @@ def test_app_commands_emit_a_request(app_sink):
     assert app_sink.last.app == "sisotool"
     assert it.run("pidtuner(G, 'pid')").ok
     assert app_sink.last.options["kind"] == "PID"
+    # No type named: the Design tab keeps the one chosen in it (R3).
+    assert it.run("pidtuner(G)").ok
+    assert "kind" not in app_sink.last.options
 
 
 def test_pidtune_returns_a_usable_controller(app_sink):

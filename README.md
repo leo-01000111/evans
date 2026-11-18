@@ -210,22 +210,28 @@ right-click menu or the inspector, opens a small tuner on the plant that block s
 linearised from the diagram with the loop cut at the PID, and writes the gains back as
 one undoable step.
 
-### Design apps
+### Design and compare
 
-Three apps dock beside the analysis they edit, opened from the Apps menu or the prompt:
+The Analyse side panel's Design tab has three views, opened from the tab or the prompt:
 
-- LTI Viewer (`ltiview`): any set of systems, eight response types, and a right-click menu
-  to add characteristics. It only offers the ones that mean something for the response on
-  screen; a rise time has nowhere to go on a Nyquist plot.
-- Control System Designer (`sisotool`): drag a closed-loop pole along the root locus and
-  the Bode plot and step response follow. You can also ask for the gain that gives
-  ζ = 0.5, or 16% overshoot.
-- PID Tuner (`pidtuner`): response time and transient behaviour on two sliders, with the
-  plant, the current loop and the tuned loop overlaid (K₁ and H included).
+- Gain and Compensator (`sisotool`): drag a closed-loop pole along the root locus, type
+  the compensator's zeros and poles, or ask for the gain that gives ζ = 0.5 or 16%
+  overshoot.
+- PID (`pidtuner`): response time and transient behaviour on two sliders, tuned in the
+  real loop (K₁ and H included).
+
+Every change is written into K₂ at once, so the panes beside the panel are the display,
+and a whole drag is one step of Edit ▸ Undo. Reset goes back to the controller from
+before the tab was opened.
+
+Each plot pane has a Compare menu that adds curves to it: the loop's other systems (G, L,
+T, S), any snapshot, and systems handed over by `ltiview` at the prompt. The right-click
+menu adds characteristics, and only offers the ones that mean something for the response
+on screen; a rise time has nowhere to go on a Nyquist plot.
 
 A snapshot bar above the analysis area saves the whole architecture under a name and
-restores it from anywhere. Compare sends every stored design to the LTI Viewer at once.
-Window geometry, workspace, dock layout and pane arrangement are remembered between runs,
+restores it from anywhere. Its Compare ticks every stored design in every plot pane.
+Window geometry, workspace, side panels and pane arrangement are remembered between runs,
 and View ▸ Reset layout puts them back.
 
 It uses the same design system as [leongorecki.eu](https://leongorecki.eu): Archivo and
@@ -290,7 +296,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-5436 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+5453 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.

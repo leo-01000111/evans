@@ -46,14 +46,12 @@ from PySide6.QtCore import QProcess, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QUndoGroup, QUndoStack
 from PySide6.QtWidgets import (
     QApplication,
-    QDockWidget,
     QFileDialog,
     QHBoxLayout,
     QMainWindow,
     QMenu,
     QMenuBar,
     QMessageBox,
-    QScrollArea,
     QSplitter,
     QStatusBar,
     QToolButton,
@@ -64,7 +62,6 @@ from PySide6.QtWidgets import (
 from ..console.apps import AppRequest, set_app_sink
 from ..core.architecture import CourseArchitecture
 from ..core.collection import SnapshotStore, SystemCollection
-from ..core.designer import Compensator
 from ..core.report import text_report
 from ..core.session import load_session_dict, session_dict
 from ..core.tf_utils import (
@@ -74,12 +71,13 @@ from ..core.tf_utils import (
 )
 from ..sim.model import is_model_file, preferred_file
 from . import help, iconset, keys, persist, recovery, theme, winframe
-from .apps import ControlSystemDesigner, LTIViewer, PIDTuner, SnapshotBar
+from .apps import SnapshotBar
 from .assistant import AssistantPanel, LoopSource, ModelSource
 from .block_editor import BlockEditor
 from .console import ConsolePanel, FigureArea
 from .context_bar import ContextBar
-from .design import TIGHT, EmptyState
+from .design import TIGHT
+from .design_panel import DesignPanel
 from .diagram.fixed_diagram import FixedDiagramView
 from .loop_undo import ReplaceLoop
 from .panes import DEFAULT_LAYOUT, LAYOUTS, PANE_KINDS, PaneGrid, Source
@@ -117,8 +115,6 @@ class MainWindow(QMainWindow):
         #: Snapshots are shared: the bar above the tabs, the Compare button
         #: and the console all read the same store.
         self.snapshots = SnapshotStore()
-        self._apps: dict[str, QWidget] = {}
-        self._app_docks: dict[str, QDockWidget] = {}
         #: Scripts and models opened or saved, for File ▸ Open recent.
         self.recent_files = RecentFiles()
         #: Unsaved scripts were settled for quitting; see `confirm_quit`.
@@ -289,6 +285,8 @@ class MainWindow(QMainWindow):
         # is reachable only from a tab bar, and tuning stays a matter of
         # watching several views move together.
         self._grid = PaneGrid(self._arch, tab_factory=self._make_tab)
+        # Every plot pane's Compare menu lists the snapshots.
+        self._grid.snapshots = self.snapshots
         main_lay.addWidget(self._wrap_grid(), stretch=1)
         self._sync_layout_buttons()
 
@@ -303,9 +301,9 @@ class MainWindow(QMainWindow):
         loop.layout().addWidget(self._diagram, stretch=0)
         self._editor = BlockEditor()
         loop.layout().addWidget(self._editor, stretch=1)
-        side.add_tab("design", "Design", EmptyState(
-            "Design tools arrive here",
-            "Gain, compensator and PID design move into this tab."))
+        # Gain · Compensator · PID; what the three docked apps were.
+        self._design = DesignPanel(self._arch, self._apply_design)
+        side.add_tab("design", "Design", self._design)
         side.set_open(False)
         self._analyse_side = side
         return page_with_panel(central, side)
@@ -735,8 +733,6 @@ class MainWindow(QMainWindow):
         this, the only fix is deleting a registry key.
         """
         self._settings().clear()
-        for dock in self._app_docks.values():
-            dock.hide()
         self._reset_side_panels()
         self.resize(1400, 850)
         self._grid.set_layout_size(4, DEFAULT_LAYOUT, (None,) * 4)
@@ -918,150 +914,109 @@ class MainWindow(QMainWindow):
         self.updater.install_pending()
         super().closeEvent(event)
 
-    # ── Apps ─────────────────────────────────────────────────
+    # ── Design and compare (what the apps were) ──────────────
 
     def open_app(self, request: AppRequest):
         """
-        The console's app sink: ``ltiview(G)`` at the prompt lands here.
+        The console's app sink: ``sisotool(G)`` at the prompt lands here.
 
-        Also the one path the menu actions take, so a window opened by typing
-        and a window opened by clicking are the same window — not two copies
-        of it quietly diverging.
+        The three apps are gone as windows. ``sisotool`` and ``pidtuner``
+        open the Analyse side panel's Design tab; ``ltiview`` puts the
+        systems in a plot pane's Compare set. All three show Analyse, the
+        workspace their changes land in.
         """
         opener = {
-            "ltiview": self._open_lti_viewer,
-            "sisotool": self._open_designer,
-            "pidtuner": self._open_pid_tuner,
+            "ltiview": self._ltiview,
+            "sisotool": self._sisotool,
+            "pidtuner": self._pidtuner,
         }[request.app]
-        # These edit the architecture, so show the workspace their changes
-        # land in — otherwise `sisotool(G)` typed in the console opens a panel
-        # beside a page that is not showing what it changes.
         self._stack.set_current(Workspace.ANALYSE)
         return opener(request)
 
-    #: Where each app docks, and what its dock is called.
-    _APP_DOCKS = {
-        "ltiview": ("LTI Viewer", Qt.RightDockWidgetArea),
-        "sisotool": ("Control System Designer", Qt.RightDockWidgetArea),
-        "pidtuner": ("PID Tuner", Qt.RightDockWidgetArea),
-    }
+    def show_design(self, mode: str = "gain") -> DesignPanel:
+        """The Analyse side panel, open on Design, showing ``mode``."""
+        side = self._side_panels[Workspace.ANALYSE]
+        if self._stack.current is not Workspace.ANALYSE:
+            self._stack.set_current(Workspace.ANALYSE)
+        side.set_current("design")
+        side.set_open(True)
+        self._design.set_mode(mode)
+        self._sync_side_action()
+        return self._design
 
-    def _show(self, key: str, widget: QWidget) -> QWidget:
+    def _apply_design(self, text: str, tf, merge_key: str | None) -> None:
+        """The Design tab's live apply: K2 as one (merged) undo step."""
+        self.change_loop(text, lambda: self._arch.set_block("K2", tf),
+                         merge_key=merge_key)
+
+    def _sisotool(self, request: AppRequest) -> DesignPanel:
         """
-        Dock the app, rather than opening a window.
-
-        These were three parentless top-level windows. With the main window,
-        and the model dock that made up to five independent
-        surfaces, none of which remembered a position, all floating over a
-        window that did not fit the screen. As docks they sit beside the
-        analysis they are editing — which is the point of a designer whose
-        changes go straight into the shared architecture.
+        ``sisotool(G)`` / ``sisotool(G, C)``: the plant (and the starting
+        compensator, which the Design tab applies live like any other
+        change) go into the loop as one step; then Design, Compensator.
         """
-        self._apps[key] = widget
-        dock = self._app_docks.get(key)
-        if dock is None:
-            title, area = self._APP_DOCKS[key]
-            dock = QDockWidget(title, self)
-            dock.setObjectName(f"{key}Dock")
-            dock.setAllowedAreas(Qt.RightDockWidgetArea |
-                                 Qt.LeftDockWidgetArea |
-                                 Qt.BottomDockWidgetArea)
-            # Scrolled. These apps were designed as ~1100 px windows, and a
-            # dock adds its content's minimum to the window's — docking two
-            # of them took the minimum width from 920 to 1634, undoing the
-            # whole point of UI-1. The dock can now be any width and the app
-            # scrolls inside it.
-            scroll = QScrollArea()
-            scroll.setWidgetResizable(True)
-            scroll.setFrameShape(QScrollArea.NoFrame)
-            scroll.setWidget(widget)
-            dock.setWidget(scroll)
-            self.addDockWidget(area, dock)
-            # Tab them together rather than stacking three narrow columns.
-            siblings = [d for k, d in self._app_docks.items() if k != key]
-            if siblings:
-                self.tabifyDockWidget(siblings[-1], dock)
-            self._app_docks[key] = dock
+        systems = dict(request.systems)
+        if "plant" in systems or "compensator" in systems:
+            def mutate() -> None:
+                if "plant" in systems:
+                    self._arch.set_block("G", _as_tf(systems["plant"]))
+                if "compensator" in systems:
+                    self._arch.set_block("K2",
+                                         _as_tf(systems["compensator"]))
+            self.change_loop("sisotool", mutate)
+        return self.show_design("compensator")
+
+    def _pidtuner(self, request: AppRequest) -> DesignPanel:
+        """``pidtuner(G, kind)``: the plant into the loop; Design, PID."""
+        systems = dict(request.systems)
+        if "plant" in systems:
+            plant = _as_tf(systems["plant"])
+            self.change_loop("pidtuner",
+                             lambda: self._arch.set_block("G", plant))
+        design = self.show_design("pid")
+        kind = request.options.get("kind")
+        if kind:
+            design.tuner.set_kind(kind)
+        return design
+
+    def _ltiview(self, request: AppRequest):
+        """
+        ``ltiview(G1, G2, ...)``: the first plot pane compares exactly the
+        named systems (they stay in every pane's Compare menu). With no
+        systems, it compares the loop's G, L and T.
+        """
+        pane = self._first_plot_pane()
+        if request.systems:
+            self._grid.handed.update(request.systems)
+            pane.set_compare([("system", name) for name in request.systems])
         else:
-            # Only if it actually changed. `QScrollArea.setWidget` takes
-            # ownership and deletes whatever was there, so handing it the
-            # widget it already holds churns — and briefly leaves the app
-            # parentless, which is to say a floating window.
-            holder = dock.widget()
-            if isinstance(holder, QScrollArea):
-                if holder.widget() is not widget:
-                    holder.setWidget(widget)
-            elif holder is not widget:
-                dock.setWidget(widget)
-
-        dock.show()
-        dock.raise_()
-        self._status.showMessage(self._APP_DOCKS[key][0], 4000)
-        return widget
-
-    def _open_lti_viewer(self, request: AppRequest | None = None) -> LTIViewer:
-        viewer = self._apps.get("ltiview")
-        if not isinstance(viewer, LTIViewer):
-            viewer = LTIViewer()
-            viewer.open_requested.connect(self._on_console_system)
-        systems = dict(request.systems) if request is not None else {}
-        if not systems and not len(viewer.collection):
-            systems = self._default_viewer_systems()
-        for name, system in systems.items():
-            viewer.collection.add(name, system)
-        viewer.refresh()
-        return self._show("ltiview", viewer)
-
-    def _default_viewer_systems(self) -> dict:
-        """What the viewer opens with when nothing was named: the loop."""
-        return {
-            "G (plant)": self._arch.block_tf("G"),
-            "L (open loop)": self._arch.loop_tf(),
-            "T (closed loop)": self._arch.get_closed_loop_tf("r", "y"),
-        }
-
-    def _open_designer(self,
-                       request: AppRequest | None = None
-                       ) -> ControlSystemDesigner:
-        systems = dict(request.systems) if request is not None else {}
-        designer = self._apps.get("sisotool")
-        if not isinstance(designer, ControlSystemDesigner):
-            designer = ControlSystemDesigner(
-                plant=systems.get("plant", self._arch.block_tf("G")),
-                sensor=self._arch.block_tf("H"))
-            designer.compensator_applied.connect(self._on_controller_designed)
-        elif "plant" in systems:
-            designer.set_plant(systems["plant"], self._arch.block_tf("H"))
-        if "compensator" in systems:
-            designer.set_compensator(
-                Compensator.from_tf(systems["compensator"]))
-        return self._show("sisotool", designer)
-
-    def _open_pid_tuner(self, request: AppRequest | None = None) -> PIDTuner:
-        systems = dict(request.systems) if request is not None else {}
-        kind = (request.options.get("kind", "PI")
-                if request is not None else "PI")
-        tuner = self._apps.get("pidtuner")
-        if not isinstance(tuner, PIDTuner):
-            tuner = PIDTuner(
-                plant=systems.get("plant", self._arch.block_tf("G")),
-                baseline=self._arch.block_tf("K2"), kind=kind,
-                sensor=self._arch.block_tf("H"),
-                feedforward=self._arch.block_tf("K1"))
-            tuner.controller_applied.connect(self._on_controller_designed)
-        else:
-            tuner.set_plant(systems.get("plant", self._arch.block_tf("G")),
-                            self._arch.block_tf("K2"),
-                            sensor=self._arch.block_tf("H"),
-                            feedforward=self._arch.block_tf("K1"))
-        return self._show("pidtuner", tuner)
-
-    def _compare_snapshots(self, collection: SystemCollection) -> None:
-        """The snapshot bar's Compare button: hand them to the LTI Viewer."""
-        viewer = self._open_lti_viewer()
-        viewer.set_collection(collection)
+            pane.set_compare([("loop", s.name) for s in
+                              (Source.PLANT, Source.OPEN_LOOP,
+                               Source.CLOSED_LOOP)])
         self._status.showMessage(
-            f"Comparing {len(collection)} designs in the LTI Viewer", 6000)
+            f"Comparing {len(pane.compare_keys)} systems in the "
+            f"{pane._kind.label.lower()} pane", 6000)
+        return pane
+
+    def _first_plot_pane(self):
+        """The first pane that draws curves; pane 1 becomes one if none do."""
+        panes = self._grid.plot_panes()
+        if panes:
+            return panes[0]
+        pane = self._grid.panes[0]
+        pane.set_kind("step")
+        return pane
+
+    def _compare_snapshots(self, _collection: SystemCollection) -> None:
+        """The snapshot bar's Compare: tick every snapshot in every plot pane."""
+        panes = self._grid.plot_panes() or [self._first_plot_pane()]
+        keys = [("snapshot", label) for label in self.snapshots.labels]
+        for pane in panes:
+            pane.set_compare([*pane.compare_keys,
+                              *(k for k in keys if k not in pane.compare_keys)])
+        self._status.showMessage(
+            f"Comparing {len(keys)} snapshots in {len(panes)} "
+            f"pane{'s' if len(panes) > 1 else ''}", 6000)
 
     def _on_snapshot_restored(self, snapshot) -> None:
         self.change_loop("Restore snapshot")
@@ -1324,22 +1279,6 @@ class MainWindow(QMainWindow):
             "Send current plant to the console", self,
             triggered=self._push_to_console))
 
-        # Apps menu
-        apps_menu = mb.addMenu("&Apps")
-        for label, shortcut, slot, tip in (
-            ("&LTI Viewer", "Ctrl+Shift+L", self._open_lti_viewer,
-             "Every loaded system, any response, on one set of axes."),
-            ("&Control System Designer", "Ctrl+Shift+D", self._open_designer,
-             "Drag a closed-loop pole on the root locus; Bode and step follow."),
-            ("&PID Tuner", "Ctrl+Shift+T", self._open_pid_tuner,
-             "Two sliders: response time and transient behaviour."),
-        ):
-            action = QAction(label, self)
-            action.setShortcut(shortcut)
-            action.setStatusTip(tip)
-            action.triggered.connect(lambda _checked=False, s=slot: s())
-            apps_menu.addAction(action)
-
         # Presets menu
         preset_menu = mb.addMenu("&Presets")
         preset_menu.addAction(QAction("1st order  K/(τs+1)", self,
@@ -1480,6 +1419,7 @@ class MainWindow(QMainWindow):
         self._diagram.build()
         self._update_all_tabs()
         self._refresh_status()
+        self._design.loop_changed()
 
     def _on_console_executed(self, _result=None) -> None:
         """A console command may have changed ``arch`` behind our back."""
@@ -1491,6 +1431,7 @@ class MainWindow(QMainWindow):
             self._after_loop_change))
         self._loop_baseline = after
         self._diagram.build()
+        self._design.loop_changed()
 
     def _sync_undo_group(self) -> None:
         """Point Edit > Undo at the stack of the workspace in view."""
@@ -1876,3 +1817,12 @@ def _tf_short(tf: ctl.TransferFunction) -> str:
     n = ", ".join(f"{c:.3g}" for c in num)
     d = ", ".join(f"{c:.3g}" for c in den)
     return f"[{n}]/[{d}]"
+
+
+def _as_tf(system) -> ctl.TransferFunction:
+    """A console system as a transfer function: a state space converts."""
+    if isinstance(system, ctl.TransferFunction):
+        return system
+    if hasattr(system, "A"):
+        return ctl.ss2tf(system)
+    return ctl.tf(float(system), 1)

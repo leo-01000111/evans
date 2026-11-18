@@ -21,11 +21,11 @@ them (grep, go-to-definition), don't read them whole.**
 | `evans.help` | help pages, one Markdown file per command in `help/pages/` | `__init__.py` |
 | `evans.examples` | sample `.evx` models (rebuilt by `tools/build_examples.py`) | `__init__.py` |
 | `evans.assistant` | Cedric's OpenRouter client and prompt protocol, Qt-free | `client.py`, `protocol.py` |
-| `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave; `side_panel.py` is each workspace's right-hand tabbed panel (`SidePanel`) | `mainwindow.py` |
+| `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave; `side_panel.py` is each workspace's right-hand tabbed panel (`SidePanel`); `design_panel.py` is the Analyse panel's Design tab (Gain · Compensator · PID, live apply to K₂); `panes.py` the pane grid and each plot pane's Compare menu | `mainwindow.py` |
 | `evans.ui.console` | command window, workspace, script editor, live editor, figures | `console_dock.py` |
 | `evans.ui.code` | code editing: highlighting, completion popup, hover/Ctrl+click | `editor.py`, `completion.py` |
 | `evans.ui.sim` | the Model tab: canvas, palette, inspector, scope, run toolbar | `sim_tab.py`, `canvas.py` |
-| `evans.ui.apps` | LTI Viewer, Control System Designer, PID Tuner, snapshots | the app's own module |
+| `evans.ui.apps` | what the apps became: the plot renderer every pane uses (`LTIViewer`), the Design tab's root-locus designer and PID tuner, the snapshot bar | the widget's own module |
 | `evans.ui.tabs` | the classical analysis tabs (System, Time, Frequency, Stability…) | the tab's own module |
 | `evans.ui.tabs.modern` | the state-space views (Modern tab) | `modern_tab.py`, `context.py` |
 | `evans.ui.diagram` | the fixed course-architecture diagram | `fixed_diagram.py` |
@@ -58,6 +58,9 @@ them (grep, go-to-definition), don't read them whole.**
   side panels included (`side/<workspace>/open|tab|width`), in `MainWindow.save_layout`.
 - **A workspace's side panel** (Loop, Properties, Workspace, Cedric…): `ui/side_panel.py`;
   the main window builds them and moves Cedric between them (`_place_cedric`).
+- **Design and compare** (`sisotool`, `pidtuner`, `ltiview`): `ui/design_panel.py` writes K₂
+  through `MainWindow.change_loop`; `MainWindow.open_app` routes the console commands;
+  tests in `tests/golden/test_apps_ui.py`.
 - **Theme colours and spacing**: `ui/theme.py`, `ui/design.py`.
 
 ## Tests by area

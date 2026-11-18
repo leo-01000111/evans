@@ -1,9 +1,11 @@
 """
-The Control System Designer — sisotool, the useful half.
+The root-locus designer — sisotool, the useful half, in the Design tab.
 
-Three linked plots: the root locus you drag a closed-loop pole on, the Bode
-plot of the resulting open loop with its margins, and the step response of the
-resulting closed loop. Move the pole and the other two follow.
+One plot and its controls: the root locus you drag a closed-loop pole along,
+the gain, and the compensator's zeros and poles. It used to carry its own
+Bode and step plots as a docked app; in the side panel's Design tab the pane
+grid is the display, so the designer only edits and says what changed
+(`changed`), and the Design tab writes K₂ (`ui/design_panel.py`).
 
 **Why the locus does not move when the gain does.** The locus is computed for
 the compensator with its gain set to 1, so the curve on screen is fixed and
@@ -23,13 +25,12 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QPushButton,
     QSlider,
-    QSplitter,
-    QTextEdit,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -44,38 +45,42 @@ from ...core.designer import (
     point_to_gain,
 )
 from .. import theme
+from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
 from ..plots import (
     add_hline,
-    add_marker,
     add_vline,
     curve_pen,
-    freq_vline,
-    make_freq_plot,
     make_plot,
-    plot_freq,
     widen_degenerate_range,
 )
 
-#: How long after the last drag event before the linked plots are recomputed.
-#: Short enough to feel live, long enough that a fast drag does not queue up
-#: one root-solve and one step simulation per mouse event.
-DRAG_INTERVAL_MS = 60
+#: While the pole target is dragged, the gain is recomputed at most this
+#: often. A throttle, not a debounce: a steady drag still updates.
+DRAG_INTERVAL_MS = 50
+
+#: The locus's height in the side panel: the drag surface, not a display.
+LOCUS_HEIGHT = 220
+
+#: The two views of the designer, as the Design tab names them.
+VIEWS = ("gain", "compensator")
 
 
 class ControlSystemDesigner(QWidget, GuardedPanel):
-    """Drag a closed-loop pole; watch the Bode plot and step response move."""
+    """Drag a closed-loop pole on the root locus; the gain follows."""
 
-    #: The user pressed "Apply to loop" (sets K₂).
-    compensator_applied = Signal(object)        # TransferFunction
+    #: The user changed the design: ``(what, final)``. ``what`` is "gain" or
+    #: "compensator"; ``final`` is False while a slider or the pole target
+    #: is still being dragged. Not emitted for changes made from outside
+    #: (`set_plant`, `set_compensator`).
+    changed = Signal(str, bool)
 
     def __init__(self, plant: ctl.TransferFunction | None = None,
                  compensator: Compensator | None = None,
                  sensor: ctl.TransferFunction | None = None,
                  parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Control System Designer")
-        self.resize(1180, 760)
+        self.setAccessibleName("Root locus designer")
         self._plant = plant if plant is not None else ctl.tf([1], [1, 3, 2, 0])
         self._sensor = sensor
         self.compensator = compensator or Compensator()
@@ -91,146 +96,195 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         self._drag_timer.timeout.connect(self._on_drag_settled)
 
         self._build_ui()
-        self.rebuild()
+        self.set_compensator(self.compensator)
 
     # ── UI ──────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(6, 6, 6, 6)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(NORMAL)
         self.install_error_banner(outer)
 
-        split = QSplitter(Qt.Horizontal)
-        outer.addWidget(split, stretch=1)
-        split.addWidget(self._build_controls())
-        split.addWidget(self._build_plots())
-        split.setStretchFactor(0, 0)
-        split.setStretchFactor(1, 1)
+        self._locus_widget = make_plot("Root locus", "Re", "Im")
+        self._locus_widget.setFixedHeight(LOCUS_HEIGHT)
+        self._locus_widget.setAccessibleName("Root locus")
+        outer.addWidget(self._locus_widget)
 
-    def _build_controls(self) -> QWidget:
-        panel = QWidget()
-        panel.setMaximumWidth(320)
-        lay = QVBoxLayout(panel)
+        self._rays_check = QCheckBox("Show constant-ζ rays")
+        self._rays_check.setChecked(True)
+        self._rays_check.setAccessibleName("Show constant damping rays")
+        self._rays_check.toggled.connect(self.rebuild)
+        outer.addWidget(self._rays_check)
+
+        # Gain and Compensator are two views of this one designer: the
+        # locus above is shared, the controls below switch.
+        self._views = QStackedWidget()
+        self._views.addWidget(self._build_gain_controls())
+        self._views.addWidget(self._build_compensator_controls())
+        outer.addWidget(self._views)
+
+        self._readout = QLabel()
+        self._readout.setFont(theme.data_font(9))
+        self._readout.setWordWrap(True)
+        self._readout.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._readout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self._readout.setAccessibleName("Design readout")
+        outer.addWidget(self._readout)
+        outer.addStretch(1)
+
+    def _build_gain_controls(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(TIGHT)
 
-        # ── gain ──
-        gain_box = QGroupBox("Gain")
-        gain_lay = QVBoxLayout(gain_box)
         self._gain_spin = QDoubleSpinBox()
         self._gain_spin.setDecimals(5)
         self._gain_spin.setRange(0.0, 1e7)
         self._gain_spin.setValue(self.compensator.gain)
+        self._gain_spin.setAccessibleName("Gain K")
         self._gain_spin.valueChanged.connect(self._on_gain_typed)
-        gain_lay.addWidget(self._gain_spin)
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.addRow("Gain K:", self._gain_spin)
+        lay.addLayout(form)
 
         # A log slider: gains that matter span decades, and a linear slider
         # would spend nine tenths of its travel above the interesting range.
         self._gain_slider = QSlider(Qt.Horizontal)
         self._gain_slider.setRange(-300, 400)       # 10^-3 … 10^4
         self._gain_slider.setValue(0)
+        self._gain_slider.setAccessibleName("Gain slider")
+        self._gain_slider.setToolTip(
+            "Gain K, on a log scale from 0.001 to 10000")
         self._gain_slider.valueChanged.connect(self._on_gain_slid)
-        gain_lay.addWidget(self._gain_slider)
-        lay.addWidget(gain_box)
+        self._gain_slider.sliderReleased.connect(
+            lambda: self._emit("gain", True))
+        lay.addWidget(self._gain_slider)
 
-        # ── compensator ──
-        comp_box = QGroupBox("Compensator C(s)")
-        comp_lay = QFormLayout(comp_box)
-        self._zeros_edit = QLineEdit()
-        self._zeros_edit.setPlaceholderText("-1, -2+3j")
-        self._poles_edit = QLineEdit()
-        self._poles_edit.setPlaceholderText("-10, 0")
-        for edit in (self._zeros_edit, self._poles_edit):
-            edit.editingFinished.connect(self.rebuild)
-        comp_lay.addRow("Zeros:", self._zeros_edit)
-        comp_lay.addRow("Poles:", self._poles_edit)
-
-        quick = QHBoxLayout()
-        for label, slot in (("+ integrator", self._add_integrator),
-                            ("+ lead", self._add_lead)):
-            button = QPushButton(label)
-            button.clicked.connect(slot)
-            quick.addWidget(button)
-        comp_lay.addRow(quick)
-        lay.addWidget(comp_box)
-
-        # ── design targets ──
-        target_box = QGroupBox("Pick the gain for a target")
-        target_lay = QFormLayout(target_box)
+        targets = QFormLayout()
+        targets.setContentsMargins(0, 0, 0, 0)
         self._zeta_spin = QDoubleSpinBox()
         self._zeta_spin.setRange(0.01, 0.99)
         self._zeta_spin.setSingleStep(0.05)
         self._zeta_spin.setValue(0.5)
+        self._zeta_spin.setAccessibleName("Damping target")
         zeta_btn = QPushButton("Set K for ζ")
+        zeta_btn.setAccessibleName("Set K for damping")
+        zeta_btn.setToolTip(
+            "The gain that puts the dominant poles on this damping ratio")
         zeta_btn.clicked.connect(self._set_gain_for_damping)
-        target_lay.addRow(self._zeta_spin, zeta_btn)
+        targets.addRow(self._zeta_spin, zeta_btn)
 
         self._mp_spin = QDoubleSpinBox()
         self._mp_spin.setRange(0.1, 99.0)
         self._mp_spin.setSuffix(" %")
         self._mp_spin.setValue(16.3)
+        self._mp_spin.setAccessibleName("Overshoot target")
         mp_btn = QPushButton("Set K for overshoot")
+        mp_btn.setAccessibleName("Set K for overshoot")
+        mp_btn.setToolTip(
+            "The gain that gives this percent overshoot, read as a damping "
+            "ratio")
         mp_btn.clicked.connect(self._set_gain_for_overshoot)
-        target_lay.addRow(self._mp_spin, mp_btn)
-        lay.addWidget(target_box)
+        targets.addRow(self._mp_spin, mp_btn)
+        lay.addLayout(targets)
+        return page
 
-        self._rays_check = QCheckBox("Show constant-ζ rays")
-        self._rays_check.setChecked(True)
-        self._rays_check.toggled.connect(self.rebuild)
-        lay.addWidget(self._rays_check)
+    def _build_compensator_controls(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setContentsMargins(0, 0, 0, 0)
+        self._zeros_edit = QLineEdit()
+        self._zeros_edit.setPlaceholderText("-1, -2+3j")
+        self._zeros_edit.setAccessibleName("Compensator zeros")
+        self._poles_edit = QLineEdit()
+        self._poles_edit.setPlaceholderText("-10, 0")
+        self._poles_edit.setAccessibleName("Compensator poles")
+        for edit in (self._zeros_edit, self._poles_edit):
+            edit.editingFinished.connect(self._on_roots_edited)
+        form.addRow("Zeros:", self._zeros_edit)
+        form.addRow("Poles:", self._poles_edit)
 
-        self._readout = QTextEdit()
-        self._readout.setReadOnly(True)
-        self._readout.setFont(theme.data_font(9))
-        lay.addWidget(self._readout, stretch=1)
+        quick = QHBoxLayout()
+        quick.setSpacing(TIGHT)
+        for label, name, slot, tip in (
+                ("+ integrator", "Add integrator", self._add_integrator,
+                 "Add a pole at the origin: no steady-state error to a "
+                 "step"),
+                ("+ lead", "Add lead", self._add_lead,
+                 "Add a zero at -1 and a pole at -10, a lead section to "
+                 "start from")):
+            button = QPushButton(label)
+            button.setAccessibleName(name)
+            button.setToolTip(tip)
+            button.clicked.connect(slot)
+            quick.addWidget(button)
+        form.addRow(quick)
+        return page
 
-        apply_btn = QPushButton("Apply to loop")
-        apply_btn.setToolTip(
-            "Sets K₂ to this compensator, so every pane analyses it.")
-        apply_btn.clicked.connect(self._apply)
-        lay.addWidget(apply_btn)
-        return panel
+    # ── views ───────────────────────────────────────────────────
 
-    def _build_plots(self) -> QWidget:
-        vertical = QSplitter(Qt.Vertical)
+    @property
+    def view(self) -> str:
+        return VIEWS[self._views.currentIndex()]
 
-        horizontal = QSplitter(Qt.Horizontal)
-        self._locus_widget = make_plot("Root locus", "Re", "Im")
-        self._bode_widget = make_freq_plot("Open loop L(s)", "|L| (dB)")
-        horizontal.addWidget(self._locus_widget)
-        horizontal.addWidget(self._bode_widget)
-        vertical.addWidget(horizontal)
+    def set_view(self, view: str) -> None:
+        """Show the gain controls or the compensator's, under the locus."""
+        self._views.setCurrentIndex(VIEWS.index(view))
 
-        self._step_widget = make_plot("Closed-loop step response",
-                                      "Time (s)", "y(t)")
-        vertical.addWidget(self._step_widget)
-        vertical.setStretchFactor(0, 3)
-        vertical.setStretchFactor(1, 2)
-        return vertical
+    def _emit(self, what: str, final: bool) -> None:
+        if not self._syncing:
+            self.changed.emit(what, final)
 
     # ── plant and compensator ───────────────────────────────────
 
     def set_plant(self, plant: ctl.TransferFunction,
-                  sensor: ctl.TransferFunction | None = None) -> None:
+                  sensor: ctl.TransferFunction | None = None,
+                  compensator: Compensator | None = None) -> None:
+        """
+        A new plant (and sensor), and with ``compensator`` a new starting
+        design too, in one redraw. Says nothing on `changed`.
+        """
         self._plant = plant
         self._sensor = sensor
-        self.rebuild()
+        if compensator is not None:
+            self.set_compensator(compensator)
+        else:
+            self.rebuild()
 
     def set_compensator(self, compensator: Compensator) -> None:
+        """Show ``compensator``. Says nothing on `changed`."""
         self.compensator = compensator
-        self._zeros_edit.setText(_join(compensator.zeros))
-        self._poles_edit.setText(_join(compensator.poles))
-        self._gain_spin.setValue(compensator.gain)
-        self.rebuild()
+        syncing, self._syncing = self._syncing, True
+        try:
+            self._zeros_edit.setText(_join(compensator.zeros))
+            self._poles_edit.setText(_join(compensator.poles))
+            self._sync_gain_widgets()
+            self.rebuild()
+        finally:
+            self._syncing = syncing
+
+    def _on_roots_edited(self) -> None:
+        if self._syncing:
+            return
+        before = (list(self.compensator.zeros), list(self.compensator.poles))
+        if self.rebuild() and before != (self.compensator.zeros,
+                                         self.compensator.poles):
+            self._emit("compensator", True)
 
     def _add_integrator(self) -> None:
         self._poles_edit.setText(_append(self._poles_edit.text(), "0"))
-        self.rebuild()
+        if self.rebuild():
+            self._emit("compensator", True)
 
     def _add_lead(self) -> None:
         """A lead section an order of magnitude apart, as a starting point."""
         self._zeros_edit.setText(_append(self._zeros_edit.text(), "-1"))
         self._poles_edit.setText(_append(self._poles_edit.text(), "-10"))
-        self.rebuild()
+        if self.rebuild():
+            self._emit("compensator", True)
 
     # ── gain changes ────────────────────────────────────────────
 
@@ -238,11 +292,13 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         if self._syncing:
             return
         self.set_gain(float(value))
+        self._emit("gain", True)
 
     def _on_gain_slid(self, ticks: int) -> None:
         if self._syncing:
             return
         self.set_gain(float(10.0 ** (ticks / 100.0)))
+        self._emit("gain", not self._gain_slider.isSliderDown())
 
     def set_gain(self, gain: float) -> None:
         self.compensator.gain = max(float(gain), 0.0)
@@ -250,25 +306,27 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         self.update_gain()
 
     def _sync_gain_widgets(self) -> None:
-        self._syncing = True
+        syncing, self._syncing = self._syncing, True
         self._gain_spin.setValue(self.compensator.gain)
         if self.compensator.gain > 0:
             self._gain_slider.setValue(
                 int(round(100.0 * np.log10(self.compensator.gain))))
-        self._syncing = False
+        self._syncing = syncing
 
     # ── dragging ────────────────────────────────────────────────
 
     def _on_target_moved(self) -> None:
         if self._syncing or self._target is None:
             return
-        self._drag_timer.start()
+        if not self._drag_timer.isActive():
+            self._drag_timer.start()
 
     def _on_drag_settled(self) -> None:
         if self._target is None:
             return
         pos = self._target.pos()
         self.pick_point(complex(pos.x(), pos.y()), snap=False)
+        self._emit("gain", False)
 
     def _on_target_released(self) -> None:
         self._drag_timer.stop()
@@ -276,6 +334,7 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
             return
         pos = self._target.pos()
         self.pick_point(complex(pos.x(), pos.y()), snap=True)
+        self._emit("gain", True)
 
     @guard("pole placement")
     def pick_point(self, point: complex, snap: bool = True) -> None:
@@ -297,9 +356,9 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
     def _move_target(self, pole: complex) -> None:
         if self._target is None:
             return
-        self._syncing = True
+        syncing, self._syncing = self._syncing, True
         self._target.setPos(pg.Point(float(pole.real), float(pole.imag)))
-        self._syncing = False
+        self._syncing = syncing
 
     # ── design targets ──────────────────────────────────────────
 
@@ -329,14 +388,12 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         self._sync_gain_widgets()
         self.update_gain()
         self._move_target(point.pole)
-
-    def _apply(self) -> None:
-        self.compensator_applied.emit(self.compensator.tf())
+        self._emit("gain", True)
 
     # ── drawing ─────────────────────────────────────────────────
 
     @guard("designer")
-    def rebuild(self, *_ignored) -> None:
+    def rebuild(self, *_ignored) -> bool:
         """Full redraw — the compensator's poles or zeros changed."""
         self.compensator.zeros = _parse(self._zeros_edit.text())
         self.compensator.poles = _parse(self._poles_edit.text())
@@ -351,6 +408,7 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         self._summary = summary
         self._draw_locus(summary)
         self._draw_linked(summary)
+        return True
 
     @guard("designer")
     def update_gain(self, *_ignored) -> None:
@@ -362,13 +420,11 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         self._draw_linked(summary)
 
     def _draw_linked(self, summary: DesignSummary) -> None:
-        self._draw_bode(summary)
-        self._draw_step(summary)
         self._draw_closed_loop_poles(summary)
         lines = [summary.describe()]
         if self._locus_note:
             lines.append(self._locus_note)
-        self._readout.setPlainText("\n".join(lines))
+        self._readout.setText("\n".join(lines))
 
     def _draw_locus(self, summary: DesignSummary) -> None:
         plot = self._locus_widget.getPlotItem()
@@ -448,41 +504,6 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
             pen=pg.mkPen(theme.plot_line_highlight(), width=2.0),
             brush=pg.mkBrush(_translucent(theme.plot_line_highlight())))
         plot.addItem(self._pole_markers)
-
-    def _draw_bode(self, summary: DesignSummary) -> None:
-        from ...core.freqresp import bode as _bode
-
-        plot = self._bode_widget.getPlotItem()
-        plot.clear()
-        bd = _bode(summary.L)
-        plot_freq(plot, bd.omega, bd.mag_dB, pen=curve_pen(0, 2.0))
-        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.8)
-        if np.isfinite(bd.wc) and bd.wc > 0:
-            freq_vline(plot, bd.wc, color=theme.plot_line_highlight(),
-                       label=f"PM {bd.pm_deg:.1f}°")
-        if np.isfinite(bd.w180) and bd.w180 > 0 and np.isfinite(bd.gm_dB):
-            freq_vline(plot, bd.w180, color=theme.plot_colour("danger"),
-                       label=f"GM {bd.gm_dB:.2f} dB")
-
-    def _draw_step(self, summary: DesignSummary) -> None:
-        from ...core.timeresp import step_response
-
-        plot = self._step_widget.getPlotItem()
-        plot.clear()
-        if not summary.stable:
-            plot.setTitle("Closed loop is unstable — no step response to show")
-            return
-        resp = step_response(summary.T)
-        y = np.atleast_2d(resp.y)[0]
-        plot.plot(resp.t, y, pen=curve_pen(0, 2.0))
-        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
-        metrics = summary.metrics
-        if metrics is not None and np.isfinite(metrics.y_inf):
-            add_hline(plot, metrics.y_inf, theme.plot_colour("reference"), width=0.8,
-                      label=f"y∞ = {metrics.y_inf:.4g}")
-            if np.isfinite(metrics.tp):
-                add_marker(plot, metrics.tp, metrics.y_max, color=theme.plot_colour("danger"))
-        plot.setTitle("Closed-loop step response")
 
 
 # ──────────────────────────────────────────────────────────────

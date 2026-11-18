@@ -1,11 +1,15 @@
 """
-The PID Tuner — two sliders, and an honest account of what they do.
+The PID tuner — two sliders, and an honest account of what they do.
 
 MATLAB's tuner hides the meaning of its sliders. This one prints it: the
 response-time slider sets the target crossover frequency, the transient slider
 sets the target phase margin, and the readout says which values were asked for
-and which were achieved. When a target is impossible, the banner says why
+and which were achieved. When a target is impossible, the readout says why
 rather than quietly returning gains that do something else.
+
+It lives in the side panel's Design tab, where the pane grid is the display:
+the tuner has no plots of its own, and says on `changed` when the user moved
+something so the Design tab can write the controller into K₂.
 """
 
 from __future__ import annotations
@@ -17,13 +21,10 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QSlider,
-    QSplitter,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -33,20 +34,11 @@ from ...core.pidtune import (
     TuneResult,
     crossover_for,
     phase_margin_for,
-    reference_to_output,
     tune,
 )
-from ...core.timeresp import step_response
 from .. import theme
+from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
-from ..plots import (
-    add_hline,
-    curve_pen,
-    freq_vline,
-    make_freq_plot,
-    make_plot,
-    plot_freq,
-)
 
 #: Slider travel. Both run over integers so the widget behaves; the mapping to
 #: physical quantities lives in :mod:`evans.core.pidtune`.
@@ -55,129 +47,125 @@ TRANSIENT_TICKS = 100      # 0 … 100      ⇒  transient 0 … 1
 
 
 class PIDTuner(QWidget, GuardedPanel):
-    """Tune a PID for a plant, and compare it against what is there now."""
+    """Tune a PID for a plant from two targets."""
 
-    #: The user pressed "Apply to loop" (sets K₂).
-    controller_applied = Signal(object)          # TransferFunction
+    #: The user changed the design; ``final`` is False while a slider is
+    #: still held. Not emitted for changes made from outside (`set_plant`,
+    #: `set_kind`).
+    changed = Signal(bool)
 
     def __init__(self, plant: ctl.TransferFunction | None = None,
-                 baseline: ctl.TransferFunction | None = None,
                  kind: PIDKind | str = PIDKind.PI,
                  sensor: ctl.TransferFunction | None = None,
                  feedforward: ctl.TransferFunction | None = None,
                  parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("PID Tuner")
-        self.resize(1050, 700)
+        self.setAccessibleName("PID tuner")
         self._plant = plant if plant is not None else ctl.tf([1], [1, 3, 3, 1])
-        self._baseline = baseline
         #: H and K₁ of the loop the controller will live in. Without them the
-        #: curves would silently assume both are 1, and disagree with the
-        #: Time tab the moment either is not.
+        #: tuning would silently assume both are 1, and disagree with the
+        #: panes the moment either is not.
         self._sensor = sensor
         self._feedforward = feedforward
         self.result: TuneResult | None = None
+        self._quiet = True
         self._build_ui()
         self._kind_combo.setCurrentText(PIDKind(kind).value)
+        self._quiet = False
         self.retune()
 
     # ── UI ──────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(6, 6, 6, 6)
-        self.install_error_banner(outer)
-
-        split = QSplitter(Qt.Horizontal)
-        outer.addWidget(split, stretch=1)
-        split.addWidget(self._build_controls())
-        split.addWidget(self._build_plots())
-        split.setStretchFactor(0, 0)
-        split.setStretchFactor(1, 1)
-
-    def _build_controls(self) -> QWidget:
-        panel = QWidget()
-        panel.setMaximumWidth(340)
-        lay = QVBoxLayout(panel)
+        lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(NORMAL)
+        self.install_error_banner(lay)
 
         form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
         self._kind_combo = QComboBox()
         self._kind_combo.addItems([k.value for k in PIDKind])
-        self._kind_combo.currentIndexChanged.connect(self.retune)
+        self._kind_combo.setAccessibleName("Controller type")
+        self._kind_combo.currentIndexChanged.connect(
+            lambda _i: self._on_user_change(True))
         form.addRow("Controller:", self._kind_combo)
 
         self._tf_spin = QDoubleSpinBox()
         self._tf_spin.setRange(0.0, 10.0)
         self._tf_spin.setDecimals(4)
         self._tf_spin.setSingleStep(0.01)
+        self._tf_spin.setAccessibleName("Derivative filter time constant")
         self._tf_spin.setToolTip(
             "Derivative filter time constant. Applied after the gains are "
             "solved, so it shifts the achieved margin slightly.")
-        self._tf_spin.valueChanged.connect(self.retune)
+        self._tf_spin.valueChanged.connect(
+            lambda _v: self._on_user_change(True))
         form.addRow("Tf (D filter):", self._tf_spin)
         lay.addLayout(form)
 
         # ── the two sliders ──
-        slider_box = QGroupBox("Design targets")
-        slider_lay = QVBoxLayout(slider_box)
-
         self._speed_label = QLabel()
-        slider_lay.addWidget(self._speed_label)
+        self._speed_label.setWordWrap(True)
+        lay.addWidget(self._speed_label)
         self._speed = QSlider(Qt.Horizontal)
         self._speed.setRange(-SPEED_TICKS, SPEED_TICKS)
         self._speed.setValue(0)
-        self._speed.valueChanged.connect(self.retune)
-        slider_lay.addWidget(self._speed)
-        slider_lay.addWidget(_ends("slower", "faster"))
+        self._speed.setAccessibleName("Response time")
+        self._speed.valueChanged.connect(
+            lambda _v: self._on_user_change(not self._speed.isSliderDown()))
+        self._speed.sliderReleased.connect(lambda: self._on_user_change(True))
+        lay.addWidget(self._speed)
+        lay.addWidget(_ends("slower", "faster"))
 
         self._transient_label = QLabel()
-        slider_lay.addWidget(self._transient_label)
+        self._transient_label.setWordWrap(True)
+        lay.addWidget(self._transient_label)
         self._transient = QSlider(Qt.Horizontal)
         self._transient.setRange(0, TRANSIENT_TICKS)
         self._transient.setValue(TRANSIENT_TICKS // 2)
-        self._transient.valueChanged.connect(self.retune)
-        slider_lay.addWidget(self._transient)
-        slider_lay.addWidget(_ends("aggressive", "robust"))
-        lay.addWidget(slider_box)
+        self._transient.setAccessibleName("Transient behaviour")
+        self._transient.valueChanged.connect(
+            lambda _v: self._on_user_change(
+                not self._transient.isSliderDown()))
+        self._transient.sliderReleased.connect(
+            lambda: self._on_user_change(True))
+        lay.addWidget(self._transient)
+        lay.addWidget(_ends("aggressive", "robust"))
 
-        self._readout = QTextEdit()
-        self._readout.setReadOnly(True)
+        self._readout = QLabel()
         self._readout.setFont(theme.data_font(9))
-        lay.addWidget(self._readout, stretch=1)
+        self._readout.setWordWrap(True)
+        self._readout.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._readout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self._readout.setAccessibleName("Tuning readout")
+        lay.addWidget(self._readout)
 
-        buttons = QHBoxLayout()
         reset = QPushButton("Reset sliders")
+        reset.setAccessibleName("Reset sliders")
+        reset.setToolTip("Both sliders back to the middle")
         reset.clicked.connect(self.reset)
-        buttons.addWidget(reset)
-        apply_btn = QPushButton("Apply to loop")
-        apply_btn.setToolTip("Sets K₂ to this controller.")
-        apply_btn.clicked.connect(self._apply)
-        buttons.addWidget(apply_btn)
-        lay.addLayout(buttons)
-        return panel
-
-    def _build_plots(self) -> QWidget:
-        split = QSplitter(Qt.Vertical)
-        self._step_widget = make_plot("Closed-loop step response",
-                                      "Time (s)", "y(t)")
-        self._bode_widget = make_freq_plot("Open loop L(s) = C·G", "|L| (dB)")
-        split.addWidget(self._step_widget)
-        split.addWidget(self._bode_widget)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 2)
-        return split
+        lay.addWidget(reset, alignment=Qt.AlignLeft)
+        lay.addStretch(1)
 
     # ── state ───────────────────────────────────────────────────
 
     def set_plant(self, plant: ctl.TransferFunction,
-                  baseline: ctl.TransferFunction | None = None,
                   sensor: ctl.TransferFunction | None = None,
                   feedforward: ctl.TransferFunction | None = None) -> None:
+        """A new loop to tune for. Says nothing on `changed`."""
         self._plant = plant
-        self._baseline = baseline
         self._sensor = sensor
         self._feedforward = feedforward
+        self.retune()
+
+    def set_kind(self, kind: PIDKind | str) -> None:
+        """Choose the controller type. Says nothing on `changed`."""
+        self._quiet = True
+        try:
+            self._kind_combo.setCurrentText(PIDKind(kind).value)
+        finally:
+            self._quiet = False
         self.retune()
 
     def _seen_plant(self) -> ctl.TransferFunction:
@@ -199,12 +187,20 @@ class PIDTuner(QWidget, GuardedPanel):
         return self._transient.value() / TRANSIENT_TICKS
 
     def reset(self) -> None:
-        self._speed.setValue(0)
-        self._transient.setValue(TRANSIENT_TICKS // 2)
+        """Both sliders to the middle, as one change."""
+        self._quiet = True
+        try:
+            self._speed.setValue(0)
+            self._transient.setValue(TRANSIENT_TICKS // 2)
+        finally:
+            self._quiet = False
+        self._on_user_change(True)
 
-    def _apply(self) -> None:
-        if self.result is not None and self.result.feasible:
-            self.controller_applied.emit(self.result.C)
+    def _on_user_change(self, final: bool) -> None:
+        if self._quiet:
+            return
+        self.retune()
+        self.changed.emit(final)
 
     # ── tuning ──────────────────────────────────────────────────
 
@@ -222,81 +218,20 @@ class PIDTuner(QWidget, GuardedPanel):
                       Tf=float(self._tf_spin.value()),
                       sensor=self._sensor, feedforward=self._feedforward)
         self.result = result
-        self._readout.setPlainText(result.describe())
-        self._draw(result)
-        if not result.feasible:
+        if result.feasible:
+            self._readout.setText(result.describe())
+        else:
             # Not an exception: an impossible target is a legitimate answer,
             # and the reason is already on screen. Raising here would bury a
             # clear explanation under a traceback.
-            self._readout.setPlainText(
+            self._readout.setText(
                 f"{result.describe()}\n\n"
-                f"Move the response-time slider and the target moves with it.")
-
-    def _draw(self, result: TuneResult) -> None:
-        self._draw_step(result)
-        self._draw_bode(result)
-
-    def _draw_step(self, result: TuneResult) -> None:
-        plot = self._step_widget.getPlotItem()
-        plot.clear()
-        plot.addLegend(offset=(-10, 10))
-
-        # The plant's own step is the yardstick: what y does with no loop at
-        # all. An unstable or integrating plant would run off to infinity and
-        # flatten the other two curves, so it is only drawn when it settles.
-        curves: list[tuple[str, ctl.TransferFunction, int]] = []
-        if _settles(self._plant):
-            curves.append(("plant G (open loop)", self._plant, 2))
-        if self._baseline is not None:
-            before = reference_to_output(self._baseline, self._plant,
-                                         self._sensor, self._feedforward)
-            if _settles(before):
-                curves.append(("closed loop, current K₂", before, 1))
-        if result.feasible and result.stable:
-            curves.append((f"closed loop, tuned {result.kind.value}",
-                           result.T, 0))
-
-        for label, system, colour in curves:
-            try:
-                resp = step_response(system)
-            except Exception:                                   # noqa: BLE001
-                continue
-            y = np.atleast_2d(resp.y)[0]
-            plot.plot(resp.t, y, pen=curve_pen(colour, 2.0), name=label)
-
-        add_hline(plot, 1.0, theme.plot_colour("reference"), width=0.8)
-        if not curves:
-            plot.setTitle("Nothing stable to show at this target")
-        else:
-            plot.setTitle("Closed-loop step response")
-
-    def _draw_bode(self, result: TuneResult) -> None:
-        from ...core.freqresp import bode as _bode
-
-        plot = self._bode_widget.getPlotItem()
-        plot.clear()
-        plot.addLegend(offset=(-10, 10))
-
-        loops: list[tuple[str, ctl.TransferFunction, int]] = [
-            ("plant G", self._plant, 2)]
-        if self._baseline is not None:
-            loops.append(("current K₂", self._baseline * self._seen_plant(),
-                          1))
-        if result.feasible:
-            loops.append((f"tuned {result.kind.value}", result.L, 0))
-
-        for label, system, colour in loops:
-            bd = _bode(system)
-            plot_freq(plot, bd.omega, bd.mag_dB, pen=curve_pen(colour, 2.0),
-                      name=label)
-        add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.8)
-        if result.feasible and np.isfinite(result.achieved_wc):
-            freq_vline(plot, result.achieved_wc, color=theme.plot_line_highlight(),
-                       label=f"ωc {result.achieved_wc:.3g}")
+                f"Move the response-time slider and the target moves with "
+                f"it. K₂ keeps the last controller that could be built.")
 
 
 def _settles(system: ctl.TransferFunction) -> bool:
-    """Every pole strictly in the left half-plane."""
+    """Every pole strictly in the left half-plane (the Model's tune dialog)."""
     poles = np.atleast_1d(ctl.poles(system))
     return bool(np.all(poles.real < 0))
 
@@ -306,6 +241,7 @@ def _ends(left: str, right: str) -> QWidget:
     widget = QWidget()
     row = QHBoxLayout(widget)
     row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(TIGHT)
     for text, align in ((left, Qt.AlignLeft), (right, Qt.AlignRight)):
         label = QLabel(text)
         label.setStyleSheet("color: palette(mid); font-size: 10px;")

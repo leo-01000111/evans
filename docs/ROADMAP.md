@@ -1093,7 +1093,7 @@ Each of these is a project of its own. Decide whether each is in scope before st
 - [ ] **An extension mechanism:** user toolboxes on the path, and a place to share
       them. **L**
 
-## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 3 of 10 packages done**
+## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 4 of 10 packages done**
 
 Planned 2026-11-16 from a UI audit (research into comparable tools, a code inventory
 and offscreen renders of every workspace) and two rounds of decisions with Leon. It
@@ -1501,7 +1501,7 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
   tab bar and × in both themes, and dragging a panel wider then closing and
   reopening it.
 
-- [ ] **R3 — The Design tab; the three apps go.** *opus.* **L** Needs R1 and R2.
+- [x] **R3 — The Design tab; the three apps go.** *opus.* **L** Needs R1 and R2.
   - **Design tab** (`ui/design_panel.py`, new): a `QWidget` with a three-way
     segmented control at the top, **Gain · Compensator · PID**, and a
     `QStackedWidget` under it.
@@ -1570,6 +1570,76 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
     Edit menu moves the Design tab's widgets back without re-applying; ticking a
     snapshot in a pane's Compare menu adds one curve; the window's minimum size is
     unchanged.
+  *Done 2026-11-18:* `ui/design_panel.py` (`DesignPanel`), the Compare menu in
+  `ui/panes.py` (`CompareOption`, `AnalysisPane.set_compare`/`tick_compare`,
+  `PaneGrid.compare_options`), `MainWindow.show_design` / `_apply_design` /
+  `_sisotool` / `_pidtuner` / `_ltiview`; tests in the rewritten
+  `tests/golden/test_apps_ui.py` (45). Decisions where the spec met the code:
+  - **No `compact` flag.** With the docks gone nothing wanted the full layouts,
+    so `ControlSystemDesigner` and `PIDTuner` are compact-only (their Bode and
+    step plots, *Apply to loop* and the tuner's plant/current/tuned overlay
+    are deleted). The designer is one widget: locus (220 px), the rays check, a
+    stack of two control pages (Gain, Compensator) and a readout; the panel's
+    segmented control picks the designer's page or the tuner. The readouts
+    are word-wrapped labels, not text boxes. `PIDTuner.set_plant` lost its
+    `baseline` argument (only the deleted plots used it).
+  - **Signals, not apply calls.** The designer emits `changed(what, final)`
+    and the tuner `changed(final)` only for user gestures (never from
+    `set_plant`/`set_compensator`/`set_kind`), and the panel throttles: a held
+    slider or pole target applies at most every 50 ms, release applies once
+    more. The designer's own drag timer became a 50 ms throttle (it was a
+    60 ms debounce, so a steady drag never updated).
+  - **Merge keys are per gesture**: `design-gain/<n>` and so on, `n` bumped
+    after each final apply. With a fixed `design-gain` two separate drags in a
+    row would have merged into one undo step.
+  - **Re-reading the loop** happens in `DesignPanel.loop_changed`, called from
+    `_after_loop_change` and `_on_console_executed`. Its own apply only marks
+    the *other* half stale (a PID applied from the PID view re-reads the
+    designer when you switch back). Hidden halves re-read when shown, and both
+    halves are built on first show, not at launch (a quarter of a second off
+    the startup budget).
+  - **Reset** goes back to K₂ as it was at the tab's last non-spontaneous
+    show (switching workspace and back counts as a new opening). It is its
+    own undo step, "Design: reset", and the widgets follow it.
+  - **`sisotool(G, C)`** loads G and, with C, writes C into K₂ in the same
+    undo step ("sisotool"): with live apply a designer showing C while the
+    panes showed another K₂ would be two truths. `pidtuner(G)` without a type
+    now keeps the type chosen in the tab (`api.pidtuner`'s default `kind`
+    became `None`); `pidtuner(G, 'pid')` sets it without applying.
+  - **Compare.** Entries are keyed `("loop", Source)`, `("snapshot", label)`,
+    `("system", name)`. A snapshot draws as *the pane's own system* of the
+    snapshot's loop (its L in a Bode-of-L pane). `ltiview(...)` sets the first
+    plot pane's Compare set to exactly the named systems and keeps them on
+    offer in every pane; `ltiview` with nothing named compares G, L and T. A
+    deleted snapshot drops out at the next refresh. Ticks ride along a 1/2/4
+    re-layout (like sources) but are not saved.
+  - **The pane minimum.** The Compare button would have widened every plot
+    pane by its own width (116 px offscreen), so 1×2 and 2×2 with the side
+    panel open would no longer fit 1280. The two header combos now elide from
+    seven characters instead of twelve; the pane's minimum is exactly what it
+    was (402 px offscreen) and the window's minimum is unchanged.
+  - **Found: the root-locus pane could freeze.** `core.stability.
+    marginal_gain` handed the axis-crossing equations to sympy with the
+    coefficients as exact rationals; for a tuned PID times 1/(s+1)³ the
+    rationals had huge denominators and the solve ran for minutes. Live apply
+    made that one slider move away, so it now eliminates K and takes the real
+    roots of one polynomial in ω numerically, polished by Newton (the
+    textbook values still agree to 1e-9; `test_analysis_values.py`).
+    `pid_tuner._settles` stays: the Model's tune dialog imports it.
+  - Kept: `ui/apps/lti_viewer.py` (the pane renderer; its full mode is still
+    used by `test_plot_readouts.py`), the *Design* workflow pane kind, and the
+    console's "Apps" command group name.
+  Changed assertions: `test_title_bar.py` (no Apps menu);
+  `test_r0_quick_fixes.py` (the Design tab has no Apply button);
+  `test_ui_layout.py` (no dock at all; the app-dock size and windows tests
+  became Design-tab ones, the size one measured against the Loop tab
+  because the context bar's width depends on the loop earlier tests left;
+  `sisotool(G, C)` also sets K₂); `test_apps.py`
+  (`pidtuner(G)` sends no kind). Check by eye on a real screen: the
+  segmented control and the Design tab at the panel's 240 px minimum (the
+  Gain page may scroll sideways there), dragging the pole target and the gain
+  slider with four panes following, the Compare menus and their legends in a
+  small pane, and the shortened header combos at 1280 wide.
 
 - [ ] **R4 — Menus, preferences, bottom bar, a slimmer context bar.** *sonnet.* **M**
   Needs R2 and R3.

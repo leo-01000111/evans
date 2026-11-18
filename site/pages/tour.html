@@ -99,20 +99,20 @@ bode(G)</code></pre>
 
     <section class="proj-section" id="apps">
       <div class="card prose">
-        <h2>The design apps</h2>
-        <p>Three apps dock beside the analysis they edit, opened from the Apps menu or the prompt:</p>
+        <h2>Design and compare</h2>
+        <p>The Analyse side panel's Design tab has three views, opened from the tab or the prompt. Every change is written into K₂ at once, so the panes beside it are the display, and a whole drag is one undo step:</p>
         <div class="data-grid">
           <div class="data-grid__item">
-            <div class="data-grid__label">LTI Viewer · <code>ltiview</code></div>
-            <div class="data-grid__value">Any set of systems, eight response types, and a right-click menu to add characteristics. It only offers the ones that mean something for the response on screen; a rise time has nowhere to go on a Nyquist plot.</div>
+            <div class="data-grid__label">Gain and Compensator · <code>sisotool</code></div>
+            <div class="data-grid__value">Drag a closed-loop pole along the root locus, type the compensator's zeros and poles, or ask for the gain that gives ζ = 0.5, or 16% overshoot.</div>
           </div>
           <div class="data-grid__item">
-            <div class="data-grid__label">Control System Designer · <code>sisotool</code></div>
-            <div class="data-grid__value">Drag a closed-loop pole along the root locus and the Bode plot and step response follow. You can also ask for the gain that gives ζ = 0.5, or 16% overshoot.</div>
+            <div class="data-grid__label">PID · <code>pidtuner</code></div>
+            <div class="data-grid__value">Response time and transient behaviour on two sliders, tuned in the real loop (K₁ and H included).</div>
           </div>
           <div class="data-grid__item">
-            <div class="data-grid__label">PID Tuner · <code>pidtuner</code></div>
-            <div class="data-grid__value">Response time and transient behaviour on two sliders, with the plant, the current loop and the tuned loop overlaid (K₁ and H included).</div>
+            <div class="data-grid__label">Compare · <code>ltiview</code></div>
+            <div class="data-grid__value">Each plot pane's Compare menu adds the loop's other systems, any snapshot, and systems handed over by <code>ltiview</code>. The right-click menu only offers the characteristics that mean something for the response on screen; a rise time has nowhere to go on a Nyquist plot.</div>
           </div>
         </div>
         <p style="margin-top: var(--space-4)">The PID tuner does not search for gains. At the target crossover the controller's required magnitude and phase are both fixed, so a PI's two parameters follow directly and a PID spends its third on the classical <code>Ti = 4·Td</code>. The achieved margin is therefore exact: <code>margin(C·G)</code> returns the requested ωc and φm to 1e-14. When a structure cannot meet a target, the tuner refuses and gives the reason.</p>
@@ -122,7 +122,7 @@ bode(G)</code></pre>
     <section class="proj-section" id="snapshots">
       <div class="card prose">
         <h2>Snapshots and layout</h2>
-        <p>A snapshot bar above the analysis area saves the whole architecture under a name and restores it from anywhere. <em>Compare</em> sends every stored design to the LTI Viewer at once.</p>
-        <p>Window geometry, workspace, dock layout and pane arrangement are remembered between runs, and View ▸ Reset layout puts them back. View ▸ Theme picks Day, Night or the system setting. The window fits a 1280 × 720 screen and is tested at 1366 × 768 and 1920 × 1080 as well.</p>
+        <p>A snapshot bar above the analysis area saves the whole architecture under a name and restores it from anywhere. <em>Compare</em> ticks every stored design in every plot pane.</p>
+        <p>Window geometry, workspace, side panels and pane arrangement are remembered between runs, and View ▸ Reset layout puts them back. View ▸ Theme picks Day, Night or the system setting. The window fits a 1280 × 720 screen and is tested at 1366 × 768 and 1920 × 1080 as well.</p>
       </div>
     </section>

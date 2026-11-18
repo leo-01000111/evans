@@ -1,7 +1,9 @@
 """
-The MATLAB-style apps: LTI Viewer, Control System Designer, PID Tuner.
+What the MATLAB-style apps became: the plot renderer every analysis pane uses
+(`LTIViewer`), the root-locus designer and PID tuner of the Design tab, and
+the snapshot bar.
 
-Each is a window over a core module that does the arithmetic headlessly —
+Each is a widget over a core module that does the arithmetic headlessly —
 :mod:`evans.core.viewer`, :mod:`evans.core.designer` and
 :mod:`evans.core.pidtune`. The split is the same one the console uses,
 and for the same reason: a design decision that can only be checked by looking

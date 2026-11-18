@@ -17,12 +17,20 @@ what makes the viewer "the multi-system form of the analysis area" rather
 than a separate application that happens to draw similar things. The panes
 that are whole workflows rather than a single plot (System, Stability,
 Design, Modern) host the existing tab widget.
+
+**Several systems in one pane.** A plot pane's **Compare** menu adds curves
+to its collection: the loop's other systems (G, L, T, S), every snapshot
+(drawn as the pane's own system, taken from the snapshot's loop), and any
+system handed over by ``ltiview(...)`` at the console. That is what is left
+of the LTI Viewer as an app: the pane is the viewer.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -31,8 +39,10 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QScrollArea,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -118,6 +128,55 @@ DEFAULT_LAYOUT = ("step", "bode", "rlocus", "metrics")
 
 def kind(key: str) -> PaneKind:
     return _BY_KEY[key]
+
+
+# ──────────────────────────────────────────────────────────────
+#  Compare
+# ──────────────────────────────────────────────────────────────
+
+#: What a Compare entry is, by group: ("loop", Source name), ("snapshot",
+#: label) or ("system", name given to ltiview).
+CompareKey = tuple[str, str]
+
+
+@dataclass(frozen=True)
+class CompareOption:
+    """One checkable entry of a plot pane's Compare menu."""
+
+    key: CompareKey
+    #: The menu text, and the curve's name in the legend.
+    label: str
+    #: The system to draw, given the live loop and the pane's own source.
+    system: Callable[[CourseArchitecture, Source], Any]
+
+    @property
+    def group(self) -> str:
+        return self.key[0]
+
+
+def _short(source: Source) -> str:
+    """The legend name of a loop source: "T", "L", "G", "S"."""
+    return source.value.split(" ")[0]
+
+
+def loop_options() -> list[CompareOption]:
+    """The loop's own systems, as Compare entries."""
+    return [CompareOption(("loop", source.name), source.value,
+                          lambda arch, _own, s=source: s.system(arch))
+            for source in Source]
+
+
+def snapshot_option(snapshot) -> CompareOption:
+    """A snapshot, drawn as the pane's own system of the snapshot's loop."""
+    return CompareOption(
+        ("snapshot", snapshot.label), snapshot.label,
+        lambda _arch, own, snap=snapshot: own.system(snap.architecture()))
+
+
+def system_option(name: str, system) -> CompareOption:
+    """A system handed over by ``ltiview``, drawn as it is."""
+    return CompareOption(("system", name), name,
+                         lambda _arch, _own, sys=system: sys)
 
 
 #: The pairs of view and system that answer no question practice asks, and
@@ -244,7 +303,9 @@ class AnalysisPane(QFrame):
 
     def __init__(self, arch: CourseArchitecture, key: str = "step",
                  tab_factory=None, parent=None,
-                 source: Source | None = None) -> None:
+                 source: Source | None = None,
+                 options: Callable[[], list[CompareOption]] | None = None,
+                 compare: tuple[CompareKey, ...] = ()) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
         self.setProperty("hp", "plain")
@@ -252,6 +313,11 @@ class AnalysisPane(QFrame):
         self._tab_factory = tab_factory or (lambda name, arch: None)
         self._content: QWidget | None = None
         self._kind = kind(key)
+        #: Where the Compare menu's entries come from (the grid's list), and
+        #: which of them are ticked, in the order they were ticked. Per pane,
+        #: not saved.
+        self._options = options or loop_options
+        self._compare: list[CompareKey] = list(compare)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(TIGHT, TIGHT, TIGHT, TIGHT)
@@ -280,16 +346,33 @@ class AnalysisPane(QFrame):
             source if source is not None else self._kind.default_source))
         self._source.setEnabled(self._uses_source)
         # Both combos may elide rather than set the pane's minimum width: the
-        # header also carries the layout buttons in the top-right pane.
+        # header also carries the layout buttons in the top-right pane. Seven
+        # characters, not twelve: the Compare button shares the header, and
+        # the pane's minimum (so the window's) must stay where it was.
         for combo in (self._picker, self._source):
             combo.setSizeAdjustPolicy(
                 QComboBox.AdjustToMinimumContentsLengthWithIcon)
-            combo.setMinimumContentsLength(12)
+            combo.setMinimumContentsLength(7)
         self._source.setAccessibleName("signal shown")
         self._source.currentIndexChanged.connect(self._on_source_picked)
         header.addWidget(self._source)
         self._mark_sources()
         iconset.on_theme_change(self, AnalysisPane._mark_sources)
+
+        # Compare: more systems on the same axes (plot panes only).
+        self._compare_btn = QToolButton()
+        self._compare_btn.setText("Compare")
+        self._compare_btn.setAutoRaise(True)
+        self._compare_btn.setPopupMode(QToolButton.InstantPopup)
+        self._compare_btn.setAccessibleName("Compare systems")
+        self._compare_btn.setToolTip(
+            "Draw more systems on these axes: the loop's others, snapshots, "
+            "systems from ltiview")
+        self._compare_menu = QMenu(self._compare_btn)
+        self._compare_menu.aboutToShow.connect(self._fill_compare_menu)
+        self._compare_btn.setMenu(self._compare_menu)
+        self._compare_btn.setVisible(self._kind.is_plot)
+        header.addWidget(self._compare_btn)
         header.addStretch()
         self._header = header
         outer.addLayout(header)
@@ -363,6 +446,7 @@ class AnalysisPane(QFrame):
         """
         self._kind = kind(self._picker.itemData(index))
         self._source.setEnabled(self._uses_source)
+        self._compare_btn.setVisible(self._kind.is_plot)
         self._mark_sources()
         self._rebuild()
         self.changed.emit()
@@ -404,6 +488,77 @@ class AnalysisPane(QFrame):
                 else "Which system this pane shows")
         except RuntimeError:            # the pane is gone; Qt deleted it
             pass
+
+    # ── compare ─────────────────────────────────────────────────
+
+    @property
+    def compare_keys(self) -> tuple[CompareKey, ...]:
+        """The Compare entries ticked, in the order they were ticked."""
+        return tuple(self._compare)
+
+    def compare_options(self) -> list[CompareOption]:
+        """What this pane's Compare menu offers: not its own source."""
+        own = ("loop", self.source.name)
+        return [option for option in self._options() if option.key != own]
+
+    def set_compare(self, keys) -> None:
+        """Tick exactly ``keys`` (unknown ones are dropped at refresh)."""
+        self._compare = list(dict.fromkeys(tuple(k) for k in keys))
+        self.refresh()
+
+    def tick_compare(self, key: CompareKey, on: bool = True) -> None:
+        key = tuple(key)
+        if on and key not in self._compare:
+            self._compare.append(key)
+        elif not on and key in self._compare:
+            self._compare.remove(key)
+        else:
+            return
+        self.refresh()
+
+    def _fill_compare_menu(self) -> None:
+        menu = self._compare_menu
+        menu.clear()
+        options = self.compare_options()
+        for group, title, empty in (
+                ("loop", "Loop", None),
+                ("snapshot", "Snapshots", "No snapshots yet"),
+                ("system", "From ltiview", None)):
+            entries = [o for o in options if o.group == group]
+            if not entries and empty is None:
+                continue
+            menu.addSection(title)
+            if not entries:
+                placeholder = menu.addAction(empty)
+                placeholder.setEnabled(False)
+            for option in entries:
+                action = menu.addAction(option.label)
+                action.setCheckable(True)
+                action.setChecked(option.key in self._compare)
+                action.toggled.connect(
+                    lambda on, k=option.key: self.tick_compare(k, on))
+
+    def _compared(self) -> list[tuple[str, Any]]:
+        """``(name, system)`` of each ticked entry still on offer."""
+        source = self.source
+        offered = {o.key: o for o in self.compare_options()}
+        everything = {o.key for o in self._options()}
+        # A deleted snapshot is gone for good; a loop source ticked earlier
+        # only steps aside while it is the pane's own.
+        self._compare = [k for k in self._compare if k in everything]
+        out = []
+        for key in self._compare:
+            option = offered.get(key)
+            if option is None:
+                continue
+            try:
+                system = option.system(self._arch, source)
+            except Exception:                       # noqa: BLE001
+                continue                            # the pane draws the rest
+            name = (_short(Source[key[1]]) if option.group == "loop"
+                    else option.label)
+            out.append((name, system))
+        return out
 
     def set_corner(self, widget: QWidget | None) -> None:
         """Put ``widget`` at the right-hand end of this pane's header."""
@@ -476,10 +631,13 @@ class AnalysisPane(QFrame):
             return
 
         if self._kind.is_plot:
+            # The pane's own system first, so it keeps the first colour; the
+            # compared ones after it, named in the legend.
             collection = SystemCollection()
             source = self.source
-            collection.add(source.value.split(" ")[0],
-                           source.system(self._arch))
+            collection.add(_short(source), source.system(self._arch))
+            for name, system in self._compared():
+                collection.add(name, system)
             self._content.set_collection(collection)
             return
 
@@ -505,6 +663,10 @@ class PaneGrid(QWidget):
         self._arch = arch
         self._tab_factory = tab_factory
         self.panes: list[AnalysisPane] = []
+        #: What the panes' Compare menus offer beyond the loop: the window's
+        #: snapshot store, and the systems handed over by ``ltiview``.
+        self.snapshots = None
+        self.handed: dict[str, Any] = {}
         #: What sits at the right of the top-right pane's header: the layout
         #: buttons, which used to cost a row of their own above the grid.
         self._corner: QWidget | None = None
@@ -532,6 +694,10 @@ class PaneGrid(QWidget):
         carried = sources if sources is not None else (
             tuple(p.source for p in self.panes) if keys is None else ())
         chosen: list[Source | None] = list(carried[:count])
+        # Compare ticks ride along too, unless a saved layout is restored.
+        compared = ([p.compare_keys for p in self.panes][:count]
+                    if keys is None else [])
+        compared += [()] * (count - len(compared))
         while len(wanted) < count:
             wanted.append(DEFAULT_LAYOUT[len(wanted) % len(DEFAULT_LAYOUT)])
         chosen += [None] * (count - len(chosen))
@@ -554,11 +720,26 @@ class PaneGrid(QWidget):
             self._grid.setColumnStretch(index, 1 if index < columns else 0)
         for index, key in enumerate(wanted):
             pane = AnalysisPane(self._arch, key, self._tab_factory,
-                                source=chosen[index])
+                                source=chosen[index],
+                                options=self.compare_options,
+                                compare=compared[index])
             self.panes.append(pane)
             self._grid.addWidget(pane, index // columns, index % columns)
         self._place_corner()
         self.refresh()
+
+    def compare_options(self) -> list[CompareOption]:
+        """Every Compare entry: the loop, the snapshots, ltiview's systems."""
+        options = loop_options()
+        if self.snapshots is not None:
+            options += [snapshot_option(s) for s in self.snapshots]
+        options += [system_option(name, system)
+                    for name, system in self.handed.items()]
+        return options
+
+    def plot_panes(self) -> list[AnalysisPane]:
+        """The panes that draw curves, and so have a Compare menu."""
+        return [pane for pane in self.panes if pane._kind.is_plot]
 
     def set_corner(self, widget: QWidget) -> None:
         """Show ``widget`` at the top right of the grid, whatever its size."""

@@ -437,14 +437,17 @@ def test_open_on_console_asks_the_script_dialog(app, win, monkeypatch):
 # ── one verb ─────────────────────────────────────────────────────
 
 def test_every_apply_button_says_apply_to_loop(app):
-    from evans.ui.apps.designer_app import ControlSystemDesigner
-    from evans.ui.apps.pid_tuner import PIDTuner
+    from evans.ui.design_panel import DesignPanel
     from evans.ui.tabs.design_tab import DesignTab
     from evans.ui.tabs.modern.modern_tab import ModernTab
 
     arch = CourseArchitecture()
-    for widget in (ControlSystemDesigner(), PIDTuner(),
-                   DesignTab(arch), ModernTab(arch)):
+    # The Design tab (R3) applies live: no Apply button at all, and none of
+    # the old verbs.
+    design = DesignPanel(arch, lambda *_args: None)
+    assert not [b.text() for b in design.findChildren(QPushButton)
+                if b.text().startswith(("Apply", "Send to"))]
+    for widget in (DesignTab(arch), ModernTab(arch)):
         buttons = [b for b in widget.findChildren(QPushButton)
                    if b.text() == "Apply to loop"]
         assert len(buttons) == 1, type(widget).__name__
