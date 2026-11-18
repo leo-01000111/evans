@@ -2585,6 +2585,10 @@ class Runtime:
             codes = np.array([ord(c) for c in obj], dtype=float)
             if isinstance(value, str):
                 value = np.array([ord(c) for c in value], dtype=float)
+                if value.size == 1:
+                    # A scalar, not a 1-element array: newer numpy refuses
+                    # to put a sequence into one element (s(5) = 'e').
+                    value = float(value[0])
             out = np.atleast_1d(self._assign_array(codes, key, value))
             return "".join(chr(int(v)) for v in out.reshape(-1))
         if not owned:
