@@ -139,8 +139,6 @@ class MainWindow(QMainWindow):
         self._title_bar.maximize_requested.connect(
             lambda: self.toggle_maximized())
         self._title_bar.close_requested.connect(lambda: self.close())
-        self._title_bar.search_button.clicked.connect(
-            lambda: self.toggle_search())
         self.setMenuWidget(self._title_bar)
         self._native_frame = winframe.NativeFrame(self, self._title_bar)
         self._build_ui()
@@ -240,6 +238,8 @@ class MainWindow(QMainWindow):
             lambda _path: self._sync_undo_group())
         self._stack.add_page(Workspace.MODEL, self._sim_tab)
         self._stack.add_page(Workspace.CONSOLE, self._build_console())
+        for field in self.search_fields():
+            field.clicked.connect(lambda: self.toggle_search())
         self._context.set_plant_menu(self._build_plant_menu())
         #: Each workspace's side panel; Cedric is the last tab of each.
         self._side_panels: dict[Workspace, SidePanel] = {
@@ -275,7 +275,8 @@ class MainWindow(QMainWindow):
         # on demand (Ctrl+\), so the analysis area gets the width instead of
         # a picture of an architecture most panes do not need.
         self._context = ContextBar(self._arch)
-        self._context.edit_requested.connect(self.show_loop_editor)
+        self._context.edit_requested.connect(self.toggle_loop_editor)
+        self._context.design_requested.connect(self.toggle_design)
         main_lay.addWidget(self._context)
 
         # ── the snapshot bar ──
@@ -303,14 +304,13 @@ class MainWindow(QMainWindow):
         # ── the side panel: Loop · Design · Cedric, closed by default ──
         side = SidePanel("analyse")
         loop = side.add_tab("loop", "Loop")
-        # The diagram is inherently wide and short (roughly 3.3:1), so cap its
-        # height and give the space it cannot use to the block editor.
+        # The diagram takes the height the panel has to spare (150 px at
+        # least); the block editor keeps its natural height under it.
         self._diagram = FixedDiagramView(self._arch)
         self._diagram.setMinimumHeight(150)
-        self._diagram.setMaximumHeight(260)
-        loop.layout().addWidget(self._diagram, stretch=0)
+        loop.layout().addWidget(self._diagram, stretch=1)
         self._editor = BlockEditor()
-        loop.layout().addWidget(self._editor, stretch=1)
+        loop.layout().addWidget(self._editor, stretch=0)
         # Gain · Compensator · PID; what the three docked apps were.
         self._design = DesignPanel(self._arch, self._apply_design)
         side.add_tab("design", "Design", self._design)
@@ -520,6 +520,24 @@ class MainWindow(QMainWindow):
         side.set_current("loop")
         side.set_open(True)
         self._sync_side_action()
+
+    def toggle_loop_editor(self, *_ignored) -> None:
+        """*Edit loop*: open the Analyse panel on Loop, or close it there."""
+        side = self._side_panels[Workspace.ANALYSE]
+        if side.is_open and side.current == "loop":
+            side.set_open(False)
+            self._sync_side_action()
+        else:
+            self.show_loop_editor()
+
+    def toggle_design(self, *_ignored) -> None:
+        """*Design*: open the Analyse panel on Design, or close it there."""
+        side = self._side_panels[Workspace.ANALYSE]
+        if side.is_open and side.current == "design":
+            side.set_open(False)
+            self._sync_side_action()
+        else:
+            self.show_design(self._design.mode)
 
     def _ask_cedric(self, context, source, action: str) -> None:
         """
@@ -1315,8 +1333,14 @@ class MainWindow(QMainWindow):
             from .search_popup import SearchPopup
             self._search = SearchPopup(self)
             self._search.on_chosen = self._run_search_entry
-            self._search.ignore_clicks_on(self._title_bar.search_button)
+            for field in self.search_fields():
+                self._search.ignore_clicks_on(field)
         return self._search
+
+    def search_fields(self) -> list:
+        """The three workspaces' search fields (they open the palette)."""
+        return [self._context.search_button, self._sim_tab.search_button,
+                self._console.search_button]
 
     def show_search(self):
         """View ▸ Search… (Ctrl+K, Ctrl+Shift+P): the palette, fresh."""

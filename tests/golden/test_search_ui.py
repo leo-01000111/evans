@@ -1,5 +1,5 @@
 """
-R5: the command palette, its field in the title strip, and the shortcut sheet.
+R5/R6b: the command palette, its field in each workspace, and the shortcut sheet.
 
 The window is shared (module scope) and put back by the `reset` fixture.
 Nothing opens a modal dialog: the palette is a child widget and the sheet is
@@ -22,10 +22,11 @@ from evans.core.architecture import CourseArchitecture
 from evans.core.session import load_session_dict, session_dict
 from evans.ui import keys, persist
 from evans.ui.mainwindow import MainWindow
+from evans.ui.search_field import HEIGHT as FIELD_HEIGHT
+from evans.ui.search_field import SearchField
 from evans.ui.search_popup import SHADOW, TOP, WIDTH, SearchPopup
 from evans.ui.search_registry import collect, menu_actions
 from evans.ui.shortcuts import EXTRA_KEYS, ShortcutsDialog
-from evans.ui.titlebar import SEARCH_MAX_WIDTH, SEARCH_MIN_WINDOW, TitleBar
 from evans.ui.workspace import Workspace
 
 
@@ -393,59 +394,110 @@ def test_a_disabled_action_is_not_offered(win):
     assert "edit.undo" in {e.id for e in collect(win, for_sheet=True)}
 
 
-# ── the field in the title strip ────────────────────────────────
+# ── the field in each workspace's top strip (R6b) ───────────────
 
-def test_the_title_strip_field(win, app):
-    button = win.title_bar.search_button
-    assert button.accessibleName() == "Search"
-    assert button.maximumWidth() == SEARCH_MAX_WIDTH == 280
-    assert button.isVisible()
-    assert "Ctrl K" in button.text() or "⌘K" in button.text()
-    assert button.width() <= 280
+def _field_of(win, workspace):
+    return {Workspace.ANALYSE: win._context.search_button,
+            Workspace.MODEL: win._sim_tab.search_button,
+            Workspace.CONSOLE: win._console.search_button}[workspace]
 
 
-def test_the_field_is_hidden_in_a_window_under_900(app):
-    # The real window cannot get that narrow (its minimum is wider), so the
-    # rule is checked on a strip in a plain host.
-    host = QWidget()
-    host.resize(SEARCH_MIN_WINDOW - 1, 300)
-    bar = TitleBar(host)
-    host.show()
-    _settle(app)
-    assert not bar.search_button.isVisible()
-    host.resize(SEARCH_MIN_WINDOW, 300)
-    _settle(app)
-    assert bar.search_button.isVisible()
-    host.close()
+def test_the_title_strip_has_no_search_field(win):
+    assert not hasattr(win.title_bar, "search_button")
+    assert not win.title_bar.findChildren(SearchField)
 
 
-def test_the_field_is_client_area_not_caption(win, app):
-    bar = win.title_bar
-    bar.set_chrome_visible(True)
-    try:
+def test_each_workspace_has_a_big_search_field_in_its_own_strip(win, app):
+    assert win.search_fields() == [_field_of(win, w) for w in (
+        Workspace.ANALYSE, Workspace.MODEL, Workspace.CONSOLE)]
+    for workspace in (Workspace.ANALYSE, Workspace.MODEL, Workspace.CONSOLE):
+        win.show_workspace(workspace)
         _settle(app)
-        centre = bar.search_button.mapTo(win, bar.search_button.rect().center())
-        assert bar.region_at(win, centre) == "client"
-        # Beside it the strip is still caption.
-        assert bar.region_at(win, bar.title.mapTo(
-            win, bar.title.rect().center())) == "caption"
-    finally:
-        bar.set_chrome_visible(False)
-        _settle(app)
+        field = _field_of(win, workspace)
+        assert isinstance(field, SearchField)
+        assert field.accessibleName() == "Search"
+        assert field.isVisible(), workspace
+        assert field.height() >= FIELD_HEIGHT >= 30
+        assert "Ctrl K" in field.text() or "⌘K" in field.text()
+        assert field.width() > 100
 
 
-def test_clicking_the_field_opens_and_closes_the_palette(win, app):
-    button = win.title_bar.search_button
-    QTest.mouseClick(button, Qt.LeftButton)
+def test_the_field_wears_the_accent(win):
+    from evans.ui import theme, theme_qt
+    t = theme.tokens()
+    sheet = theme_qt.build_stylesheet(t)
+    rule = sheet[sheet.index("#WorkspaceSearch {"):]
+    rule = rule[:rule.index("}")]
+    assert f"background: {t.signal}" in rule and t.on_signal in rule
+    assert "border-radius: 0" in rule
+
+
+def test_the_analyse_field_sits_between_g_and_the_buttons(win, app):
+    bar = win._context
+    field = bar.search_button
+    assert bar._systems.x() + bar._systems.width() <= field.x() + 1
+    assert field.x() + field.width() <= bar._plant_btn.x()
+    assert field.parentWidget() is bar
+
+
+def test_the_model_field_floats_centred_over_the_canvas(win, app):
+    from evans.ui.sim.arrange import INSET, REST
+    win.show_workspace(Workspace.MODEL)
+    _settle(app)
+    sim = win._sim_tab
+    field = sim.search_button
+    canvas = sim._canvas
+    assert field.parentWidget() is canvas
+    assert field.opacity == REST < 1
+    vp = canvas.viewport().geometry()
+    assert abs((field.x() + field.width() / 2) - vp.center().x()) <= 2
+    assert field.y() == vp.top() + INSET
+    arrange = sim._arrange
+    assert field.geometry().right() < arrange.geometry().left()
+
+
+def test_the_console_field_is_between_the_tabs_and_ask_cedric(win, app):
+    win.show_workspace(Workspace.CONSOLE)
+    _settle(app)
+    panel = win._console
+    field = panel.search_button
+    assert field.parentWidget().parentWidget() is panel._tabs
+    tab_bar = panel._tabs.tabBar()
+    left = field.mapTo(win, field.rect().topLeft()).x()
+    bar_right = tab_bar.mapTo(
+        win, tab_bar.rect().topRight()).x()
+    cedric = panel.cedric_button.mapTo(win, panel.cedric_button.rect().topLeft())
+    assert bar_right <= left
+    assert left + field.width() <= cedric.x() + 1
+
+
+@pytest.mark.parametrize("workspace", [Workspace.ANALYSE, Workspace.MODEL,
+                                       Workspace.CONSOLE])
+def test_clicking_the_field_opens_the_palette(win, app, workspace):
+    win.show_workspace(workspace)
+    _settle(app)
+    field = _field_of(win, workspace)
+    QTest.mouseClick(field, Qt.LeftButton)
     _settle(app)
     assert win.search_popup().isVisible()
-    QTest.mouseClick(button, Qt.LeftButton)
+    win.search_popup().close_popup(restore_focus=False)
+
+
+def test_clicking_the_field_again_closes_the_palette(win, app):
+    field = _field_of(win, Workspace.ANALYSE)
+    popup = win.search_popup()
+    win.toggle_search()
     _settle(app)
-    assert not win.search_popup().isVisible()
+    assert popup.isVisible()
+    assert any(f is field for f in popup._ignore)
+    win.toggle_search()
+    _settle(app)
+    assert not popup.isVisible()
 
 
-def test_the_field_does_not_widen_the_window(win):
-    assert win.title_bar.search_button.minimumSizeHint().width() == 0
+def test_the_fields_do_not_widen_the_window(win):
+    for field in win.search_fields():
+        assert field.minimumSizeHint().width() == 0
 
 
 # ── the shortcut sheet ──────────────────────────────────────────

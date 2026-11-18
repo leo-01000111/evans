@@ -7,28 +7,35 @@ sets the target phase margin, and the readout says which values were asked for
 and which were achieved. When a target is impossible, the readout says why
 rather than quietly returning gains that do something else.
 
-It lives in the side panel's Design tab, where the pane grid is the display:
-the tuner has no plots of its own, and says on `changed` when the user moved
-something so the Design tab can write the controller into K₂.
+It lives in the side panel's Design tab and says on `changed` when the user
+moved something so the Design tab can write the controller into K₂. The pane
+grid is the main display; the page keeps one small plot of its own, over the
+sliders and filling the height the panel has: the closed-loop step response
+of the tuned loop, with a Step · Bode · Nichols switch (Bode and Nichols
+show the open loop). It is the panes' own renderer (a compact `LTIViewer`)
+and follows the sliders at most every `PLOT_INTERVAL_MS`.
 """
 
 from __future__ import annotations
 
 import control as ctl
 import numpy as np
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
 
+from ...core.collection import SystemCollection
 from ...core.pidtune import (
     PIDKind,
     TuneResult,
@@ -36,6 +43,7 @@ from ...core.pidtune import (
     phase_margin_for,
     tune,
 )
+from ...core.viewer import ResponseKind
 from .. import theme
 from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
@@ -44,6 +52,13 @@ from ..guard import GuardedPanel, guard
 #: physical quantities lives in :mod:`evans.core.pidtune`.
 SPEED_TICKS = 100          # −100 … +100  ⇒  speed −1 … +1
 TRANSIENT_TICKS = 100      # 0 … 100      ⇒  transient 0 … 1
+
+#: The plot follows the sliders at most this often (the Design tab's rate).
+PLOT_INTERVAL_MS = 50
+#: The plot's least height in the side panel; it takes any height beyond.
+PLOT_MIN_HEIGHT = 220
+#: The plot's views, in the order of the switch.
+PLOT_VIEWS = (ResponseKind.STEP, ResponseKind.BODE, ResponseKind.NICHOLS)
 
 
 class PIDTuner(QWidget, GuardedPanel):
@@ -69,6 +84,12 @@ class PIDTuner(QWidget, GuardedPanel):
         self._feedforward = feedforward
         self.result: TuneResult | None = None
         self._quiet = True
+        self._plot_kind = ResponseKind.STEP
+        self._plot_dirty = True
+        self._plot_timer = QTimer(self)
+        self._plot_timer.setSingleShot(True)
+        self._plot_timer.setInterval(PLOT_INTERVAL_MS)
+        self._plot_timer.timeout.connect(self._draw_plot)
         self._build_ui()
         self._kind_combo.setCurrentText(PIDKind(kind).value)
         self._quiet = False
@@ -81,6 +102,38 @@ class PIDTuner(QWidget, GuardedPanel):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(NORMAL)
         self.install_error_banner(lay)
+
+        # ── the plot, over the sliders, taking the free height ──
+        switch = QHBoxLayout()
+        switch.setContentsMargins(0, 0, 0, 0)
+        switch.setSpacing(0)
+        self._plot_group = QButtonGroup(self)
+        self._plot_group.setExclusive(True)
+        self._plot_buttons: dict[ResponseKind, QPushButton] = {}
+        for view in PLOT_VIEWS:
+            button = QPushButton(view.value)
+            button.setCheckable(True)
+            button.setAccessibleName(f"{view.value} plot")
+            button.setToolTip({
+                ResponseKind.STEP: "Closed-loop step response",
+                ResponseKind.BODE: "Bode plot of the open loop",
+                ResponseKind.NICHOLS: "Nichols chart of the open loop",
+            }[view])
+            button.clicked.connect(
+                lambda _checked=False, v=view: self.set_plot_view(v))
+            self._plot_group.addButton(button)
+            self._plot_buttons[view] = button
+            switch.addWidget(button, stretch=1)
+        self._plot_buttons[ResponseKind.STEP].setChecked(True)
+        lay.addLayout(switch)
+
+        from .lti_viewer import LTIViewer
+        self._viewer = LTIViewer(SystemCollection(), compact=True)
+        self._viewer.setAccessibleName("PID response plot")
+        self._viewer.setMinimumHeight(PLOT_MIN_HEIGHT)
+        self._viewer.setSizePolicy(QSizePolicy.Expanding,
+                                   QSizePolicy.Expanding)
+        lay.addWidget(self._viewer, stretch=1)
 
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
@@ -146,7 +199,6 @@ class PIDTuner(QWidget, GuardedPanel):
         reset.setToolTip("Both sliders back to the middle")
         reset.clicked.connect(self.reset)
         lay.addWidget(reset, alignment=Qt.AlignLeft)
-        lay.addStretch(1)
 
     # ── state ───────────────────────────────────────────────────
 
@@ -167,6 +219,46 @@ class PIDTuner(QWidget, GuardedPanel):
         finally:
             self._quiet = False
         self.retune()
+
+    # ── the plot ────────────────────────────────────────────────
+
+    @property
+    def plot_view(self) -> ResponseKind:
+        """Step, Bode or Nichols."""
+        return self._plot_kind
+
+    def set_plot_view(self, view: ResponseKind) -> None:
+        """Choose what the plot shows."""
+        if view not in PLOT_VIEWS:
+            raise ValueError(f"the PID plot does not show {view.value!r}")
+        self._plot_buttons[view].setChecked(True)
+        self._plot_kind = view
+        self._plot_dirty = True
+        self._draw_plot()
+
+    def _schedule_plot(self) -> None:
+        """Redraw at most every `PLOT_INTERVAL_MS`, and only when in sight."""
+        if self.isVisible() and not self._plot_timer.isActive():
+            self._plot_timer.start()
+
+    def _draw_plot(self) -> None:
+        result = self.result
+        if result is None or not result.feasible or not self.isVisible():
+            return
+        collection = SystemCollection()
+        if self._plot_kind is ResponseKind.STEP:
+            collection.add("Closed loop", result.T)
+        else:
+            collection.add("Open loop", result.L)
+        self._viewer.collection = collection
+        self._viewer.set_response(self._plot_kind)
+        self._viewer.refresh()
+        self._plot_dirty = False
+
+    def showEvent(self, event) -> None:              # noqa: N802 (Qt API)
+        super().showEvent(event)
+        if self._plot_dirty:
+            self._draw_plot()
 
     def _seen_plant(self) -> ctl.TransferFunction:
         """``G·H`` — the plant as the controller sees it, round the loop."""
@@ -219,6 +311,8 @@ class PIDTuner(QWidget, GuardedPanel):
                       sensor=self._sensor, feedforward=self._feedforward)
         self.result = result
         if result.feasible:
+            self._plot_dirty = True
+            self._schedule_plot()
             self._readout.setText(result.describe())
         else:
             # Not an exception: an impossible target is a legitimate answer,

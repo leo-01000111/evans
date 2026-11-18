@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
 )
 
 from .. import iconset, theme
+from ..search_field import MAX_WIDTH as SEARCH_MAX_WIDTH
+from ..search_field import SearchField
 
 #: Opacity at rest and under the mouse.
 REST, HOVER = 0.55, 1.0
@@ -108,6 +110,129 @@ class ArrangePanel(QFrame):
     def leaveEvent(self, event) -> None:         # noqa: N802 (Qt API)
         self._effect.setOpacity(REST)
         super().leaveEvent(event)
+
+
+class FloatingSearch(SearchField):
+    """
+    The search field of the Model workspace: centred at the top of the
+    canvas, semi-transparent like the arrange panel and clear of it, and at
+    full strength under the mouse.
+    """
+
+    #: Narrower than this and it is not worth showing.
+    SMALLEST = 120
+
+    def __init__(self, canvas, arrange: ArrangePanel) -> None:
+        super().__init__(canvas)
+        self._canvas = canvas
+        self._arrange = arrange
+        self._effect = QGraphicsOpacityEffect(self)
+        self._effect.setOpacity(REST)
+        self.setGraphicsEffect(self._effect)
+        self.setAttribute(Qt.WA_Hover, True)
+        self._viewport = canvas.viewport()
+        self._viewport.installEventFilter(self)
+        canvas.installEventFilter(self)
+        self.place()
+
+    @property
+    def opacity(self) -> float:
+        return self._effect.opacity()
+
+    def place(self) -> None:
+        """Centre on the canvas's visible area, between the corner panels."""
+        try:
+            vp = self._viewport.geometry()
+        except RuntimeError:                # the canvas is being destroyed
+            return
+        # The arrange panel is in the right corner; keep the same room on
+        # the left so the field stays centred without touching it.
+        side = self._arrange.width() + 2 * INSET
+        room = vp.width() - 2 * side
+        width = min(SEARCH_MAX_WIDTH, self.maximumWidth(), room)
+        self.setVisible(width >= self.SMALLEST)
+        if width < self.SMALLEST:
+            return
+        self.setFixedWidth(width)
+        self.move(vp.left() + (vp.width() - width) // 2, vp.top() + INSET)
+        self.raise_()
+
+    def eventFilter(self, obj, event) -> bool:     # noqa: N802 (Qt API)
+        if event.type() in (QEvent.Resize, QEvent.Show) and \
+                (obj is self._viewport or obj is self._canvas):
+            self.place()
+        return False
+
+    def enterEvent(self, event) -> None:         # noqa: N802 (Qt API)
+        self._effect.setOpacity(HOVER)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:         # noqa: N802 (Qt API)
+        self._effect.setOpacity(REST)
+        super().leaveEvent(event)
+
+
+#: The vertical tab's width: narrow, one letter wide.
+WIDTH = 28
+
+#: One letter under another: the label of the closed side panel's tab.
+TAB_LABEL = "\n".join("\u2039PROPERTIES")
+
+
+class PropertiesTab(QToolButton):
+    """
+    The narrow vertical tab at the canvas's right edge, under the arrange
+    panel, while the Model side panel is closed. It opens the panel on
+    Properties. Flat, in the design system's frame.
+    """
+
+    def __init__(self, canvas, arrange: ArrangePanel) -> None:
+        super().__init__(canvas)
+        self.setObjectName("PropertiesTab")
+        self._canvas = canvas
+        self._arrange = arrange
+        self.setText(TAB_LABEL)
+        self.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.setToolTip("Show the Properties side panel")
+        self.setAccessibleName("Show properties")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setProperty("_hp_font", True)
+        self.setFont(theme.sign_font(7.5))
+        self._restyle()
+        theme.notifier().changed.connect(self._restyle)
+        self._viewport = canvas.viewport()
+        self._viewport.installEventFilter(self)
+        canvas.installEventFilter(self)
+        self.setFixedWidth(WIDTH)
+        self.adjustSize()
+        self.place()
+        self.hide()
+
+    def _restyle(self, *_ignored) -> None:
+        t = theme.tokens()
+        self.setStyleSheet(
+            f"#PropertiesTab {{ background: {t.surface}; color: {t.ink};"
+            f" border: 2px solid {t.frame}; border-right: none;"
+            f" border-radius: 0; padding: 6px 1px; }}"
+            f"#PropertiesTab:hover {{ background: {t.plate};"
+            f" color: {t.on_plate}; }}")
+
+    def place(self) -> None:
+        """Right edge of the visible area, below the arrange panel."""
+        try:
+            vp = self._viewport.geometry()
+        except RuntimeError:                # the canvas is being destroyed
+            return
+        top = self._arrange.y() + self._arrange.height() + INSET
+        self.move(vp.right() - self.width() + 1, top)
+        self.raise_()
+
+    def eventFilter(self, obj, event) -> bool:     # noqa: N802 (Qt API)
+        if event.type() in (QEvent.Resize, QEvent.Show) and \
+                (obj is self._viewport or obj is self._canvas):
+            self.place()
+        return False
 
 
 def hidden_actions(bar: QWidget) -> list[str]:

@@ -428,9 +428,11 @@ def test_the_context_bar_holds_only_the_loop_and_two_buttons(win):
 
     bar = win._context
     buttons = {b.accessibleName() for b in bar.findChildren(QAbstractButton)}
-    assert buttons == {"Plant", "Edit loop"}
+    # R6b added the search field and the Design button.
+    assert buttons == {"Plant", "Edit loop", "Design", "Search"}
     assert not bar.findChildren(type(win._loop_status._badge))
     assert bar._plant_btn.x() < bar._edit_btn.x()       # Plant is left of Edit loop
+    assert bar._edit_btn.x() < bar._design_btn.x()      # Design beside it
 
 
 def test_a_short_loop_is_one_line_at_1280(app, win):

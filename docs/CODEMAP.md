@@ -21,7 +21,7 @@ them (grep, go-to-definition), don't read them whole.**
 | `evans.help` | help pages, one Markdown file per command in `help/pages/` | `__init__.py` |
 | `evans.examples` | sample `.evx` models (rebuilt by `tools/build_examples.py`) | `__init__.py` |
 | `evans.assistant` | Cedric's OpenRouter client and prompt protocol, Qt-free | `client.py`, `protocol.py` |
-| `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave; `side_panel.py` is each workspace's right-hand tabbed panel (`SidePanel`); `design_panel.py` is the Analyse panel's Design tab (Gain · Compensator · PID, live apply to K₂); `preferences.py` is the Preferences dialog (`preferences_dialog(window)`; theme, title bar, block boxes, snapshot bar, autosave, updates, startup, scope); `panes.py` the pane grid (`PaneGrid.active_index`) and each plot pane's Compare menu; `search.py` the command palette's Qt-free matching and order (`Entry`, `score`, `rank`), `search_registry.py` what it lists (`collect(window)`), `search_popup.py` the popup, `shortcuts.py` the Help ▸ Keyboard shortcuts sheet (also the source of `help/pages/shortcuts.md`) | `mainwindow.py` |
+| `evans.ui` | the window and app-wide pieces: menus, theme, settings, updater, autosave; `side_panel.py` is each workspace's right-hand tabbed panel (`SidePanel`); `design_panel.py` is the Analyse panel's Design tab (Gain · Compensator · PID, live apply to K₂); `preferences.py` is the Preferences dialog (`preferences_dialog(window)`; theme, title bar, block boxes, snapshot bar, autosave, updates, startup, scope); `panes.py` the pane grid (`PaneGrid.active_index`) and each plot pane's Compare menu; `search_field.py` the accent-coloured search button each workspace shows (Analyse context bar, Model canvas overlay, Console tab row), `search.py` the command palette's Qt-free matching and order (`Entry`, `score`, `rank`), `search_registry.py` what it lists (`collect(window)`), `search_popup.py` the popup, `shortcuts.py` the Help ▸ Keyboard shortcuts sheet (also the source of `help/pages/shortcuts.md`) | `mainwindow.py` |
 | `evans.ui.console` | command window, workspace, script editor, live editor, figures | `console_dock.py` |
 | `evans.ui.code` | code editing: highlighting, completion popup, hover/Ctrl+click | `editor.py`, `completion.py` |
 | `evans.ui.sim` | the Model tab: canvas, palette, inspector, scope, run toolbar; `quick_insert.py` is the popup that adds a block by name (double-click, typing, a wire dropped on empty canvas); `scope_window.py` holds `ScopeView`, which is a Scope block's plot as a window (`ScopeWindow`) or a side-panel tab (`SimTab.dock_scope`) | `sim_tab.py`, `canvas.py` |
@@ -63,7 +63,7 @@ them (grep, go-to-definition), don't read them whole.**
 - **Design and compare** (`sisotool`, `pidtuner`, `ltiview`): `ui/design_panel.py` writes K₂
   through `MainWindow.change_loop`; `MainWindow.open_app` routes the console commands;
   tests in `tests/golden/test_apps_ui.py`.
-- **The command palette** (Ctrl+K, Ctrl+Shift+P, the title-strip field): the window's
+- **The command palette** (Ctrl+K, Ctrl+Shift+P, and the search field in each workspace's top strip: `ui/search_field.py`, `MainWindow.search_fields()`): the window's
   `show_search`; ranking in `ui/search.py` (tests: `tests/test_search.py`, Qt-free), the entry
   list in `ui/search_registry.py`, the popup in `ui/search_popup.py`; a menu action reaches
   it by itself, a workspace-specific one needs `action.setProperty("workspace", ...)` in

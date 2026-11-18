@@ -1093,7 +1093,7 @@ Each of these is a project of its own. Decide whether each is in scope before st
 - [ ] **An extension mechanism:** user toolboxes on the path, and a place to share
       them. **L**
 
-## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 7 of 10 packages done**
+## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 7 of 10 packages done, plus R6b**
 
 Planned 2026-11-16 from a UI audit (research into comparable tools, a code inventory
 and offscreen renders of every workspace) and two rounds of decisions with Leon. It
@@ -1985,7 +1985,7 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
   with the mouse outside the canvas (opens at the centre), and docking a scope with
   curves on screen, then dragging the panel wider.
 
-- [ ] **R6b — Fixes from Leon's review of R2–R5 (2026-11-18).** *sonnet.* **M**
+- [x] **R6b — Fixes from Leon's review of R2–R5 (2026-11-18).** *sonnet.* **M**
   Leon ran R5's build. Search, the menus, Plant, the lamp and margins, the side
   panels and Cedric were approved. These five things were not:
   - **The search field is invisible.** The title-strip button (`TitleBar.search_button`)
@@ -2031,6 +2031,29 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
   plot follows a slider change; single selection reopens Properties, multiple
   selection does not; the vertical tab shows only while the panel is closed. Leon
   checks the result by eye.
+  *Done 2026-11-18:* `ui/search_field.py` (`SearchField`: a 32 px button in the signal
+  yellow with a 2 px frame, `#WorkspaceSearch` in `theme_qt.py`) is in the context bar
+  (`ContextBar.search_button`, between G/K₂ and *Plant*), floating over the canvas
+  (`sim/arrange.py` `FloatingSearch`, centred, 55 % opaque, clear of the arrange panel)
+  and in the Console's tab-row corner beside *Ask Cedric* (240 px there, 360 px at most
+  elsewhere). `MainWindow.search_fields()` lists the three; each toggles the palette and
+  is ignored by its outside-click rule. The title strip lost the button, its constants
+  and the `region_at` case. *Design* button in the context bar; **Edit loop and Design
+  both toggle** (close the Analyse panel when it already shows that tab:
+  `toggle_loop_editor`, `toggle_design`; `show_*` still only open, for the console
+  commands). The designer's locus and the PID page's plot take the free height (minimum
+  220 px, no stretch spacer below, the Gain/Compensator stack is only as tall as the view
+  in sight). The PID plot is a compact `LTIViewer` (the panes' renderer): Step shows the
+  closed loop T, Bode and Nichols show the open loop L, redrawn at most every 50 ms and
+  only while in sight; an infeasible target leaves the last plot, as it leaves K₂. The
+  Loop tab's diagram stretches (150 px minimum, cap gone), the editor keeps its natural
+  height. Model: one selected block reopens a closed panel on Properties (not several,
+  not while `rubberBandRect()` is set); `PropertiesTab` is the 28 px vertical tab
+  (`‹PROPERTIES`, one letter per line), shown only while the panel is closed, under the
+  arrange panel at the right edge. A docked scope tab lives inside the panel, so the
+  tab (shown only while it is closed) cannot meet one. Check by eye: the yellow field
+  in both themes, the context bar at 1280 px with the panel open (the field shrinks
+  first), the vertical tab on a short canvas.
 
 - [ ] **R7 — Projects as folders.** *opus for the core and the decisions, sonnet for
   the rest.* **L** Needs R4.

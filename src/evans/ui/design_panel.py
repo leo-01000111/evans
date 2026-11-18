@@ -124,7 +124,7 @@ class DesignPanel(QWidget):
         self._stack = QStackedWidget()
         self._designer: ControlSystemDesigner | None = None
         self._tuner: PIDTuner | None = None
-        column.addWidget(self._stack)
+        column.addWidget(self._stack, stretch=1)
 
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
@@ -137,7 +137,6 @@ class DesignPanel(QWidget):
         bottom.addWidget(self._reset_btn)
         bottom.addStretch(1)
         column.addLayout(bottom)
-        column.addStretch(1)
 
         self._mode = "gain"
         self._mode_buttons["gain"].setChecked(True)

@@ -29,7 +29,9 @@ from evans.core.designer import closed_loop_poles
 from evans.core.session import session_dict
 from evans.core.tf_utils import second_order, unity
 from evans.core.viewer import CHARACTERISTICS, ResponseKind
+from evans.ui.apps.designer_app import LOCUS_HEIGHT
 from evans.ui.apps.lti_viewer import LTIViewer
+from evans.ui.apps.pid_tuner import PLOT_MIN_HEIGHT, PLOT_VIEWS
 from evans.ui.design_panel import APPLY_INTERVAL_MS
 from evans.ui.guard import ErrorBanner
 from evans.ui.mainwindow import MainWindow
@@ -83,6 +85,7 @@ def reset(request, app):
     tuner._tf_spin.setValue(0.0)
     tuner._quiet = False
     tuner.set_kind("PI")
+    tuner.set_plot_view(ResponseKind.STEP)
     for block, tf in (("G", PLANT), ("K1", unity()), ("K2", unity()),
                       ("H", unity())):
         window._arch.set_block(block, tf)
@@ -371,7 +374,7 @@ def test_gain_and_compensator_are_two_views_of_one_designer(app, win):
 def test_the_designer_keeps_its_locus_inside_the_panel(app, win):
     designer = _designer(app, win)
     panel = designer._locus_widget
-    assert panel.height() == 220
+    assert panel.height() >= LOCUS_HEIGHT == 220
     assert panel.getPlotItem().boundingRect().width() <= \
         panel.sceneRect().width() + 1, "the locus is wider than its panel"
 
@@ -746,3 +749,147 @@ def test_the_design_tab_leaves_the_minimum_size_alone(app, win):
         hint = win.minimumSizeHint()
         assert hint.width() <= with_loop.width(), (mode, hint, with_loop)
         assert hint.height() <= with_loop.height(), (mode, hint, with_loop)
+
+
+# ──────────────────────────────────────────────────────────────
+#  R6b: the Design and Loop tabs use the panel's height; Design button
+# ──────────────────────────────────────────────────────────────
+
+def _bottom_in(widget, ancestor) -> int:
+    return widget.mapTo(ancestor, widget.rect().bottomLeft()).y() + 1
+
+
+@pytest.mark.parametrize("mode", ["gain", "compensator", "pid"])
+def test_the_design_page_has_no_empty_space_below_its_content(app, win, mode):
+    design = win.show_design(mode)
+    _settle(app, 10)
+    if mode == "pid":
+        plot, last = design.tuner._viewer, design.tuner._readout
+        page = design.tuner
+    else:
+        plot, last = design.designer._locus_widget, design.designer._readout
+        page = design.designer
+    # The plot took the free height: more than its minimum.
+    assert plot.height() > max(LOCUS_HEIGHT, PLOT_MIN_HEIGHT), mode
+    # The last of the page's content reaches the page's bottom edge.
+    assert _bottom_in(last if mode != "pid" else design.tuner._readout, page)         >= page.height() - 60, mode
+    # And the Reset row is at the bottom of the whole tab.
+    assert _bottom_in(design._reset_btn, design) >= design.height() - 2
+    assert page.height() + design._reset_btn.height() <= design.height() + 40
+
+
+def test_the_pid_page_has_no_stretch_below_its_last_button(app, win):
+    design = win.show_design("pid")
+    _settle(app, 10)
+    tuner = design.tuner
+    reset = [b for b in tuner.findChildren(type(design._reset_btn))
+             if b.text() == "Reset sliders"][0]
+    assert _bottom_in(reset, tuner) >= tuner.height() - 1
+
+
+def test_the_plot_keeps_its_minimum_when_the_panel_is_short(app, win):
+    design = win.show_design("gain")
+    _settle(app, 5)
+    assert design.designer._locus_widget.minimumHeight() == LOCUS_HEIGHT
+    win.show_design("pid")
+    assert design.tuner._viewer.minimumHeight() == PLOT_MIN_HEIGHT
+
+
+def test_the_loop_tab_gives_the_spare_height_to_the_diagram(app, win):
+    win.show_loop_editor()
+    _settle(app, 10)
+    diagram, editor = win._diagram, win._editor
+    assert diagram.minimumHeight() == 150
+    assert diagram.maximumHeight() > 260              # the cap is gone
+    assert diagram.height() > 260
+    holder = win.side_panel_of(Workspace.ANALYSE).holder("loop")
+    # The editor is at its natural height, at the bottom of the tab.
+    assert editor.height() <= editor.sizeHint().height() + 2
+    assert _bottom_in(editor, holder) >= holder.height() - 2 * 8
+
+
+def test_the_design_button_opens_the_panel_on_design_and_closes_it(app, win):
+    side = win.side_panel_of(Workspace.ANALYSE)
+    button = win._context._design_btn
+    assert button.text() == "Design" and button.accessibleName() == "Design"
+    assert button.x() > win._context._edit_btn.x()    # beside Edit loop
+    assert not side.is_open
+    QTest.mouseClick(button, Qt.LeftButton)
+    _settle(app, 5)
+    assert side.is_open and side.current == "design"
+    QTest.mouseClick(button, Qt.LeftButton)
+    _settle(app, 5)
+    assert not side.is_open
+
+
+def test_the_design_button_switches_from_another_tab(app, win):
+    side = win.side_panel_of(Workspace.ANALYSE)
+    win.show_loop_editor()
+    assert side.current == "loop"
+    win._context._design_btn.click()
+    _settle(app, 5)
+    assert side.is_open and side.current == "design"
+
+
+def test_edit_loop_closes_the_panel_when_already_on_loop(app, win):
+    side = win.side_panel_of(Workspace.ANALYSE)
+    win._context._edit_btn.click()
+    assert side.is_open and side.current == "loop"
+    win._context._edit_btn.click()
+    assert not side.is_open
+
+
+# ──────────────────────────────────────────────────────────────
+#  R6b: the PID page's own plot
+# ──────────────────────────────────────────────────────────────
+
+def test_the_pid_plot_defaults_to_the_closed_loop_step(app, win):
+    tuner = _tuner(app, win)
+    _wait(app, APPLY_INTERVAL_MS * 2)
+    assert tuner.plot_view is ResponseKind.STEP
+    assert [b.text() for b in tuner._plot_buttons.values()] ==         ["Step", "Bode", "Nichols"]
+    assert tuner._plot_buttons[ResponseKind.STEP].isChecked()
+    names = [e.name for e in tuner._viewer.collection]
+    assert names == ["Closed loop"]
+    assert tuner._viewer._kind is ResponseKind.STEP
+    _banners_clean(tuner)
+
+
+def test_the_pid_plot_switches_between_step_bode_and_nichols(app, win):
+    tuner = _tuner(app, win)
+    for view in PLOT_VIEWS:
+        tuner._plot_buttons[view].click()
+        _settle(app, 5)
+        assert tuner.plot_view is view
+        assert tuner._viewer._kind is view
+        assert tuner._plot_buttons[view].isChecked()
+        _banners_clean(tuner)
+    assert [e.name for e in tuner._viewer.collection] == ["Open loop"]
+
+
+def test_the_pid_plot_follows_a_slider(app, win):
+    tuner = _tuner(app, win)
+    _wait(app, APPLY_INTERVAL_MS * 2)
+    shown = lambda: list(tuner._viewer.collection)[0].system   # noqa: E731
+    before = shown()
+    assert before is tuner.result.T
+    tuner._speed.setValue(4)                    # a feasible, faster target
+    assert tuner.result.feasible
+    _wait(app, APPLY_INTERVAL_MS * 3)
+    assert shown() is tuner.result.T and shown() is not before
+
+
+def test_the_pid_plot_is_throttled_like_the_rest_of_the_tab(app, win):
+    tuner = _tuner(app, win)
+    _wait(app, APPLY_INTERVAL_MS * 2)
+    draws = []
+    real = tuner._viewer.refresh
+    tuner._viewer.refresh = lambda *a: (draws.append(1), real(*a))[1]
+    try:
+        for ticks in range(-8, 4):
+            tuner._speed.setValue(ticks)        # twelve moves, back to back
+        assert len(draws) <= 1
+        _wait(app, APPLY_INTERVAL_MS * 3)
+        assert 1 <= len(draws) <= 3
+    finally:
+        del tuner._viewer.refresh

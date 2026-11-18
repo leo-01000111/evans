@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QSlider,
     QStackedWidget,
     QVBoxLayout,
@@ -59,7 +60,8 @@ from ..plots import (
 #: often. A throttle, not a debounce: a steady drag still updates.
 DRAG_INTERVAL_MS = 50
 
-#: The locus's height in the side panel: the drag surface, not a display.
+#: The locus's least height in the side panel. It is the drag surface, so it
+#: takes whatever height the panel has beyond what the controls need.
 LOCUS_HEIGHT = 220
 
 #: The two views of the designer, as the Design tab names them.
@@ -107,9 +109,11 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         self.install_error_banner(outer)
 
         self._locus_widget = make_plot("Root locus", "Re", "Im")
-        self._locus_widget.setFixedHeight(LOCUS_HEIGHT)
+        self._locus_widget.setMinimumHeight(LOCUS_HEIGHT)
+        self._locus_widget.setSizePolicy(QSizePolicy.Expanding,
+                                         QSizePolicy.Expanding)
         self._locus_widget.setAccessibleName("Root locus")
-        outer.addWidget(self._locus_widget)
+        outer.addWidget(self._locus_widget, stretch=1)
 
         self._rays_check = QCheckBox("Show constant-ζ rays")
         self._rays_check.setChecked(True)
@@ -122,6 +126,8 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         self._views = QStackedWidget()
         self._views.addWidget(self._build_gain_controls())
         self._views.addWidget(self._build_compensator_controls())
+        self._views.currentChanged.connect(self._size_to_current_view)
+        self._size_to_current_view()
         outer.addWidget(self._views)
 
         self._readout = QLabel()
@@ -131,7 +137,21 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
         self._readout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self._readout.setAccessibleName("Design readout")
         outer.addWidget(self._readout)
-        outer.addStretch(1)
+
+    def _size_to_current_view(self, *_ignored) -> None:
+        """
+        Only the page in view counts towards the stack's height: a
+        ``QStackedWidget`` is as tall as its tallest page, which left the
+        shorter view with empty space under it.
+        """
+        current = self._views.currentWidget()
+        for index in range(self._views.count()):
+            page = self._views.widget(index)
+            page.setSizePolicy(
+                QSizePolicy.Preferred,
+                QSizePolicy.Preferred if page is current
+                else QSizePolicy.Ignored)
+        self._views.updateGeometry()
 
     def _build_gain_controls(self) -> QWidget:
         page = QWidget()

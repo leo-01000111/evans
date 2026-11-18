@@ -61,7 +61,7 @@ from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
 from ..side_panel import SidePanel
 from ..unsaved import ask_to_save, marked
-from .arrange import ArrangePanel, hidden_actions
+from .arrange import ArrangePanel, FloatingSearch, PropertiesTab, hidden_actions
 from .canvas import SimCanvas
 from .inspector import BlockInspector
 from .palette import STRIP_WIDTH, PaletteDock
@@ -196,6 +196,10 @@ class SimTab(QWidget, GuardedPanel):
         centre.addWidget(self._canvas)
         self._arrange = ArrangePanel(self._canvas, self._align,
                                      self._distribute)
+        #: The search field, centred at the top of the canvas.
+        self._search = FloatingSearch(self._canvas, self._arrange)
+        #: The vertical tab that brings the closed side panel back.
+        self._properties_tab = PropertiesTab(self._canvas, self._arrange)
         # The global scope: every logged signal, folded away behind a button
         # until asked for. A Scope block's own window (double-click it) is
         # the usual way to look at a run.
@@ -236,6 +240,9 @@ class SimTab(QWidget, GuardedPanel):
         properties.layout().addWidget(self._global_button,
                                       alignment=Qt.AlignLeft)
         splitter.addWidget(self.side_panel)
+        self._properties_tab.clicked.connect(self.show_properties)
+        self.side_panel.toggled.connect(self._sync_properties_tab)
+        self._sync_properties_tab()
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
         splitter.setCollapsible(2, False)
@@ -762,6 +769,31 @@ class SimTab(QWidget, GuardedPanel):
 
     def _on_block_selected(self, item) -> None:
         self._inspector.show_block(item.block if item is not None else None)
+        # One block picked: bring its properties back if the panel was
+        # closed. Not for several, and not while a rubber band is being
+        # dragged (the selection passes through one block on the way).
+        if (item is not None and not self.side_panel.is_open
+                and self._canvas.rubberBandRect().isNull()):
+            self.show_properties()
+
+    @property
+    def search_button(self):
+        """The search field over the canvas."""
+        return self._search
+
+    @property
+    def properties_tab(self):
+        """The vertical tab shown while the side panel is closed."""
+        return self._properties_tab
+
+    def show_properties(self) -> None:
+        """Open the side panel on Properties."""
+        self.side_panel.set_current("properties")
+        self.side_panel.set_open(True)
+
+    def _sync_properties_tab(self, *_ignored) -> None:
+        self._properties_tab.setVisible(not self.side_panel.is_open)
+        self._properties_tab.place()
 
     def _apply_params(self, block_id: str, changes: dict) -> None:
         """Route the inspector's edit through the canvas's undo stack."""
