@@ -9,6 +9,15 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.29.0 - 2026-11-19
+
+### Added
+
+- `mtune(G, M)`: the proportional gain that makes the Nichols curve of `K*G`
+  tangent to the closed-loop M dB contour, i.e. the peak of the complementary
+  sensitivity is exactly M. `mtune(G, M, 'abs')` takes a linear magnitude.
+  `C.tuning` holds the gain, the achieved peak and the frequency of tangency.
+
 ## 0.28.1 - 2026-11-19
 
 The 0.28.0 release, published. 0.28.0 was tagged but never published: three

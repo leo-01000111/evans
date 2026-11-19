@@ -32,7 +32,7 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 ## Design
 
-[place](place) · [acker](acker) · [lqr](lqr) · [lqi](lqi) · [lqe](lqe) · [kalman](kalman) · [estim](estim) · [zn](zn)
+[place](place) · [acker](acker) · [lqr](lqr) · [lqi](lqi) · [lqe](lqe) · [kalman](kalman) · [estim](estim) · [zn](zn) · [mtune](mtune)
 
 ## Discrete
 

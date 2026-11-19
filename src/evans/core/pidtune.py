@@ -434,3 +434,85 @@ def tune_by_sliders(G: ctl.TransferFunction, kind: PIDKind | str = PIDKind.PI,
     pm = phase_margin_for(transient)
     return tune(G, kind, wc=crossover_for(G, speed, pm, kind),
                 pm_deg=pm, Tf=Tf)
+
+
+# ──────────────────────────────────────────────────────────────
+#  P gain from an M-contour (Nichols tangency)
+# ──────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class PeakTuneResult:
+    """The gain that makes ``K·G`` touch the closed-loop ``|T| = M`` contour."""
+    K: float
+    peak: float          # achieved max |T|, linear
+    peak_db: float
+    omega_peak: float    # where the Nichols curve touches the contour
+
+
+def _closed_loop_stable(num: np.ndarray, den: np.ndarray, K: float) -> bool:
+    n = max(len(num), len(den))
+    poly = np.pad(den, (n - len(den), 0)) + K * np.pad(num, (n - len(num), 0))
+    poly = np.trim_zeros(poly, "f")
+    return len(poly) < 2 or bool(np.all(np.roots(poly).real < 0))
+
+
+def tune_p_for_peak(G: ctl.TransferFunction, M: float,
+                    n_omega: int = 4000) -> PeakTuneResult:
+    """
+    The proportional gain ``K`` at which the Nichols curve of ``K·G`` is
+    tangent to the ``|T| = M`` contour (``M`` linear, > 0).
+
+    ``max|KG/(1+KG)|`` grows with ``K`` over the stable range, so the answer
+    is the largest stable ``K`` whose peak is still ``M``: scan ``K`` upward
+    until the peak passes ``M`` (or the loop goes unstable), then bisect.
+    Raises ``ValueError`` when no gain does it, e.g. an integrating plant has
+    ``|T(0)| = 1`` already, so a contour below 0 dB is never reached.
+    """
+    from .freqresp import _auto_omega
+    if M <= 0:
+        raise ValueError("M must be positive")
+    num = np.atleast_1d(np.squeeze(G.num[0][0])).astype(float)
+    den = np.atleast_1d(np.squeeze(G.den[0][0])).astype(float)
+    if M < 1.0 and abs(den[-1]) < 1e-12:
+        raise ValueError(
+            f"no P gain puts the Nichols curve on the {20*np.log10(M):.3g} dB "
+            "contour: an integrator has |T| = 0 dB at DC for every gain.")
+    omega = _auto_omega(G, min_pts=n_omega)
+    mag, phase = response(G, omega)
+    g = mag * np.exp(1j * phase)
+
+    def peak(K: float) -> tuple[float, float]:
+        L = K * g
+        T = np.abs(L / (1.0 + L))
+        i = int(np.nanargmax(T))
+        return float(T[i]), float(omega[i])
+
+    def ok(K: float) -> bool:
+        return _closed_loop_stable(num, den, K) and peak(K)[0] <= M
+
+    scale = 1.0 / float(np.max(mag))
+    grid = scale * np.logspace(-6, 8, 1500)
+    if not ok(grid[0]):
+        raise ValueError(
+            f"no P gain puts the Nichols curve on the {20*np.log10(M):.3g} dB "
+            "contour: the loop already peaks above it at the lowest gain "
+            "(an integrator gives 0 dB at DC, for example).")
+    lo = grid[0]
+    hi = None
+    for K in grid[1:]:
+        if ok(K):
+            lo = K
+        else:
+            hi = K
+            break
+    if hi is None:
+        raise ValueError("the closed-loop peak never reaches that contour "
+                         "for any stable gain, so P control cannot touch it.")
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        if ok(mid):
+            lo = mid
+        else:
+            hi = mid
+    pk, w = peak(lo)
+    return PeakTuneResult(K=lo, peak=pk, peak_db=20 * np.log10(pk), omega_peak=w)

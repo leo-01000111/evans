@@ -905,6 +905,20 @@ def pidtune(sys, kind: str = "PI", wc: float | None = None,
     return controller
 
 
+def mtune(sys, M: float, unit: str = "dB"):
+    """
+    P gain that makes the Nichols curve tangent to the closed-loop M-contour:
+    ``K = mtune(G, 2.3)`` (M in dB, as the contours are labelled), or
+    ``mtune(G, 1.3, 'abs')`` for a linear |T| peak.
+    """
+    from ..core.pidtune import tune_p_for_peak
+    lin = float(M) if unit.lower() in ("abs", "lin", "linear")         else 10 ** (float(M) / 20)
+    result = tune_p_for_peak(sys, lin)
+    controller = ctl.tf([result.K], [1])
+    controller.tuning = result
+    return controller
+
+
 def ltiview(*systems, **named):
     """
     Compare systems in a plot pane: ``ltiview(G, T)`` or
@@ -975,7 +989,7 @@ _GROUPS: dict[str, tuple[str, ...]] = {
     "State space": ("ctrb", "obsv", "gram", "hsvd", "balred", "canon",
                     "isctrb", "isobsv"),
     "Design": ("place", "acker", "lqr", "lqi", "lqe", "kalman", "estim",
-               "zn"),
+               "zn", "mtune"),
     "Discrete": ("c2d", "d2c", "deadbeat"),
     "Simulink": ("sim", "linearize"),
     "Apps": ("pidtune", "ltiview", "sisotool", "pidtuner"),

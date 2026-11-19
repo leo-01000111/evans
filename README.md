@@ -128,7 +128,7 @@ the left half-plane, G_allpass = ñ⁺/ñ⁻ carries all the extra phase lag at 
 
 ### Command window
 
-Sixty MATLAB-shaped commands in ten groups (`tf`, `feedback`, `step`, `bode`, `margin`,
+Sixty-one MATLAB-shaped commands in ten groups (`tf`, `feedback`, `step`, `bode`, `margin`,
 `stepinfo`, `rlocus`, `lqr`, `place`, `c2d`, `pidtune` and more), with a workspace browser,
 history, tab completion and a script editor. `s` is the Laplace variable, so
 `G = 1/(s^2 + 2*s + 1)` works. The console shares live references with the GUI: setting

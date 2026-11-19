@@ -67,6 +67,7 @@ lqe(A, G, C, Q, R)          | Kalman estimator gain: [L, P, e]
 kalman(sys, Qn, Rn)         | Kalman filter
 estim(sys, L)               | Observer from an estimator gain
 zn(sys, type)               | Ziegler-Nichols PID tuning
+mtune(sys, M)               | P gain tangent to the M dB Nichols contour
 c2d(sys, Ts, method)        | Continuous to discrete time
 d2c(sys, method)            | Discrete to continuous time
 deadbeat(sys)               | Deadbeat controller

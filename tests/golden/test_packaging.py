@@ -312,8 +312,8 @@ def test_the_readme_counts_match_the_code():
                                                          str(len(PANE_KINDS)))
     placed = [c for c in block_types().values() if not c.hidden]
     assert len(placed) == 79 and "Seventy-nine block types" in text
-    assert sum(len(v) for v in _GROUPS.values()) == 60
-    assert "Sixty MATLAB-shaped commands in ten groups" in text
+    assert sum(len(v) for v in _GROUPS.values()) == 61
+    assert "Sixty-one MATLAB-shaped commands in ten groups" in text
     assert len(_GROUPS) == 10
 
 
