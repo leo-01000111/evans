@@ -50,7 +50,9 @@ def test_the_rail_foot_says_what_it_does(app):
     rail = NavigationRail()
     assert rail.cedric.accessibleName() == "Cedric"
     assert "Ask Cedric" in rail.cedric.toolTip()
-    assert "Shift+A" in rail.cedric.toolTip()
+    from evans.ui import keys
+    # Through keys.label, as the tooltip is: a Mac shows the command-key form.
+    assert keys.label("Ctrl+Shift+A") in rail.cedric.toolTip()
     assert rail.docs.text() == "Docs"
     assert rail.docs.toolTip() == "Documentation (F1)"
     assert rail.docs.accessibleName()

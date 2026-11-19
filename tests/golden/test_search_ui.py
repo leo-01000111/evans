@@ -718,8 +718,12 @@ def test_the_documentation_carries_the_same_sheet(win):
     page = pages.load("shortcuts")
     assert page is not None and "shortcuts" in pages.GUIDES
     text = open(pages.path("shortcuts"), encoding="utf-8").read()
+    from evans.ui import keys
+    # The page is written in Ctrl+ notation; entries carry this platform's
+    # (a Mac's command-key form), so compare in this platform's notation.
+    shown = keys.label(text)
     for entry in collect(win, for_sheet=True):
         if entry.shortcut:
-            assert entry.shortcut in text, entry.id
+            assert entry.shortcut in shown, entry.id
     for _where, key, what in EXTRA_KEYS:
         assert f"- {key}: {what}" in text
