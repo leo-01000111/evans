@@ -428,8 +428,9 @@ def test_the_context_bar_holds_only_the_loop_and_two_buttons(win):
 
     bar = win._context
     buttons = {b.accessibleName() for b in bar.findChildren(QAbstractButton)}
-    # R6b added the search field and the Design button.
-    assert buttons == {"Plant", "Edit loop", "Design", "Search"}
+    # R6b added the Design button; R6c took the search field out again (it
+    # lives in the title strip).
+    assert buttons == {"Plant", "Edit loop", "Design"}
     assert not bar.findChildren(type(win._loop_status._badge))
     assert bar._plant_btn.x() < bar._edit_btn.x()       # Plant is left of Edit loop
     assert bar._edit_btn.x() < bar._design_btn.x()      # Design beside it

@@ -133,4 +133,3 @@ def test_the_vertical_tab_sits_at_the_right_edge_under_the_arrange_panel(tab, ap
     assert vtab.y() >= arrange.y() + arrange.height() + INSET - 1
     assert vtab.geometry().right() >= vp.right() - 1
     assert not vtab.geometry().intersects(arrange.geometry())
-    assert not vtab.geometry().intersects(tab.search_button.geometry())

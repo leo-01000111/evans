@@ -282,6 +282,39 @@ def test_a_scope_window_has_a_dock_button(tab):
     assert button.accessibleName() == "Dock scope"
 
 
+def test_the_dock_button_shares_the_export_row(tab):
+    _run(tab)
+    window = tab.open_scope_window("out")
+    window.show()
+    QApplication.processEvents()
+    view = window.view
+    export = view.scope._export
+    dock = view.dock_button
+    assert view.message() == ""
+    assert dock.parentWidget() is export.parentWidget() or         view.scope.isAncestorOf(dock)
+    top = lambda w: w.mapTo(view, w.rect().topLeft()).y()   # noqa: E731
+    centre = lambda w: top(w) + w.height() // 2             # noqa: E731
+    assert abs(centre(dock) - centre(export)) <= 3          # one row
+    assert dock.mapTo(view, dock.rect().topLeft()).x()         >= export.mapTo(view, export.rect().topLeft()).x() + export.width()
+    # No row of its own above the plot: the toolbar is the first thing.
+    assert top(export) < 40
+    window.close()
+
+
+def test_the_dock_button_is_reachable_before_a_run_too(tab):
+    window = tab.open_scope_window("out")
+    window.show()
+    QApplication.processEvents()
+    view = window.view
+    assert view.message() != ""
+    assert view.dock_button.isVisible()
+    _run(tab)
+    QApplication.processEvents()          # the layout shows what it moved
+    assert view.message() == ""
+    assert view.dock_button.isVisible()
+    window.close()
+
+
 def test_dock_moves_the_same_widget_into_the_side_panel(tab):
     _run(tab)
     window = tab.open_scope_window("out")

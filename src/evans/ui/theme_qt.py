@@ -289,10 +289,6 @@ QMenuBar::item:selected, QMenuBar::item:pressed {{
 #TitleBar {{ background: {t.ground}; border-bottom: 1px solid {t.rule}; }}
 #TitleBar QMenuBar {{ background: transparent; border: none; }}
 #TitleBarTitle {{ color: {t.ink_muted}; padding-left: {theme.SPACE_3}px; }}
-#WorkspaceSearch {{ background: {t.signal}; color: {t.on_signal};
-    border: 2px solid {t.frame}; border-radius: 0; text-align: left;
-    padding: 0 {theme.SPACE_3}px; }}
-#WorkspaceSearch:hover {{ background: {t.plate}; color: {t.on_plate}; }}
 #TitleBar[active="false"] #TitleBarTitle {{ color: {muted}; }}
 QMenu {{ background: {t.surface}; color: {t.ink};
         border: 2px solid {t.ink}; padding: 3px; }}

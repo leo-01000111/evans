@@ -1093,7 +1093,7 @@ Each of these is a project of its own. Decide whether each is in scope before st
 - [ ] **An extension mechanism:** user toolboxes on the path, and a place to share
       them. **L**
 
-## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 7 of 10 packages done, plus R6b**
+## Phase 8 — Interface rework before 1.0 **Blocks 1.0; 7 of 10 packages done, plus R6b and R6c**
 
 Planned 2026-11-16 from a UI audit (research into comparable tools, a code inventory
 and offscreen renders of every workspace) and two rounds of decisions with Leon. It
@@ -2054,6 +2054,85 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
   tab (shown only while it is closed) cannot meet one. Check by eye: the yellow field
   in both themes, the context bar at 1280 px with the panel open (the field shrinks
   first), the vertical tab on a short canvas.
+
+- [x] **R6c — Search field redone; two small layout fixes (Leon's review of R6/R6b,
+  2026-11-19).** *sonnet.* **M** Leon approved the Design button, the Design and PID
+  layouts, quick insert, two-click wiring, the shortcut sheet, Preferences and Export.
+  He rejected the R6b search fields ("the buttons look so bad"; the palette "just kind
+  of appears" instead of growing from what was clicked). His decisions, asked and
+  answered; do not reopen them:
+  - **One field, centred in the window's title strip** (between the menu bar and the
+    caption buttons, horizontally centred on the window, like a command centre).
+    Same place on every workspace. Remove the three per-workspace `SearchField`s from
+    the context bar, the Model canvas and the Console tab row. The field must be a
+    client area in `TitleBar.region_at` again (R5 had this; `test_title_bar.py`).
+    Where there is no integrated title bar (macOS, Linux, or the preference off), the
+    same field floats top-centre over the current workspace's content instead.
+  - **Look at rest: Model's R6b style everywhere.** Semi-transparent (about 55 %),
+    no fill, thin frame, muted text "Search…" left and the shortcut
+    (`keys.label("Ctrl+K")`) right in the mono face. Yellow (signal) 2 px frame on
+    hover and while open. Theme tokens only.
+  - **Opening: the field becomes the input.** On click or Ctrl+K/Ctrl+Shift+P the
+    field itself turns into the text box in place, widening symmetrically around its
+    own centre to the palette width (about 120 ms, `QPropertyAnimation` on geometry;
+    no animation when the platform asks for reduced motion if that is detectable),
+    and the result list drops down directly under it, attached. Esc reverses it.
+    Ranking, recency and behaviour of `ui/search.py` / `search_registry.py` are
+    unchanged.
+  - **Loop tab:** R6b let the diagram take all spare height, which put the block
+    editor too low. Balance between R6b and before: give the diagram a stretch
+    factor so it takes roughly the upper 45 % of the free height (minimum 150 px),
+    the editor directly below, the rest below the editor.
+  - **Scope Dock button:** inline with the scope's Export button on the scope
+    toolbar row, not on its own line (`ScopeView`, R6).
+  Tests: the field is centred in the title strip on every workspace and is client
+  area; the fallback field when the integrated title bar is off; clicking or Ctrl+K
+  turns it into the input with the list under it (final geometry); Esc restores it;
+  no per-workspace fields remain; the Loop tab split; the Dock button shares the
+  Export row; window minimum size unchanged.
+  *Done 2026-11-19:* one `SearchField` (`ui/search_field.py`, a child of the main
+  window, `MainWindow.search_field`) replaces the three; the context bar, Model
+  canvas (`FloatingSearch`) and Console tab row lost theirs, as did the
+  `#WorkspaceSearch` style. In the integrated title bar it sits at
+  `TitleBar.search_rect()` (centred on the window, 24 px, at most 360 px, 16 px clear
+  of the menus and the caption buttons, hidden under 140 px); the title text is
+  elided before it, and the field and the open palette register with
+  `TitleBar.add_client_overlay`, so `region_at` calls them client area. Without the
+  integrated bar it floats top-centre over the central widget. At rest: 1 px ink
+  frame at 55 % opacity, no fill, "Search…" and `keys.label("Ctrl+K")` in the mono
+  face; hover and open: full strength, 2 px signal frame. `SearchPopup.open_with`
+  takes an `anchor` (the field's rectangle): the input sits over the field and the
+  plate widens about the field's centre to 560 px in 120 ms (a `QVariantAnimation`
+  on the plate width, list attached below, signal-yellow frame), Esc or a choice
+  narrows it back. `popup.animate` is False under the offscreen platform (the tests;
+  a test of the animation sets it True) and `finish_animation()` jumps to the end;
+  reduced motion is not detected (Qt has no portable query). Loop tab: the diagram
+  has stretch 45 and a trailing stretch 55 sits below the editor
+  (`LOOP_DIAGRAM_SHARE`). The scope's Dock/Undock button is a `QPushButton` on the
+  scope's toolbar row after Export…; before a run (the message page) it sits on a
+  row of that page instead, so it is always reachable. Check by eye on Windows: the
+  field next to the menus at 1280 px and while the window is dragged narrow, the
+  animation, and a click on the field and on the open palette over the caption.
+
+- [ ] **R6d — Simulations run off the UI thread.** *opus.* **M–L** Leon,
+  2026-11-19: a long Model run freezes the window, and a click during it brings up
+  "Not responding". Decision (asked and answered): **run in the background, model
+  locked.** The run moves to a worker thread (`QThread` or a worker object; the
+  solver and compile code are pure Python and must not touch widgets), so the window
+  keeps repainting and stays usable. During a run the canvas, the block inspector and
+  model edits are read-only (no moves, wiring, parameter edits, undo/redo of the
+  model, quick insert), with a clear running state: the toolbar's Run becomes
+  **Stop**, the bottom bar shows "Running" and progress if the solver reports it.
+  Analyse and Console stay usable; console commands that touch the running model
+  (`sim`, `set_param` and the like) wait or refuse with a clear message. Scopes
+  update as now (results delivered by signal to the UI thread). Stop cancels
+  cleanly between solver steps. Model scripts that run before a run (R0.26 model
+  scripts) still run on the console as now, before the worker starts. Closing the
+  model or quitting during a run asks or stops it first. Tests: the UI thread stays
+  responsive during a long run (an event posted during the run is processed), edits
+  are refused while running and allowed after, Stop ends the run, results and scopes
+  match a run made the old way, quit during a run, an error in the worker reaches
+  the user as now.
 
 - [ ] **R7 — Projects as folders.** *opus for the core and the decisions, sonnet for
   the rest.* **L** Needs R4.

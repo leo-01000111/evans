@@ -6,6 +6,12 @@ it steals no focus from the platform and cannot end up behind anything. The
 caller (``MainWindow.show_search``) hands it the entries; matching and order
 are :mod:`search`'s.
 
+Given an ``anchor`` (the search field's rectangle), the palette grows out of
+it: its input sits exactly over the field and widens symmetrically about the
+field's centre to the palette's width (about 120 ms), with the result list
+attached under it. Closing reverses that. Without an anchor it appears at
+the top of the window as it always did.
+
 Looks follow the design system's plates: a 2 px frame, the hard 4 px offset
 shadow, square corners, the selected row in the tab bars' black plate with
 signal-yellow text. Keys: Up and Down move, Enter runs, Esc closes, typing
@@ -18,12 +24,14 @@ from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import (
     QAbstractListModel,
+    QEasingCurve,
     QEvent,
     QModelIndex,
     QObject,
     QRect,
     QSize,
     Qt,
+    QVariantAnimation,
 )
 from PySide6.QtGui import QColor, QFontMetrics, QPainter
 from PySide6.QtWidgets import (
@@ -52,6 +60,8 @@ TOP = 48
 SHADOW = 4
 FRAME = 2
 VISIBLE_ROWS = 10
+#: How long the field takes to become the palette, and back.
+ANIMATION_MS = 120
 PLACEHOLDER = "Search actions, blocks, commands, help"
 
 _ENTRY_ROLE = Qt.UserRole + 1
@@ -157,6 +167,22 @@ class SearchPopup(QFrame):
         self._recent: list[str] = []
         self._previous_focus: QWidget | None = None
         self._ignore: list[QWidget] = []
+        #: The field this grows out of: a QRect, a callable returning one in
+        #: the window's coordinates, or None.
+        self._anchor = None
+        #: The plate's width while it is animating; None otherwise.
+        self._shown_width: int | None = None
+        self._closing = False
+        #: Off under the offscreen platform (the tests), where nothing
+        #: watches; a test of the animation turns it on.
+        self.animate = QApplication.platformName() != "offscreen"
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(ANIMATION_MS)
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim.valueChanged.connect(self._on_animated)
+        self._anim.finished.connect(self._animation_done)
+        #: Told True when it opens and False when it has closed.
+        self.on_open_changed: Callable[[bool], None] = lambda _open: None
         #: Called with the chosen entry, after the popup has closed.
         self.on_chosen: Callable[[Entry], None] = lambda entry: entry.run()
 
@@ -209,13 +235,18 @@ class SearchPopup(QFrame):
 
     def _restyle(self, *_ignored) -> None:
         t = theme.tokens()
+        # Anchored, the input is as tall as the field it came from and is
+        # framed in the signal yellow, like the field when it is open.
+        anchored = self._anchor is not None
+        frame = t.signal if anchored else t.frame
+        padding = f"0 {NORMAL}px" if anchored else f"{NORMAL}px"
         self._plate.setStyleSheet(
             f"QFrame#SearchPlate {{ background: {t.surface};"
-            f" border: {FRAME}px solid {t.frame}; }}"
+            f" border: {FRAME}px solid {frame}; }}"
             f"QLineEdit#SearchField {{ background: {t.surface};"
             f" color: {t.ink}; border: none;"
             f" border-bottom: 1px solid {t.rule};"
-            f" padding: {NORMAL}px; }}"
+            f" padding: {padding}; }}"
             f"QListView#SearchList {{ background: {t.surface};"
             f" color: {t.ink}; border: none; }}"
             f"QLabel#SearchNone {{ background: {t.surface};"
@@ -252,15 +283,45 @@ class SearchPopup(QFrame):
             return None
         return self._model.entries[index.row()]
 
+    @property
+    def is_open(self) -> bool:
+        """Shown and not on its way out."""
+        return self.isVisible() and not self._closing
+
+    @property
+    def plate(self) -> QWidget:
+        """The frame holding the input and the list."""
+        return self._plate
+
     def ignore_clicks_on(self, widget: QWidget) -> None:
         """A press on ``widget`` does not close the popup (its own toggle)."""
         self._ignore.append(widget)
 
     # ── showing and hiding ──
 
-    def open_with(self, entries: Sequence[Entry], current, recent: Sequence[str]
-                  ) -> None:
-        """Show the palette over ``entries``, ranked for ``current``."""
+    def open_with(self, entries: Sequence[Entry], current, recent: Sequence[str],
+                  anchor=None) -> None:
+        """
+        Show the palette over ``entries``, ranked for ``current``.
+
+        ``anchor`` is the search field's rectangle (or a function giving
+        it), in the window's coordinates: the palette grows out of it.
+        """
+        self._anim.stop()
+        self._closing = False
+        self._shown_width = None
+        was_anchored = self._anchor is not None
+        self._anchor = anchor
+        if was_anchored != (anchor is not None):
+            self._restyle()
+        rect = self._anchor_rect()
+        if rect is not None:
+            self._field.setFixedHeight(max(16, rect.height() - 2 * FRAME))
+            if self.animate and rect.width() < self._target_width():
+                self._shown_width = rect.width()
+        else:
+            self._field.setMinimumHeight(0)
+            self._field.setMaximumHeight(16777215)
         self._entries = list(entries)
         self._current = current
         self._recent = list(recent)
@@ -276,11 +337,15 @@ class SearchPopup(QFrame):
         self._field.setFocus(Qt.ShortcutFocusReason)
         QApplication.instance().installEventFilter(self)
         self._window.installEventFilter(self)
+        self.on_open_changed(True)
+        if self._shown_width is not None:
+            self._anim.setStartValue(self._shown_width)
+            self._anim.setEndValue(self._target_width())
+            self._anim.start()
 
     def close_popup(self, restore_focus: bool = True) -> None:
-        if not self.isVisible():
+        if not self.isVisible() or self._closing:
             return
-        self.hide()
         app = QApplication.instance()
         if app is not None:
             app.removeEventFilter(self)
@@ -292,19 +357,72 @@ class SearchPopup(QFrame):
                     previous.setFocus(Qt.OtherFocusReason)
             except RuntimeError:                  # the widget is gone
                 pass
+        rect = self._anchor_rect()
+        if self.animate and rect is not None \
+                and self._plate.width() > rect.width():
+            # Back into the field: the list folds away, the input narrows.
+            self._closing = True
+            self._anim.stop()
+            self._list.hide()
+            self._none.hide()
+            self._anim.setStartValue(self._plate.width())
+            self._anim.setEndValue(rect.width())
+            self._anim.start()
+            return
+        self._finish_close()
+
+    def _finish_close(self) -> None:
+        self._anim.stop()
+        self._closing = False
+        self._shown_width = None
+        self.hide()
+        self.on_open_changed(False)
+
+    def finish_animation(self) -> None:
+        """Jump to the end of the animation now (for tests, and a hurry)."""
+        if self._anim.state() == QVariantAnimation.Running:
+            self._anim.stop()
+            self._animation_done()
+
+    def _on_animated(self, value) -> None:
+        self._shown_width = int(value)
+        self._place()
+
+    def _animation_done(self) -> None:
+        if self._closing:
+            self._finish_close()
+            return
+        self._shown_width = None
+        self._place()
+
+    def _anchor_rect(self) -> QRect | None:
+        anchor = self._anchor
+        if anchor is None:
+            return None
+        return QRect(anchor() if callable(anchor) else anchor)
+
+    def _target_width(self) -> int:
+        return min(WIDTH, max(200, self._window.width() - MARGIN))
 
     def _place(self) -> None:
         window_width = self._window.width()
-        plate = min(WIDTH, max(200, window_width - MARGIN))
+        plate = self._shown_width if self._shown_width is not None \
+            else self._target_width()
         rows = min(max(len(self._model.entries), 0), VISIBLE_ROWS)
-        self._list.setVisible(rows > 0)
-        self._none.setVisible(rows == 0)
+        self._list.setVisible(rows > 0 and not self._closing)
+        self._none.setVisible(rows == 0 and not self._closing)
         self._list.setFixedHeight(rows * row_height())
         self._plate.setFixedWidth(plate)
         self._plate.adjustSize()
         self.setFixedWidth(plate + SHADOW)
         self.adjustSize()
-        self.move((window_width - plate) // 2, TOP)
+        rect = self._anchor_rect()
+        if rect is None:
+            self.move((window_width - plate) // 2, TOP)
+            return
+        x = rect.x() + (rect.width() - plate) // 2
+        x = max(0, min(x, window_width - plate - SHADOW))
+        self.move(x, rect.y())
 
     # ── matching ──
 

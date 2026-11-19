@@ -152,8 +152,10 @@ def test_the_maximize_glyph_becomes_restore(win, chrome, monkeypatch):
 
 def test_double_click_on_the_bar_maximizes(app, win, chrome, monkeypatch):
     seen = _calls(monkeypatch, win, "toggle_maximized")
+    # The title's own middle is under the search field now, so a point near
+    # its left edge, where the text is.
     QTest.mouseDClick(chrome.title, Qt.LeftButton, Qt.NoModifier,
-                      chrome.title.rect().center())
+                      QPoint(24, chrome.title.height() // 2))
     _settle(app)
     assert seen == ["toggle_maximized"]
 
@@ -195,8 +197,14 @@ def test_region_at_tells_caption_from_controls(win, chrome):
     assert bar.region_at(win, _centre(bar.maximize_button, win)) == "maximize"
     assert bar.region_at(win, _centre(bar.minimize_button, win)) == "client"
     assert bar.region_at(win, _centre(bar.close_button, win)) == "client"
-    assert bar.region_at(win, _centre(bar.title, win)) == "caption"
+    # The title's middle is under the search field (below), so its left end.
+    text = bar.title.mapTo(win, QPoint(24, bar.title.height() // 2))
+    assert bar.region_at(win, text) == "caption"
     assert bar.region_at(win, _centre(bar.plate, win)) == "caption"
+    # The search field is client area: a click there is not a drag.
+    field = win.search_field
+    assert bar.region_at(win, _centre(field, win)) == "client"
+    assert bar.region_at(win, QPoint(field.x() - 8, field.y() + 8))         == "caption"
     menus = bar.menu_bar
     first = menus.mapTo(win, menus.actionGeometry(menus.actions()[0]).center())
     assert bar.region_at(win, first) == "client"

@@ -61,7 +61,7 @@ from ..design import NORMAL, TIGHT
 from ..guard import GuardedPanel, guard
 from ..side_panel import SidePanel
 from ..unsaved import ask_to_save, marked
-from .arrange import ArrangePanel, FloatingSearch, PropertiesTab, hidden_actions
+from .arrange import ArrangePanel, PropertiesTab, hidden_actions
 from .canvas import SimCanvas
 from .inspector import BlockInspector
 from .palette import STRIP_WIDTH, PaletteDock
@@ -196,8 +196,6 @@ class SimTab(QWidget, GuardedPanel):
         centre.addWidget(self._canvas)
         self._arrange = ArrangePanel(self._canvas, self._align,
                                      self._distribute)
-        #: The search field, centred at the top of the canvas.
-        self._search = FloatingSearch(self._canvas, self._arrange)
         #: The vertical tab that brings the closed side panel back.
         self._properties_tab = PropertiesTab(self._canvas, self._arrange)
         # The global scope: every logged signal, folded away behind a button
@@ -775,11 +773,6 @@ class SimTab(QWidget, GuardedPanel):
         if (item is not None and not self.side_panel.is_open
                 and self._canvas.rubberBandRect().isNull()):
             self.show_properties()
-
-    @property
-    def search_button(self):
-        """The search field over the canvas."""
-        return self._search
 
     @property
     def properties_tab(self):

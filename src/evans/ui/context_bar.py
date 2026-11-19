@@ -12,9 +12,8 @@ summary of the system was a status line reading
 which is a pair of coefficient arrays, not a transfer function, and says
 nothing about stability.
 
-The bar shows the factored transfer functions G(s) and K₂(s), the search
-field (it opens the command palette), a *Plant* menu (the presets and the
-systems in the console), *Edit loop* and *Design*. They sit on one
+The bar shows the factored transfer functions G(s) and K₂(s), a *Plant* menu
+(the presets and the systems in the console), *Edit loop* and *Design*. They sit on one
 line when both fit beside each other and on two otherwise. A transfer function
 too long even for its own line is cut short, with the whole of it in the
 tooltip, so a long loop can no longer widen the window.
@@ -46,7 +45,6 @@ from ..core.freqresp import bode
 from ..core.tf_utils import factored_str
 from . import keys
 from .design import NORMAL, SECTION, TIGHT, MetricLabel, Status, StatusBadge, monospace
-from .search_field import SearchField
 
 
 class LoopStatus(QWidget):
@@ -273,10 +271,6 @@ class ContextBar(QFrame):
         self._controller.setAccessibleName("controller transfer function")
         self._systems = _Systems(self._plant, self._controller)
         outer.addWidget(self._systems, stretch=1)
-
-        # ── the search field, between G(s) and the buttons ──
-        self.search_button = SearchField()
-        outer.addWidget(self.search_button, stretch=1)
 
         # ── the verdict and margins live in the status bar ──
         self.status = LoopStatus(arch)

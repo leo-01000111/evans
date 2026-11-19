@@ -24,7 +24,7 @@ from __future__ import annotations
 import sys
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QFontMetrics, QPainter
 from PySide6.QtWidgets import (
     QAbstractButton,
     QHBoxLayout,
@@ -41,6 +41,11 @@ from . import iconset, theme
 BAR_HEIGHT = 32
 BUTTON_SIZE = QSize(46, BAR_HEIGHT)
 GLYPH_PX = 20
+#: The search field's height, its widest and the room kept clear of the
+#: menus and the caption buttons on either side of it.
+SEARCH_HEIGHT = 24
+SEARCH_MAX_WIDTH = 360
+SEARCH_GAP = 16
 
 
 def draws_own_top_border() -> bool:
@@ -139,6 +144,8 @@ class TitleBar(QWidget):
     minimize_requested = Signal()
     maximize_requested = Signal()
     close_requested = Signal()
+    #: The strip was resized or shown; the search field follows.
+    geometry_changed = Signal()
 
     def __init__(self, window: QWidget) -> None:
         super().__init__(window)
@@ -146,6 +153,10 @@ class TitleBar(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self._window = window
         self._chrome = True
+        self._full_title = window.windowTitle()
+        #: Widgets over the strip that take the mouse (the search field
+        #: and the palette), which is therefore not the caption there.
+        self._overlays: list[QWidget] = []
 
         row = QHBoxLayout(self)
         row.setContentsMargins(theme.SPACE_2, 0, 0, 0)
@@ -173,7 +184,7 @@ class TitleBar(QWidget):
         # Takes the space only when the title is hidden, so the menus stay
         # on the left in a plain menu bar.
         row.addStretch(0)
-        window.windowTitleChanged.connect(self.title.setText)
+        window.windowTitleChanged.connect(self._set_title)
 
         self.minimize_button = CaptionButton("minimize", self)
         self.minimize_button.setToolTip("Minimise")
@@ -191,6 +202,56 @@ class TitleBar(QWidget):
         window.installEventFilter(self)
         iconset.on_theme_change(self, lambda live: live._repaint_buttons())
         self.sync_window_state()
+
+    # ── the search field's place ──
+
+    def add_client_overlay(self, widget: QWidget) -> None:
+        """``widget`` (a child of the window) is client area where it is."""
+        self._overlays.append(widget)
+
+    def search_rect(self) -> QRect:
+        """
+        Where the search field goes, in this strip's coordinates: centred on
+        the window (the strip is as wide as the window), as wide as the room
+        between the menus and the caption buttons allows on both sides.
+        """
+        self.layout().activate()
+        centre = self.width() // 2
+        left = self.menu_bar.geometry().right() + SEARCH_GAP
+        if self.minimize_button.isVisibleTo(self):
+            right = self.minimize_button.geometry().left() - SEARCH_GAP
+        else:
+            right = self.width() - SEARCH_GAP
+        half = min(SEARCH_MAX_WIDTH // 2, centre - left, right - centre)
+        half = max(half, 0)
+        return QRect(centre - half, (BAR_HEIGHT - SEARCH_HEIGHT) // 2,
+                     2 * half, SEARCH_HEIGHT)
+
+    def _set_title(self, text: str) -> None:
+        self._full_title = text
+        self._fit_title()
+
+    def _fit_title(self) -> None:
+        """The title gives way to the search field: elided before it."""
+        if not self._chrome:
+            self.title.setText(self._full_title)
+            return
+        self.layout().activate()
+        field_left = self.search_rect().left()
+        room = field_left - self.title.geometry().left() - SEARCH_GAP             - theme.SPACE_3
+        fm = QFontMetrics(self.title.font())
+        self.title.setText(fm.elidedText(self._full_title, Qt.ElideRight,
+                                         max(0, room)) if room > 0 else "")
+
+    def resizeEvent(self, event) -> None:       # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        self._fit_title()
+        self.geometry_changed.emit()
+
+    def showEvent(self, event) -> None:         # noqa: N802 (Qt API)
+        super().showEvent(event)
+        self._fit_title()
+        self.geometry_changed.emit()
 
     # ── chrome ──
 
@@ -218,6 +279,8 @@ class TitleBar(QWidget):
             self.setMinimumHeight(0)
             self.setMaximumHeight(16777215)
         self.setVisible(on or not self.menu_bar.isNativeMenuBar())
+        self._fit_title()
+        self.geometry_changed.emit()
 
     def paintEvent(self, event) -> None:      # noqa: N802 (Qt API)
         super().paintEvent(event)
@@ -268,13 +331,18 @@ class TitleBar(QWidget):
         window's logical coordinates.
 
         Caption is the strip's empty space, the plate and the title — the
-        places a drag should move the window. The menus and the other two
-        buttons are client: Qt handles them like any other widget.
+        places a drag should move the window. The menus, the search field
+        and the other two buttons are client: Qt handles them like any other
+        widget.
         """
         if not self._chrome or not self.isVisible():
             return "client"
         local = self.mapFrom(window, point)
         if not self.rect().contains(local):
+            return "client"
+        # The search field (and the palette over it) is an ordinary widget.
+        if any(w.isVisible() and w.geometry().contains(point)
+               for w in self._overlays):
             return "client"
         if self._contains(self.maximize_button, local):
             return "maximize"

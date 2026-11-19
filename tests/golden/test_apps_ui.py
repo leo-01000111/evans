@@ -795,17 +795,26 @@ def test_the_plot_keeps_its_minimum_when_the_panel_is_short(app, win):
     assert design.tuner._viewer.minimumHeight() == PLOT_MIN_HEIGHT
 
 
-def test_the_loop_tab_gives_the_spare_height_to_the_diagram(app, win):
+def test_the_loop_tab_gives_the_diagram_the_upper_45_percent(app, win):
     win.show_loop_editor()
     _settle(app, 10)
     diagram, editor = win._diagram, win._editor
     assert diagram.minimumHeight() == 150
-    assert diagram.maximumHeight() > 260              # the cap is gone
-    assert diagram.height() > 260
+    assert diagram.maximumHeight() > 260              # no cap
     holder = win.side_panel_of(Workspace.ANALYSE).holder("loop")
-    # The editor is at its natural height, at the bottom of the tab.
+    spacing = holder.layout().spacing()
+    m = holder.layout().contentsMargins()
+    free = holder.height() - m.top() - m.bottom() - editor.height()
+    free -= 2 * spacing
+    # About 45 % of what the editor leaves free (150 px at least).
+    expected = max(150, round(0.45 * free))
+    assert abs(diagram.height() - expected) <= 12, (diagram.height(), expected)
+    # The editor directly below the diagram, at its natural height ...
+    assert editor.y() - (diagram.y() + diagram.height()) <= spacing + 1
     assert editor.height() <= editor.sizeHint().height() + 2
-    assert _bottom_in(editor, holder) >= holder.height() - 2 * 8
+    # ... and the rest of the tab is under the editor.
+    assert _bottom_in(editor, holder) < holder.height() - 2 * 8
+    assert holder.height() - _bottom_in(editor, holder) > 40
 
 
 def test_the_design_button_opens_the_panel_on_design_and_closes_it(app, win):

@@ -23,8 +23,6 @@ from PySide6.QtWidgets import (
 )
 
 from .. import iconset, theme
-from ..search_field import MAX_WIDTH as SEARCH_MAX_WIDTH
-from ..search_field import SearchField
 
 #: Opacity at rest and under the mouse.
 REST, HOVER = 0.55, 1.0
@@ -98,66 +96,6 @@ class ArrangePanel(QFrame):
     def eventFilter(self, obj, event) -> bool:     # noqa: N802 (Qt API)
         # Only cheap comparisons first: this runs for every event of the
         # canvas, including those sent while it is being destroyed.
-        if event.type() in (QEvent.Resize, QEvent.Show) and \
-                (obj is self._viewport or obj is self._canvas):
-            self.place()
-        return False
-
-    def enterEvent(self, event) -> None:         # noqa: N802 (Qt API)
-        self._effect.setOpacity(HOVER)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event) -> None:         # noqa: N802 (Qt API)
-        self._effect.setOpacity(REST)
-        super().leaveEvent(event)
-
-
-class FloatingSearch(SearchField):
-    """
-    The search field of the Model workspace: centred at the top of the
-    canvas, semi-transparent like the arrange panel and clear of it, and at
-    full strength under the mouse.
-    """
-
-    #: Narrower than this and it is not worth showing.
-    SMALLEST = 120
-
-    def __init__(self, canvas, arrange: ArrangePanel) -> None:
-        super().__init__(canvas)
-        self._canvas = canvas
-        self._arrange = arrange
-        self._effect = QGraphicsOpacityEffect(self)
-        self._effect.setOpacity(REST)
-        self.setGraphicsEffect(self._effect)
-        self.setAttribute(Qt.WA_Hover, True)
-        self._viewport = canvas.viewport()
-        self._viewport.installEventFilter(self)
-        canvas.installEventFilter(self)
-        self.place()
-
-    @property
-    def opacity(self) -> float:
-        return self._effect.opacity()
-
-    def place(self) -> None:
-        """Centre on the canvas's visible area, between the corner panels."""
-        try:
-            vp = self._viewport.geometry()
-        except RuntimeError:                # the canvas is being destroyed
-            return
-        # The arrange panel is in the right corner; keep the same room on
-        # the left so the field stays centred without touching it.
-        side = self._arrange.width() + 2 * INSET
-        room = vp.width() - 2 * side
-        width = min(SEARCH_MAX_WIDTH, self.maximumWidth(), room)
-        self.setVisible(width >= self.SMALLEST)
-        if width < self.SMALLEST:
-            return
-        self.setFixedWidth(width)
-        self.move(vp.left() + (vp.width() - width) // 2, vp.top() + INSET)
-        self.raise_()
-
-    def eventFilter(self, obj, event) -> bool:     # noqa: N802 (Qt API)
         if event.type() in (QEvent.Resize, QEvent.Show) and \
                 (obj is self._viewport or obj is self._canvas):
             self.place()

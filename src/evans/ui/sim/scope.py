@@ -81,6 +81,7 @@ class ScopeWidget(QWidget):
 
         bar = QHBoxLayout()
         bar.setContentsMargins(0, 0, 0, 0)
+        self._bar = bar
         self._view = QComboBox()
         self._view.addItem(TIME_VIEW)
         self._view.setVisible(self._only is None)
@@ -142,6 +143,13 @@ class ScopeWidget(QWidget):
         self._picker_layout.addStretch()
         picker.setWidget(self._picker_body)
         root.addWidget(picker)
+
+    def add_toolbar_widget(self, widget: QWidget) -> None:
+        """Put ``widget`` on the toolbar row, after Export…"""
+        self._bar.addWidget(widget)
+
+    def remove_toolbar_widget(self, widget: QWidget) -> None:
+        self._bar.removeWidget(widget)
 
     # ── data ────────────────────────────────────────────────────
 

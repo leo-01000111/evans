@@ -20,13 +20,12 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QStackedWidget,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from ..design import TIGHT
 from .scope import ScopeWidget
 
 #: What the window says instead of an empty plot.
@@ -56,24 +55,28 @@ class ScopeView(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-        bar = QHBoxLayout()
-        bar.setContentsMargins(TIGHT, TIGHT, TIGHT, 0)
-        bar.addStretch()
-        self._dock = QToolButton()
-        self._dock.setAutoRaise(True)
-        self._dock.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self._dock = QPushButton()
         self._dock.clicked.connect(lambda: self.dock_toggled.emit(self.key))
-        bar.addWidget(self._dock)
-        root.addLayout(bar)
         self._stack = QStackedWidget()
         self._message = QLabel(NOT_RUN)
         self._message.setAlignment(Qt.AlignCenter)
         self._message.setWordWrap(True)
         self._message.setStyleSheet("color: palette(mid);")
+        # The message page has a row of its own for the Dock button; with a
+        # plot on show the button is on the plot's toolbar row instead.
+        self._page = QWidget()
+        page_col = QVBoxLayout(self._page)
+        page_col.setContentsMargins(2, 2, 2, 2)
+        self._page_row = QHBoxLayout()
+        self._page_row.addStretch()
+        page_col.addLayout(self._page_row)
+        page_col.addWidget(self._message, stretch=1)
         self.scope = ScopeWidget(title=title, signals=[])
-        self._stack.addWidget(self._message)
+        self._on_plot_row: bool | None = None
+        self._stack.addWidget(self._page)
         self._stack.addWidget(self.scope)
         root.addWidget(self._stack, stretch=1)
+        self._place_dock(False)
         self.set_docked(False)
 
     @property
@@ -89,7 +92,7 @@ class ScopeView(QWidget):
         return self._docked
 
     @property
-    def dock_button(self) -> QToolButton:
+    def dock_button(self) -> QPushButton:
         return self._dock
 
     def set_docked(self, docked: bool) -> None:
@@ -106,7 +109,7 @@ class ScopeView(QWidget):
 
     def message(self) -> str:
         """What the view says, or "" when it shows the plot."""
-        if self._stack.currentWidget() is self._message:
+        if self._stack.currentWidget() is self._page:
             return self._message.text()
         return ""
 
@@ -139,10 +142,27 @@ class ScopeView(QWidget):
             self._say(NOTHING_WIRED)
             return
         self._stack.setCurrentWidget(self.scope)
+        self._place_dock(True)
+
+    def _place_dock(self, on_plot_row: bool) -> None:
+        """Dock / Undock on the plot's toolbar row, inline with Export…, or
+        (no plot to show) on a row of the message page."""
+        if on_plot_row == self._on_plot_row:
+            return
+        if self._on_plot_row is True:
+            self.scope.remove_toolbar_widget(self._dock)
+        elif self._on_plot_row is False:
+            self._page_row.removeWidget(self._dock)
+        self._on_plot_row = on_plot_row
+        if on_plot_row:
+            self.scope.add_toolbar_widget(self._dock)
+        else:
+            self._page_row.addWidget(self._dock)
 
     def _say(self, text: str) -> None:
         self._message.setText(text)
-        self._stack.setCurrentWidget(self._message)
+        self._stack.setCurrentWidget(self._page)
+        self._place_dock(False)
         self.retitled.emit()
 
 

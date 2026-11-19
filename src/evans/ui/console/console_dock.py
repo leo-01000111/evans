@@ -46,7 +46,6 @@ from ..code import (
     warm_up,
 )
 from ..design import TIGHT, EmptyState
-from ..search_field import SearchField
 from .console_widget import ConsoleWidget
 from .dialog_host import QtDialogs
 from .figure_view import FigureView, export_figure
@@ -511,11 +510,6 @@ class FigureArea(QWidget):
         self._script_running = False
 
 
-#: The search field in the Console's tab row: narrower than elsewhere, the
-#: row also holds the tabs and Ask Cedric.
-CORNER_SEARCH_WIDTH = 240
-
-
 class ConsolePanel(QWidget):
     """
     The command window, with the script and live tabs behind it.
@@ -654,16 +648,7 @@ class ConsolePanel(QWidget):
         self.cedric_button.setCursor(Qt.PointingHandCursor)
         self._style_cedric_button()
         theme.notifier().changed.connect(self._style_cedric_button)
-        # The search field sits between the tabs and Ask Cedric, so the
-        # corner holds both.
-        self.search_button = SearchField(max_width=CORNER_SEARCH_WIDTH)
-        corner = QWidget()
-        corner_row = QHBoxLayout(corner)
-        corner_row.setContentsMargins(0, 0, 0, 0)
-        corner_row.setSpacing(8)
-        corner_row.addWidget(self.search_button, alignment=Qt.AlignVCenter)
-        corner_row.addWidget(self.cedric_button, alignment=Qt.AlignVCenter)
-        self._tabs.setCornerWidget(corner, Qt.TopRightCorner)
+        self._tabs.setCornerWidget(self.cedric_button, Qt.TopRightCorner)
 
         layout.addWidget(self._tabs)
 

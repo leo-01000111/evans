@@ -1,5 +1,5 @@
 """
-R5/R6b: the command palette, its field in each workspace, and the shortcut sheet.
+R5/R6c: the command palette, its one field in the title strip, and the shortcut sheet.
 
 The window is shared (module scope) and put back by the `reset` fixture.
 Nothing opens a modal dialog: the palette is a child widget and the sheet is
@@ -129,10 +129,13 @@ def test_the_action_toggles(win, app):
 
 def test_geometry_follows_the_spec(win, app):
     popup = win.show_search()
+    popup.finish_animation()
     _settle(app)
     plate = popup._plate
     assert plate.width() == WIDTH == 560
-    assert popup.y() == TOP == 48
+    # R6c: it hangs from the search field (not TOP, which is for a palette
+    # with no field to grow out of), centred on it and on the window.
+    assert popup.y() == win.search_field.y()
     assert abs(plate.mapTo(win, QPoint(0, 0)).x()
                - (win.width() - 560) // 2) <= 1
     assert popup.width() == WIDTH + SHADOW
@@ -394,110 +397,295 @@ def test_a_disabled_action_is_not_offered(win):
     assert "edit.undo" in {e.id for e in collect(win, for_sheet=True)}
 
 
-# ── the field in each workspace's top strip (R6b) ───────────────
+# ── the one field in the title strip (R6c) ──────────────────────
 
-def _field_of(win, workspace):
-    return {Workspace.ANALYSE: win._context.search_button,
-            Workspace.MODEL: win._sim_tab.search_button,
-            Workspace.CONSOLE: win._console.search_button}[workspace]
+ALL_WORKSPACES = (Workspace.ANALYSE, Workspace.MODEL, Workspace.CONSOLE)
 
 
-def test_the_title_strip_has_no_search_field(win):
-    assert not hasattr(win.title_bar, "search_button")
-    assert not win.title_bar.findChildren(SearchField)
-
-
-def test_each_workspace_has_a_big_search_field_in_its_own_strip(win, app):
-    assert win.search_fields() == [_field_of(win, w) for w in (
-        Workspace.ANALYSE, Workspace.MODEL, Workspace.CONSOLE)]
-    for workspace in (Workspace.ANALYSE, Workspace.MODEL, Workspace.CONSOLE):
-        win.show_workspace(workspace)
-        _settle(app)
-        field = _field_of(win, workspace)
-        assert isinstance(field, SearchField)
-        assert field.accessibleName() == "Search"
-        assert field.isVisible(), workspace
-        assert field.height() >= FIELD_HEIGHT >= 30
-        assert "Ctrl K" in field.text() or "⌘K" in field.text()
-        assert field.width() > 100
-
-
-def test_the_field_wears_the_accent(win):
-    from evans.ui import theme, theme_qt
-    t = theme.tokens()
-    sheet = theme_qt.build_stylesheet(t)
-    rule = sheet[sheet.index("#WorkspaceSearch {"):]
-    rule = rule[:rule.index("}")]
-    assert f"background: {t.signal}" in rule and t.on_signal in rule
-    assert "border-radius: 0" in rule
-
-
-def test_the_analyse_field_sits_between_g_and_the_buttons(win, app):
-    bar = win._context
-    field = bar.search_button
-    assert bar._systems.x() + bar._systems.width() <= field.x() + 1
-    assert field.x() + field.width() <= bar._plant_btn.x()
-    assert field.parentWidget() is bar
-
-
-def test_the_model_field_floats_centred_over_the_canvas(win, app):
-    from evans.ui.sim.arrange import INSET, REST
-    win.show_workspace(Workspace.MODEL)
+@pytest.fixture
+def strip(app, win):
+    """The strip as Windows shows it (plate, title, caption buttons)."""
+    win.title_bar.set_chrome_visible(True)
     _settle(app)
-    sim = win._sim_tab
-    field = sim.search_button
-    canvas = sim._canvas
-    assert field.parentWidget() is canvas
-    assert field.opacity == REST < 1
-    vp = canvas.viewport().geometry()
-    assert abs((field.x() + field.width() / 2) - vp.center().x()) <= 2
-    assert field.y() == vp.top() + INSET
-    arrange = sim._arrange
-    assert field.geometry().right() < arrange.geometry().left()
-
-
-def test_the_console_field_is_between_the_tabs_and_ask_cedric(win, app):
-    win.show_workspace(Workspace.CONSOLE)
+    yield win.title_bar
+    win.title_bar.set_chrome_visible(False)
     _settle(app)
-    panel = win._console
-    field = panel.search_button
-    assert field.parentWidget().parentWidget() is panel._tabs
-    tab_bar = panel._tabs.tabBar()
-    left = field.mapTo(win, field.rect().topLeft()).x()
-    bar_right = tab_bar.mapTo(
-        win, tab_bar.rect().topRight()).x()
-    cedric = panel.cedric_button.mapTo(win, panel.cedric_button.rect().topLeft())
-    assert bar_right <= left
-    assert left + field.width() <= cedric.x() + 1
 
 
-@pytest.mark.parametrize("workspace", [Workspace.ANALYSE, Workspace.MODEL,
-                                       Workspace.CONSOLE])
-def test_clicking_the_field_opens_the_palette(win, app, workspace):
+def _centre_x(widget) -> float:
+    return widget.x() + widget.width() / 2
+
+
+def test_there_is_one_field_and_no_per_workspace_ones(win):
+    assert isinstance(win.search_field, SearchField)
+    assert not hasattr(win, "search_fields")
+    assert not hasattr(win._context, "search_button")
+    assert not hasattr(win._sim_tab, "search_button")
+    assert not hasattr(win._console, "search_button")
+    assert len(win.findChildren(SearchField)) == 1
+
+
+@pytest.mark.parametrize("workspace", ALL_WORKSPACES)
+def test_the_field_is_centred_in_the_title_strip_on_every_workspace(
+        win, app, strip, workspace):
     win.show_workspace(workspace)
     _settle(app)
-    field = _field_of(win, workspace)
+    field = win.search_field
+    assert field.parentWidget() is win
+    assert field.isVisible()
+    assert field.accessibleName() == "Search"
+    assert field.height() == FIELD_HEIGHT
+    assert 140 <= field.width() <= 360
+    assert abs(_centre_x(field) - win.width() / 2) <= 1
+    bar = win.title_bar
+    top = bar.mapTo(win, QPoint(0, 0)).y()
+    assert field.y() >= top
+    assert field.y() + field.height() <= top + bar.height()
+    above = field.y() - top
+    below = top + bar.height() - field.y() - field.height()
+    assert abs(above - below) <= 1                        # vertically centred
+    # Between the menus and the caption buttons.
+    menus = bar.menu_bar.mapTo(win, bar.menu_bar.rect().topRight()).x()
+    minimise = bar.minimize_button.mapTo(win, QPoint(0, 0)).x()
+    assert menus < field.x()
+    assert field.x() + field.width() < minimise
+
+
+def test_the_field_is_client_area_not_caption(win, strip):
+    field = win.search_field
+    inside = field.mapTo(win, field.rect().center())
+    assert strip.region_at(win, inside) == "client"
+    edge = QPoint(field.x() + 2, field.y() + 2)
+    assert strip.region_at(win, edge) == "client"
+    # Just outside it, on both sides, is still the caption.
+    beside = QPoint(field.x() - 8, field.y() + field.height() // 2)
+    assert strip.region_at(win, beside) == "caption"
+    beside = QPoint(field.x() + field.width() + 8,
+                    field.y() + field.height() // 2)
+    assert strip.region_at(win, beside) == "caption"
+
+
+def test_the_title_gives_way_to_the_field(win, app, strip):
+    win.setWindowTitle("A very long window title " * 12)
+    _settle(app)
+    field = win.search_field
+    title = strip.title
+    right = title.mapTo(win, QPoint(0, 0)).x() + \
+        title.fontMetrics().horizontalAdvance(title.text())
+    assert right < field.x()
+    assert title.text().endswith("…")
+    win.setWindowTitle(MainWindow.APP_TITLE)
+    _settle(app)
+
+
+def test_the_field_at_rest_wears_the_model_style(win, app, strip):
+    field = win.search_field
+    assert field.placeholder == "Search…"
+    assert field.chord == keys.label("Ctrl+K")
+    assert not field.underMouse() and not field.is_open
+    image = field.grab().toImage()
+    from PySide6.QtGui import QColor
+    t = _tokens()
+    # No fill: the middle of the field is whatever is behind it.
+    middle = QColor(image.pixelColor(field.width() // 2, field.height() // 2))
+    assert middle.alpha() == 0 or middle != QColor(t.surface)
+    # The frame is thin: the first pixel column is ink, the second is not.
+    assert image.pixelColor(0, field.height() // 2).alpha() > 0
+    from evans.ui.search_field import REST_OPACITY
+    assert 0.5 <= REST_OPACITY <= 0.6
+
+
+def _tokens():
+    from evans.ui import theme
+    return theme.tokens()
+
+
+def test_the_field_is_signal_yellow_while_open(win, app, strip):
+    from PySide6.QtGui import QColor
+    signal = QColor(_tokens().signal)
+    field = win.search_field
+    assert not field.is_open
+    win.show_search()
+    _settle(app)
+    assert field.is_open
+    # Its frame (under the plate, which is at least as wide) is yellow: the
+    # open palette's own frame is.
+    plate = win.search_popup().plate
+    image = win.search_popup().grab().toImage()
+    top_left = image.pixelColor(plate.x() + 1, plate.y() + 1)
+    assert QColor(top_left).rgb() == signal.rgb()
+    win.search_popup().close_popup(restore_focus=False)
+    assert not field.is_open
+
+
+def test_clicking_the_field_turns_it_into_the_input_with_the_list_under_it(
+        win, app, strip):
+    field = win.search_field
+    rest = field.geometry()
     QTest.mouseClick(field, Qt.LeftButton)
     _settle(app)
-    assert win.search_popup().isVisible()
-    win.search_popup().close_popup(restore_focus=False)
+    popup = win.search_popup()
+    popup.finish_animation()
+    assert popup.isVisible() and popup.is_open
+    plate = popup.plate
+    assert plate.width() == WIDTH == 560
+    # Widened symmetrically about the field's own centre, not moved.
+    plate_left = plate.mapTo(win, QPoint(0, 0)).x()
+    assert abs((plate_left + plate.width() / 2)
+               - (rest.x() + rest.width() / 2)) <= 1
+    # The input sits over the field: same top, same height.
+    box = popup.field.mapTo(win, QPoint(0, 0))
+    assert abs(plate.mapTo(win, QPoint(0, 0)).y() - rest.y()) <= 1
+    assert box.y() >= rest.y() and box.y() + popup.field.height() \
+        <= rest.y() + rest.height() + 1
+    # The list hangs directly under the input, inside the same plate.
+    assert popup._list.parentWidget() is plate
+    list_top = popup._list.mapTo(win, QPoint(0, 0)).y()
+    assert list_top == box.y() + popup.field.height()
+    # Over the strip and the content: a raised child of the window.
+    assert popup.parentWidget() is win
+    siblings = win.children()
+    assert siblings.index(popup) > siblings.index(win.centralWidget())
+    assert popup.isAncestorOf(popup.field)
+    assert win.search_popup().y() == rest.y()
 
 
-def test_clicking_the_field_again_closes_the_palette(win, app):
-    field = _field_of(win, Workspace.ANALYSE)
+@pytest.mark.parametrize("how", ["ctrl_k", "ctrl_shift_p", "action"])
+def test_the_shortcuts_open_the_same_expanded_field(win, app, strip, how):
+    win.activateWindow()
+    _settle(app)
+    if how == "ctrl_k":
+        QTest.keySequence(win, QKeySequence("Ctrl+K"))
+    elif how == "ctrl_shift_p":
+        QTest.keySequence(win, QKeySequence("Ctrl+Shift+P"))
+    _settle(app)
+    popup = win.search_popup()
+    if not popup.isVisible():            # an inactive offscreen window
+        win._act_search.trigger()
+        _settle(app)
+    popup.finish_animation()
+    assert popup.isVisible()
+    field = win.search_field
+    assert popup.y() == field.y()
+    assert popup.plate.width() == WIDTH
+
+
+def test_escape_puts_the_field_back(win, app, strip):
+    field = win.search_field
+    rest = field.geometry()
+    popup = win.show_search()
+    popup.finish_animation()
+    assert popup.isVisible()
+    QTest.keyClick(popup.field, Qt.Key_Escape)
+    popup.finish_animation()
+    _settle(app)
+    assert not popup.isVisible()
+    assert not field.is_open
+    assert field.isVisible()
+    assert field.geometry() == rest
+
+
+def test_the_field_grows_and_shrinks_by_animation(win, app, strip):
+    field = win.search_field
+    popup = win.search_popup()
+    popup.animate = True
+    try:
+        win.show_search()
+        # It starts as wide as the field it came out of.
+        assert popup.plate.width() == field.width()
+        assert popup.is_open
+        popup.finish_animation()
+        assert popup.plate.width() == WIDTH
+        popup.close_popup(restore_focus=False)
+        assert popup.isVisible() and not popup.is_open     # shrinking
+        assert popup.plate.width() == WIDTH
+        popup.finish_animation()
+        assert not popup.isVisible()
+    finally:
+        popup.animate = False
+
+
+def test_a_second_click_on_the_field_closes_the_palette(win, app, strip):
     popup = win.search_popup()
     win.toggle_search()
     _settle(app)
-    assert popup.isVisible()
-    assert any(f is field for f in popup._ignore)
+    assert popup.is_open
+    assert any(f is win.search_field for f in popup._ignore)
     win.toggle_search()
     _settle(app)
     assert not popup.isVisible()
 
 
-def test_the_fields_do_not_widen_the_window(win):
-    for field in win.search_fields():
-        assert field.minimumSizeHint().width() == 0
+def test_the_palette_over_the_strip_is_client_area_too(win, app, strip):
+    popup = win.show_search()
+    popup.finish_animation()
+    _settle(app)
+    inside = popup.plate.mapTo(win, QPoint(popup.plate.width() - 10, 8))
+    assert popup.geometry().contains(inside)
+    assert strip.region_at(win, inside) == "client"
+
+
+def test_the_field_does_not_widen_the_window(win, app, strip):
+    assert win.search_field.minimumSizeHint().width() == 0
+    hint = win.minimumSizeHint()
+    assert hint.width() <= 1280 and hint.height() <= 720
+    win.resize(1280, 720)
+    _settle(app)
+    field = win.search_field
+    assert field.isVisible()
+    assert abs(_centre_x(field) - win.width() / 2) <= 1
+    win.resize(1400, 850)
+
+
+def test_the_field_hides_when_the_strip_has_no_room(win, app, strip,
+                                                    monkeypatch):
+    # The window cannot be made that narrow, so the strip is made to say so.
+    from PySide6.QtCore import QRect
+    monkeypatch.setattr(strip, "search_rect", lambda: QRect(500, 4, 100, 24))
+    win.search_field.place()
+    try:
+        assert not win.search_field.isVisible()
+        # Ctrl+K still works, from a field-sized place at the same spot.
+        popup = win.show_search()
+        popup.finish_animation()
+        assert popup.isVisible()
+        assert popup.plate.width() == WIDTH
+        popup.close_popup(restore_focus=False)
+    finally:
+        monkeypatch.undo()
+        win.search_field.place()
+    assert win.search_field.isVisible()
+
+
+@pytest.mark.parametrize("workspace", ALL_WORKSPACES)
+def test_without_an_integrated_title_bar_the_field_floats_top_centre(
+        win, app, workspace):
+    assert not win.integrated_title_bar
+    win.show_workspace(workspace)
+    _settle(app)
+    field = win.search_field
+    assert field.isVisible()
+    content = win.centralWidget()
+    top = content.mapTo(win, QPoint(0, 0)).y()
+    assert top <= field.y() <= top + 12
+    assert abs(_centre_x(field) - win.width() / 2) <= 1
+    assert field.parentWidget() is win
+    # Over the content, so the palette grows from there.
+    popup = win.show_search()
+    popup.finish_animation()
+    assert popup.y() == field.y()
+    assert popup.plate.width() == WIDTH
+    popup.close_popup(restore_focus=False)
+
+
+@pytest.mark.parametrize("workspace", ALL_WORKSPACES)
+def test_clicking_the_field_opens_the_palette(win, app, workspace):
+    win.show_workspace(workspace)
+    _settle(app)
+    QTest.mouseClick(win.search_field, Qt.LeftButton)
+    _settle(app)
+    assert win.search_popup().isVisible()
+    win.search_popup().close_popup(restore_focus=False)
 
 
 # ── the shortcut sheet ──────────────────────────────────────────

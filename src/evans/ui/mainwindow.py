@@ -85,12 +85,17 @@ from .diagram.fixed_diagram import FixedDiagramView
 from .loop_undo import ReplaceLoop
 from .panes import DEFAULT_LAYOUT, LAYOUTS, PANE_KINDS, PaneGrid, Source
 from .persist import RecentFiles
+from .search_field import SearchField
 from .side_panel import SidePanel, page_with_panel
 from .sim.sim_tab import SimTab
 from .tabs.modern import ModernTab
 from .titlebar import TitleBar
 from .updater import Updater
 from .workspace import Workspace, WorkspaceStack
+
+#: The Loop tab's diagram gets this share (percent) of the height the tab
+#: has to spare; the rest is left below the block editor.
+LOOP_DIAGRAM_SHARE = 45
 
 
 class MainWindow(QMainWindow):
@@ -145,6 +150,10 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._build_status_bar()
         self.updater.status.connect(self._status.showMessage)
+        #: The one search field: in the title strip, or floating over the
+        #: content where there is no integrated title bar.
+        self._search_field = SearchField(self)
+        self._search_field.clicked.connect(lambda: self.toggle_search())
         self.set_integrated_title_bar(
             persist.integrated_title_bar(default=winframe.supported()),
             remember=False)
@@ -195,6 +204,7 @@ class MainWindow(QMainWindow):
             self._native_frame.uninstall()
             self._title_bar.set_chrome_visible(False)
         self._sync_preferences()
+        self._search_field.place()
         return active
 
     def nativeEvent(self, event_type, message):   # noqa: N802 (Qt API)
@@ -215,6 +225,7 @@ class MainWindow(QMainWindow):
     def _native_frame_failed(self) -> None:
         self._native_frame.uninstall()
         self._title_bar.set_chrome_visible(False)
+        self._search_field.place()
         self._status.showMessage(
             "The integrated title bar failed; using the system's instead",
             8000)
@@ -238,8 +249,6 @@ class MainWindow(QMainWindow):
             lambda _path: self._sync_undo_group())
         self._stack.add_page(Workspace.MODEL, self._sim_tab)
         self._stack.add_page(Workspace.CONSOLE, self._build_console())
-        for field in self.search_fields():
-            field.clicked.connect(lambda: self.toggle_search())
         self._context.set_plant_menu(self._build_plant_menu())
         #: Each workspace's side panel; Cedric is the last tab of each.
         self._side_panels: dict[Workspace, SidePanel] = {
@@ -304,13 +313,15 @@ class MainWindow(QMainWindow):
         # ── the side panel: Loop · Design · Cedric, closed by default ──
         side = SidePanel("analyse")
         loop = side.add_tab("loop", "Loop")
-        # The diagram takes the height the panel has to spare (150 px at
-        # least); the block editor keeps its natural height under it.
+        # The diagram takes about the upper 45 % of the height the panel has
+        # to spare (150 px at least), the block editor sits directly under
+        # it at its natural height, and the rest is left below the editor.
         self._diagram = FixedDiagramView(self._arch)
         self._diagram.setMinimumHeight(150)
-        loop.layout().addWidget(self._diagram, stretch=1)
+        loop.layout().addWidget(self._diagram, stretch=LOOP_DIAGRAM_SHARE)
         self._editor = BlockEditor()
         loop.layout().addWidget(self._editor, stretch=0)
+        loop.layout().addStretch(100 - LOOP_DIAGRAM_SHARE)
         # Gain · Compensator · PID; what the three docked apps were.
         self._design = DesignPanel(self._arch, self._apply_design)
         side.add_tab("design", "Design", self._design)
@@ -1333,26 +1344,29 @@ class MainWindow(QMainWindow):
             from .search_popup import SearchPopup
             self._search = SearchPopup(self)
             self._search.on_chosen = self._run_search_entry
-            for field in self.search_fields():
-                self._search.ignore_clicks_on(field)
+            self._search.on_open_changed = self._search_field.set_open
+            self._search.ignore_clicks_on(self._search_field)
+            self._title_bar.add_client_overlay(self._search)
         return self._search
 
-    def search_fields(self) -> list:
-        """The three workspaces' search fields (they open the palette)."""
-        return [self._context.search_button, self._sim_tab.search_button,
-                self._console.search_button]
+    @property
+    def search_field(self) -> SearchField:
+        """The one search field (it opens the command palette)."""
+        return self._search_field
 
     def show_search(self):
         """View ▸ Search… (Ctrl+K, Ctrl+Shift+P): the palette, fresh."""
         from .search_registry import collect
         popup = self.search_popup()
+        self._search_field.place()
         popup.open_with(collect(self), self._stack.current,
-                        persist.search_recent())
+                        persist.search_recent(),
+                        anchor=self._search_field.anchor_rect)
         return popup
 
     def toggle_search(self, *_ignored):
         popup = self.search_popup()
-        if popup.isVisible():
+        if popup.is_open:
             popup.close_popup()
             return popup
         return self.show_search()
