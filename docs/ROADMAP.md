@@ -2317,3 +2317,15 @@ Order: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9. R6 tou
       `loop.json`; additive, so no format version change). **S–M**
 - [ ] A check, with a few real students, of what they try first on the Start page
       and where they get stuck. **S**
+- [ ] Limits tuning (0.30.0) follow-ups, in this order. **S–M** each.
+  - [ ] An **undershoot** limit: a zone below 0 at the start of the step plot, for
+        plants with an inverse response.
+  - [ ] A **peak control effort** limit |u|: needs the control signal's own plot (or an
+        overlay on the step pane), and is the practical limit for actuator saturation.
+  - [ ] Delay time (50 %) and peak time limits (a vertical zone before that time).
+  - [ ] Peak sensitivity Ms and peak of T as limits, drawn as an M-contour on the
+        Nichols view (reuses `mtune`).
+  - [ ] Disturbance rejection (largest output deviation after a load step) and a
+        noise-gain / bandwidth cap that keeps the derivative term sane.
+  - [ ] Run the search on a worker thread: it takes 3–4 s and freezes the window.
+  - [ ] Remember the ticked limits in the project file.

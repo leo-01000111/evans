@@ -902,3 +902,57 @@ def test_the_pid_plot_is_throttled_like_the_rest_of_the_tab(app, win):
         assert 1 <= len(draws) <= 3
     finally:
         del tuner._viewer.refresh
+
+
+def test_limits_tuning_finds_gains_and_writes_k2(app, win):
+    tuner = _tuner(app, win)
+    tuner.set_kind("PID")
+    assert not tuner._limits_box.isVisible()
+    tuner._limits_toggle.setChecked(True)
+    _settle(app, 5)
+    assert tuner._limits_box.isVisible()
+    assert tuner.limits == {}
+    tuner.tune_to_limits()                       # nothing ticked
+    assert "Tick at least one" in tuner._limits_status.text()
+    tuner.set_limit("overshoot", 10.0)
+    tuner.set_limit("dc_error", 1.0)
+    found = tuner.tune_to_limits()
+    _settle(app, 10)
+    assert found is not None and found.met, found.describe()
+    assert tuner.result is found.tune
+    assert "All limits met" in tuner._limits_status.text()
+    # K2 became the tuned PID: it has an integrator (DC error 0).
+    assert any(abs(p) < 1e-9 for p in
+               ctl.poles(win._arch.block_tf("K2")))
+    # Moving a slider hands the design back to the sliders.
+    tuner._speed.setValue(10)
+    assert tuner.limits_result is None
+    _banners_clean(tuner)
+
+
+def test_limits_are_shaded_on_the_step_plot(app, win):
+    tuner = _tuner(app, win)
+    from PySide6.QtWidgets import QGraphicsRectItem
+    for key in tuner._limit_checks:             # the tuner outlives a test
+        tuner.set_limit(key, None)
+    tuner._band_combo.setCurrentIndex(0)
+    tuner._limits_toggle.setChecked(True)
+    tuner.set_limit("overshoot", 10.0)
+    tuner.set_limit("settling", 4.0)
+    tuner._draw_plot()
+    keys = [z.key for z in tuner._viewer.zones]
+    assert keys == ["overshoot", "settling", "settling"]
+    import pyqtgraph as pg
+    items = [i for w in tuner._viewer.findChildren(pg.PlotWidget)
+             for i in w.getPlotItem().items
+             if isinstance(i, QGraphicsRectItem)]
+    assert len(items) == 3
+    tuner._band_combo.setCurrentIndex(1)
+    assert tuner.settling_band == 0.05
+    assert abs(tuner._zones()[1].y0 - 1.05) < 1e-9
+    tuner._band_combo.setCurrentIndex(0)
+    tuner._limits_toggle.setChecked(False)
+    tuner.set_plot_view(ResponseKind.STEP)
+    assert tuner._viewer.zones == []
+    for key in tuner._limit_checks:
+        tuner.set_limit(key, None)

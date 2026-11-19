@@ -22,7 +22,9 @@ import control as ctl
 import numpy as np
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -36,6 +38,13 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.collection import SystemCollection
+from ...core.pidlimits import (
+    LIMIT_KINDS,
+    LimitsResult,
+    crossing_time,
+    limit_zones,
+    tune_to_limits,
+)
 from ...core.pidtune import (
     PIDKind,
     TuneResult,
@@ -52,6 +61,16 @@ from ..guard import GuardedPanel, guard
 #: physical quantities lives in :mod:`evans.core.pidtune`.
 SPEED_TICKS = 100          # −100 … +100  ⇒  speed −1 … +1
 TRANSIENT_TICKS = 100      # 0 … 100      ⇒  transient 0 … 1
+
+#: Limits tuning: each limit's starting value and spin-box range/decimals.
+LIMIT_DEFAULTS: dict[str, tuple[float, float, float, int]] = {
+    "overshoot": (10.0, 0.0, 200.0, 1),
+    "rise": (1.0, 0.001, 10000.0, 3),
+    "settling": (5.0, 0.001, 10000.0, 3),
+    "dc_error": (1.0, 0.0, 100.0, 2),
+    "phase_margin": (45.0, 0.0, 120.0, 1),
+    "gain_margin": (6.0, 0.0, 60.0, 1),
+}
 
 #: The plot follows the sliders at most this often (the Design tab's rate).
 PLOT_INTERVAL_MS = 50
@@ -83,6 +102,8 @@ class PIDTuner(QWidget, GuardedPanel):
         self._sensor = sensor
         self._feedforward = feedforward
         self.result: TuneResult | None = None
+        #: The last limits-tuning outcome; cleared when a slider takes over.
+        self.limits_result: LimitsResult | None = None
         self._quiet = True
         self._plot_kind = ResponseKind.STEP
         self._plot_dirty = True
@@ -194,11 +215,147 @@ class PIDTuner(QWidget, GuardedPanel):
         self._readout.setAccessibleName("Tuning readout")
         lay.addWidget(self._readout)
 
+        self._build_limits(lay)
+
         reset = QPushButton("Reset sliders")
         reset.setAccessibleName("Reset sliders")
         reset.setToolTip("Both sliders back to the middle")
         reset.clicked.connect(self.reset)
         lay.addWidget(reset, alignment=Qt.AlignLeft)
+
+    def _build_limits(self, lay: QVBoxLayout) -> None:
+        """The collapsible Limits tuning section."""
+        self._limits_toggle = QPushButton("Limits tuning ▸")
+        self._limits_toggle.setCheckable(True)
+        self._limits_toggle.setAccessibleName("Limits tuning")
+        self._limits_toggle.setToolTip(
+            "State the step response you need (overshoot, settling time, DC "
+            "error, margins) and let an optimiser find the gains.")
+        lay.addWidget(self._limits_toggle)
+
+        self._limits_box = QWidget()
+        box = QFormLayout(self._limits_box)
+        box.setContentsMargins(0, 0, 0, 0)
+        self._limit_checks: dict[str, QCheckBox] = {}
+        self._limit_spins: dict[str, QDoubleSpinBox] = {}
+        for key, (label, unit, direction) in LIMIT_KINDS.items():
+            default, lo, hi, decimals = LIMIT_DEFAULTS[key]
+            check = QCheckBox(label)
+            check.setAccessibleName(f"Limit {label}")
+            spin = QDoubleSpinBox()
+            spin.setRange(lo, hi)
+            spin.setDecimals(decimals)
+            spin.setValue(default)
+            spin.setSuffix(f" {unit}")
+            spin.setPrefix("≤ " if direction == "max" else "≥ ")
+            spin.setAccessibleName(f"{label} limit value")
+            spin.setEnabled(False)
+            check.toggled.connect(spin.setEnabled)
+            self._limit_checks[key] = check
+            self._limit_spins[key] = spin
+            box.addRow(check, spin)
+        self._band_combo = QComboBox()
+        self._band_combo.addItems(["±2 %", "±5 %"])
+        self._band_combo.setAccessibleName("Settling band")
+        self._band_combo.setToolTip("The band the settling time is measured to")
+        self._band_combo.currentIndexChanged.connect(
+            lambda _i: self._zones_changed())
+        box.addRow("Settling band:", self._band_combo)
+        for key in LIMIT_KINDS:
+            self._limit_checks[key].toggled.connect(
+                lambda _on: self._zones_changed())
+            self._limit_spins[key].valueChanged.connect(
+                lambda _v: self._zones_changed())
+        self._limits_run = QPushButton("Tune to limits")
+        self._limits_run.setAccessibleName("Tune to limits")
+        self._limits_run.setToolTip(
+            "Search for gains of the chosen controller type that meet every "
+            "ticked limit. Takes a few seconds.")
+        self._limits_run.clicked.connect(self.tune_to_limits)
+        box.addRow(self._limits_run)
+        self._limits_status = QLabel()
+        self._limits_status.setFont(theme.data_font(9))
+        self._limits_status.setWordWrap(True)
+        self._limits_status.setAccessibleName("Limits report")
+        box.addRow(self._limits_status)
+        self._limits_box.setVisible(False)
+        self._limits_toggle.toggled.connect(self._on_limits_toggled)
+        lay.addWidget(self._limits_box)
+
+    def _on_limits_toggled(self, on: bool) -> None:
+        self._limits_toggle.setText("Limits tuning ▾" if on
+                                    else "Limits tuning ▸")
+        self._limits_box.setVisible(on)
+        self._zones_changed()
+
+    @property
+    def settling_band(self) -> float:
+        return 0.05 if self._band_combo.currentIndex() == 1 else 0.02
+
+    def _zones_changed(self) -> None:
+        """Shade the ticked limits on the step plot, if the section is open."""
+        if not hasattr(self, "_viewer"):
+            return
+        self._plot_dirty = True
+        self._schedule_plot()
+
+    def _zones(self) -> list:
+        if not self._limits_toggle.isChecked():
+            return []
+        t10 = 0.0
+        if self.result is not None and self.result.feasible                 and self.result.stable and "rise" in self.limits:
+            try:
+                from ...core.timeresp import step_response
+                resp = step_response(self.result.T)
+                y = np.asarray(resp.y).ravel()
+                y_inf = resp.metadata.get("y_inf_exact", y[-1])
+                t10 = crossing_time(resp.t, y, 0.1 * float(y_inf)) or 0.0
+            except Exception:                               # noqa: BLE001
+                t10 = 0.0
+        return limit_zones(self.limits, self.settling_band, t10)
+
+    # ── limits tuning ───────────────────────────────────────────
+
+    def set_limit(self, key: str, value: float | None) -> None:
+        """Tick a limit and give it ``value``; ``None`` unticks it."""
+        if key not in LIMIT_KINDS:
+            raise ValueError(f"unknown limit {key!r}")
+        if value is not None:
+            self._limit_spins[key].setValue(float(value))
+        self._limit_checks[key].setChecked(value is not None)
+
+    @property
+    def limits(self) -> dict[str, float]:
+        """The ticked limits, key → value."""
+        return {k: self._limit_spins[k].value()
+                for k, c in self._limit_checks.items() if c.isChecked()}
+
+    @guard("Limits tuning")
+    def tune_to_limits(self, *_ignored) -> LimitsResult | None:
+        """Search gains that meet the ticked limits and use them."""
+        limits = self.limits
+        if not limits:
+            self._limits_status.setText("Tick at least one limit.")
+            return None
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self._limits_run.setEnabled(False)
+        try:
+            found = tune_to_limits(
+                self._plant, self.kind, limits,
+                Tf=float(self._tf_spin.value()),
+                sensor=self._sensor, feedforward=self._feedforward,
+                settling_band=self.settling_band)
+        finally:
+            self._limits_run.setEnabled(True)
+            QApplication.restoreOverrideCursor()
+        self.limits_result = found
+        self.result = found.tune
+        self._limits_status.setText(found.describe())
+        self._readout.setText(found.tune.describe())
+        self._plot_dirty = True
+        self._schedule_plot()
+        self.changed.emit(True)
+        return found
 
     # ── state ───────────────────────────────────────────────────
 
@@ -251,6 +408,7 @@ class PIDTuner(QWidget, GuardedPanel):
         else:
             collection.add("Open loop", result.L)
         self._viewer.collection = collection
+        self._viewer.zones = self._zones()
         self._viewer.set_response(self._plot_kind)
         self._viewer.refresh()
         self._plot_dirty = False
@@ -298,6 +456,9 @@ class PIDTuner(QWidget, GuardedPanel):
 
     @guard("PID tuner")
     def retune(self, *_ignored) -> None:
+        self.limits_result = None
+        if hasattr(self, "_limits_status"):
+            self._limits_status.clear()
         pm = phase_margin_for(self.transient)
         wc = crossover_for(self._seen_plant(), self.speed, pm, self.kind)
         self._speed_label.setText(

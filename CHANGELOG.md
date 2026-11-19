@@ -9,6 +9,21 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.30.0 - 2026-11-19
+
+### Added
+
+- **Limits tuning** in the Design tab's PID view. Tick the limits you need
+  (overshoot, rise time, settling time with a 2 % or 5 % band, DC error, phase
+  margin, gain margin), give each a value and press *Tune to limits*: an
+  optimiser searches the gains of the chosen controller type and reports every
+  limit as met or missed with the value it reached. When limits contradict each
+  other or the plant, it shows the closest design instead of hiding the miss.
+- The ticked limits are shaded on the Design tab's step plot: a block above the
+  overshoot limit, two blocks outside the settling band from the settling time
+  on, a block below 90 % after the rise-time limit, and two slim blocks at the
+  far right for the DC error.
+
 ## 0.29.1 - 2026-11-19
 
 ### Added

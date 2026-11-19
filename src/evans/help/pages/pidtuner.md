@@ -16,6 +16,8 @@ The sliders set the targets [pidtune](pidtune) takes as numbers. The response-ti
 
 Every change applies at once: the tuned controller is written into the loop's controller block K2, so the panes beside the panel (step response, Bode, metrics and the rest) show it, and a whole slider drag is one step of Edit ▸ Undo. **Reset** puts back the controller the loop had when the tab was opened. The tuning uses the loop's sensor H and feedforward K1, and when the loop changes elsewhere (an undo, a preset, the Loop tab) the tab follows it.
 
+**Limits tuning** (the button under the sliders) tunes from the response you need instead of from the sliders. Tick any of: overshoot, rise time (10–90 %), settling time (±2 %), DC error, phase margin, gain margin; give each a number and press **Tune to limits**. An optimiser starts from a grid of loop-shaping designs and searches the gains of the chosen controller type, then reports every limit as met or missed with the value it reached. Limits can contradict each other, or the plant, or the controller type (a P cannot remove DC error); the report then shows the closest design found rather than hiding the miss. The result is written into K2 like any slider change, and moving a slider takes the design back.
+
 `pidtuner` with no argument opens the tab on the plant G already in the loop.
 
 The command returns a short description of the request, such as `<pidtuner: plant>`. In a script run without the app nothing opens and the loop is not changed; the request is recorded and the line still runs. Evans does not check `type` at the console, so a misspelt type only shows up as an error when the tab opens.

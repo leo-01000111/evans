@@ -63,6 +63,9 @@ them (grep, go-to-definition), don't read them whole.**
 - **Design and compare** (`sisotool`, `pidtuner`, `ltiview`): `ui/design_panel.py` writes K₂
   through `MainWindow.change_loop`; `MainWindow.open_app` routes the console commands;
   tests in `tests/golden/test_apps_ui.py`.
+- **PID tuning**: sliders in `core/pidtune.py` (closed form); *limits tuning* (overshoot, settling,
+  DC error, margins → optimiser) in `core/pidlimits.py`, its panel in `ui/apps/pid_tuner.py`
+  (`_build_limits`); tests `tests/test_pidlimits.py`, `tests/golden/test_apps_ui.py -k limits`.
 - **The command palette** (Ctrl+K, Ctrl+Shift+P, and the search field in the title strip: `ui/search_field.py`, `MainWindow.search_field`; the popup grows out of the field): the window's
   `show_search`; ranking in `ui/search.py` (tests: `tests/test_search.py`, Qt-free), the entry
   list in `ui/search_registry.py`, the popup in `ui/search_popup.py`; a menu action reaches

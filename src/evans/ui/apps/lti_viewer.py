@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
+    QGraphicsRectItem,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -92,6 +93,9 @@ class LTIViewer(QWidget, GuardedPanel):
             set(Characteristic) if compact else set())
         self._hovers: list[HoverReadout] = []
         self._legends: list = []
+        #: Step-response limits to shade (see `core.pidlimits.limit_zones`);
+        #: drawn only on the step plot.
+        self.zones: list = []
         self._build_ui()
         self.refresh()
 
@@ -324,6 +328,8 @@ class LTIViewer(QWidget, GuardedPanel):
             plot.setAspectLocked(True)
         hover = self._new_hover(plot, data)
         self._paint(plot, data, "main", hover)
+        if data.kind is ResponseKind.STEP and self.zones:
+            self._draw_zones(plot, data)
         self._place_legend(legend, data, "main")
         self._fit_degenerate(plot, data)
         if data.kind is ResponseKind.NYQUIST:
@@ -335,6 +341,38 @@ class LTIViewer(QWidget, GuardedPanel):
             add_hline(plot, 0.0, theme.plot_colour("muted"), width=0.6)
         self._install_context_menu(widget)
         self._plot_lay.addWidget(widget)
+
+    def _draw_zones(self, plot, data: ViewerData) -> None:
+        """Shade the rectangles the response must stay out of."""
+        xs = [float(np.max(c.x)) for c in data.curves_on("main")
+              if len(c.x)]
+        if not xs:
+            return
+        t_end = max(xs)
+        colour = pg.mkColor(theme.plot_colour("danger"))
+        fill = pg.mkBrush(colour.red(), colour.green(), colour.blue(), 55)
+        edge = pg.mkPen(colour, width=1.2)
+        reach = []                      # the finite edges, to keep in view
+        for zone in self.zones:
+            x0 = 0.97 * t_end if zone.at_end else zone.t0
+            x1 = max(zone.t1, x0 + 1e-9)
+            rect = QGraphicsRectItem(x0, zone.y0, x1 - x0, zone.y1 - zone.y0)
+            rect.setBrush(fill)
+            rect.setPen(edge)
+            rect.setZValue(-5)
+            plot.addItem(rect, ignoreBounds=True)
+            for y in (zone.y0, zone.y1):
+                if abs(y) < 1e5:
+                    reach.append(y)
+            if zone.label:
+                label = pg.TextItem(zone.label, color=colour, anchor=(1, 0)
+                                    if zone.y0 > 0 else (1, 1))
+                label.setPos(min(t_end, x1), zone.y0 if zone.y0 > 0
+                             else zone.y1)
+                plot.addItem(label, ignoreBounds=True)
+        if reach:
+            # An invisible pair of points keeps the zones' edges in view.
+            plot.plot([0.0, 0.0], [min(reach), max(reach)], pen=None)
 
     def _draw_two_panels(self, data: ViewerData) -> None:
         splitter = QSplitter(Qt.Vertical)
