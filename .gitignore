@@ -48,3 +48,7 @@ scratch/
 
 # ── Documentation site build output ─────────────────────────────
 site/_build/
+
+# MATLAB reference recordings (academic licence): local only, never committed.
+tools/matlab_reference/evans_reference.mat
+tools/matlab_reference/verif/

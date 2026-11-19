@@ -92,3 +92,30 @@ before committing.
 
 `ruff check .` always. Qt tests run offscreen; a modal dialog no test answers fails at
 once (`tests/conftest.py`).
+
+## The site (`site/`)
+
+The documentation and download site, served at
+[www.leongorecki.eu/evans](https://www.leongorecki.eu/evans/): plain HTML on the
+Holding Point design system, the same CSS and fonts as leongorecki.eu. Build it from the
+repository root with Evans's dependencies installed: `python site/build.py` writes
+`site/_build/` (ignored); open `site/_build/index.html`, or serve it with
+`python -m http.server -d site/_build`.
+
+| Path | What it is |
+|---|---|
+| `site/build.py` | the page template, the navigation and the build |
+| `site/reference.py` | the generated pages: console commands, simulator blocks |
+| `site/pages/` | the hand-written pages (home, install, tour, MATLAB compatibility, patch notes) as HTML fragments |
+| `site/assets/` | `site.css`, plus `tokens.css`, `components.css`, `theme.js` and the fonts copied from the website's repository |
+
+The command and block pages are read out of the code (`api._GROUPS` and the commands'
+docstrings, the block registry and each block's `params_spec`), so they cannot drift;
+`tests/test_site.py` builds the site and checks every command and block is on it. In the
+hand-written pages `@@version@@`, `@@n_commands@@`, `@@n_blocks@@`, `@@releases@@` and
+`@@repo@@` are filled in from the code. The patch notes are written by hand: add a
+section with `id="v<version>"` when the version changes, or `tests/test_site.py` fails.
+The issue form posts to Formspree (`assets/issue-form.js` sends it in the background and
+shows the answer under the button; without JavaScript it is a plain form post).
+`.github/workflows/pages.yml` builds the site on every push and pull request and deploys
+it from `main` (the repository's Pages source must be **GitHub Actions**).

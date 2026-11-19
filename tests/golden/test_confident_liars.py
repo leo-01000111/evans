@@ -1,10 +1,11 @@
 """
 Commands that printed a wrong number without any error.
 
-``docs/PLAN.md`` (Part 5) counts this as the worst way for Evans to fail: a
-"confident liar". Each test below types the command the way a user would, at
-the MATLAB console, and checks it against a value worked out by hand (or by an
-independent route), never against what Evans printed before the fix.
+``docs/HISTORY.md`` (the v2 plan, Part 5) counts this as the worst way for
+Evans to fail: a "confident liar". Each test below types the command the way a
+user would, at the MATLAB console, and checks it against a value worked out by
+hand (or by an independent route), never against what Evans printed before the
+fix.
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 
 Every release of Evans, newest first. The same notes, with links, are on the
 site's patch notes page. The layout follows [Keep a Changelog](https://keepachangelog.com/);
-versions are not yet [semantic](https://semver.org/) (see `docs/1.0-PROPOSAL.md`).
+versions are not yet [semantic](https://semver.org/) (see the 1.0 section of `docs/ROADMAP.md`).
 
 A release adds its section here and to `site/pages/patch-notes.html`. Work that
 is on `main` but not released yet goes under Unreleased.

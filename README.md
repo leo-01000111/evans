@@ -40,7 +40,7 @@ Evans from source.
 
 The documentation, with a tour and a reference for every console command and simulator
 block, is at [www.leongorecki.eu/evans](https://www.leongorecki.eu/evans/). Its source
-is in [`site/`](site/README.md).
+is in [`site/`](site/); [`docs/CODEMAP.md`](docs/CODEMAP.md#the-site-site) says how it is built.
 
 ## Quick start
 
@@ -370,22 +370,21 @@ Not promised: the wording of error messages and warnings, how plots look
 
 ## Status
 
-Two plans, both complete.
+[`docs/ROADMAP.md`](docs/ROADMAP.md) is what is left: every open item, what blocks
+1.0, the stability policy and the decisions that stand.
 
-[`docs/PLAN.md`](docs/PLAN.md) covers the engine in eight phases: correctness, the
-classical half, modern control, the simulator, the command window, the apps and
-packaging.
+[`docs/HISTORY.md`](docs/HISTORY.md) is what was built and why. The engine plan came
+first, in eight phases: correctness, the classical half, modern control, the simulator,
+the command window, the apps and packaging. The interface plan followed in eight more.
+The application had grown to 28 modules and 8 tabs while keeping the layout of a 6-tab
+viewer, and its minimum window size had reached 2038 × 643, wider than a 1920 monitor,
+because the Model toolbar was one unbreakable row and a tab bar is as wide as its widest
+tab. One item of it is left: moving the classic analysis tabs onto the shared design
+system. The icon set is in, 53 pictograms in `src/evans/ui/icons/` drawn in the theme's
+ink ([contact sheet](docs/icons-sheet.png)). Then came the roadmap's phases and the
+interface rework that blocks 1.0.
 
-[`docs/UI-PLAN.md`](docs/UI-PLAN.md) covers the interface in eight more. The application
-had grown to 28 modules and 8 tabs while keeping the layout of a 6-tab viewer, and its
-minimum window size had reached 2038 × 643, wider than a 1920 monitor, because the
-Model toolbar was one unbreakable row and a tab bar is as wide as its widest tab. That
-plan's status table records what is done and what is partial. One item is left:
-moving the classic analysis tabs onto the shared design system. The icon set is in, 53
-pictograms in `src/evans/ui/icons/` drawn in the theme's ink
-([contact sheet](docs/icons-sheet.png)).
-
-Both files also record what was deliberately left out, and why. For example, there is no
+The history also records what was deliberately left out, and why. For example, there is no
 Python Function block, because a block that runs arbitrary text from a shared model file
 would let anyone who sends you a model run code on your machine.
 

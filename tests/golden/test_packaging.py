@@ -317,8 +317,8 @@ def test_the_readme_counts_match_the_code():
     assert len(_GROUPS) == 10
 
 
-def test_both_plans_are_referenced():
+def test_the_roadmap_and_the_history_are_referenced():
     text = _readme()
-    assert "docs/PLAN.md" in text and "docs/UI-PLAN.md" in text
-    assert (ROOT / "docs" / "PLAN.md").exists()
-    assert (ROOT / "docs" / "UI-PLAN.md").exists()
+    assert "docs/ROADMAP.md" in text and "docs/HISTORY.md" in text
+    assert (ROOT / "docs" / "ROADMAP.md").exists()
+    assert (ROOT / "docs" / "HISTORY.md").exists()

@@ -4,7 +4,7 @@ Writing into numeric arrays: in place when nobody else holds the array.
 ``a(k) = v`` used to copy the whole array, so filling a pre-allocated vector
 in a loop was quadratic. The runtime now writes in place an array that only
 the variable being written holds (see ``matlab_runtime._OWNED``). That is the
-"confident liar" risk of ``docs/PLAN.md``: if anything else could see the
+"confident liar" risk of ``docs/HISTORY.md``: if anything else could see the
 array, it would change behind its back. So every way a second reference to an
 array can appear has its own test here, each checked against MATLAB's value
 semantics.

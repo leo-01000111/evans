@@ -52,7 +52,8 @@ per batch before committing, not once per tiny task. Read only the files the
 work needs, and ask before starting the next big item.
 
 - A fresh session per big feature reads less and drifts less than a long one.
-  Decisions and leftovers go in `docs/ROADMAP.md`, not only in chat.
+  Decisions and leftovers go in `docs/ROADMAP.md`, not only in chat; finished
+  work moves to `docs/HISTORY.md`.
 - Navigate with go-to-definition and find-references (the Pyright language
   server; `[tool.pyright]` in `pyproject.toml`) before reading whole files.
 - Hand broad searches to a cheap read-only subagent (`scout`, on Haiku) and
