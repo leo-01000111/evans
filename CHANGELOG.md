@@ -9,6 +9,14 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.29.1 - 2026-11-19
+
+### Added
+
+- **Set K for peak of T** in the Design tab's Gain view: the same tuning as
+  `mtune`, with a dB field (default 2.3). It sets the gain so the Nichols curve
+  is tangent to that closed-loop M-contour.
+
 ## 0.29.0 - 2026-11-19
 
 ### Added

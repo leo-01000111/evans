@@ -209,6 +209,20 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
             "ratio")
         mp_btn.clicked.connect(self._set_gain_for_overshoot)
         targets.addRow(self._mp_spin, mp_btn)
+
+        self._mr_spin = QDoubleSpinBox()
+        self._mr_spin.setRange(0.01, 40.0)
+        self._mr_spin.setDecimals(2)
+        self._mr_spin.setSuffix(" dB")
+        self._mr_spin.setValue(2.3)
+        self._mr_spin.setAccessibleName("Peak of T target")
+        mr_btn = QPushButton("Set K for peak of T")
+        mr_btn.setAccessibleName("Set K for peak of T")
+        mr_btn.setToolTip(
+            "The gain at which the Nichols curve is tangent to this "
+            "closed-loop M-contour: the peak of |T| is exactly this")
+        mr_btn.clicked.connect(self._set_gain_for_peak)
+        targets.addRow(self._mr_spin, mr_btn)
         lay.addLayout(targets)
         return page
 
@@ -395,6 +409,22 @@ class ControlSystemDesigner(QWidget, GuardedPanel):
             _unit_loop(self._plant, self.compensator, self._sensor),
             float(self._mp_spin.value())),
             f"{self._mp_spin.value():.1f}% overshoot")
+
+    @guard("peak target")
+    def _set_gain_for_peak(self) -> None:
+        from ...core.pidtune import tune_p_for_peak
+        db = float(self._mr_spin.value())
+        try:
+            result = tune_p_for_peak(
+                _unit_loop(self._plant, self.compensator, self._sensor),
+                10 ** (db / 20))
+        except ValueError as exc:
+            self.report_error("design target", exc)
+            return
+        self.compensator.gain = result.K
+        self._sync_gain_widgets()
+        self.update_gain()
+        self._emit("gain", True)
 
     def _apply_target(self, point, description: str) -> None:
         if point is None:
