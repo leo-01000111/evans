@@ -13,10 +13,46 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.27.1">0.27.1</a><a href="#v0.27.0">0.27.0</a><a href="#v0.26.1">0.26.1</a><a href="#v0.26.0">0.26.0</a><a href="#v0.25.1">0.25.1</a><a href="#v0.25.0">0.25.0</a><a href="#v0.24.0">0.24.0</a><a href="#v0.23.0">0.23.0</a><a href="#v0.22.0">0.22.0</a><a href="#v0.21.0">0.21.0</a><a href="#v0.20.0">0.20.0</a><a href="#v0.19.0">0.19.0</a><a href="#v0.18.0">0.18.0</a><a href="#v0.17.2">0.17.2</a><a href="#v0.17.1">0.17.1</a><a href="#v0.17.0">0.17.0</a><a href="#v0.16.2">0.16.2</a><a href="#v0.16.1">0.16.1</a><a href="#v0.16.0">0.16.0</a><a href="#v0.15.1">0.15.1</a><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.28.0">0.28.0</a><a href="#v0.27.1">0.27.1</a><a href="#v0.27.0">0.27.0</a><a href="#v0.26.1">0.26.1</a><a href="#v0.26.0">0.26.0</a><a href="#v0.25.1">0.25.1</a><a href="#v0.25.0">0.25.0</a><a href="#v0.24.0">0.24.0</a><a href="#v0.23.0">0.23.0</a><a href="#v0.22.0">0.22.0</a><a href="#v0.21.0">0.21.0</a><a href="#v0.20.0">0.20.0</a><a href="#v0.19.0">0.19.0</a><a href="#v0.18.0">0.18.0</a><a href="#v0.17.2">0.17.2</a><a href="#v0.17.1">0.17.1</a><a href="#v0.17.0">0.17.0</a><a href="#v0.16.2">0.16.2</a><a href="#v0.16.1">0.16.1</a><a href="#v0.16.0">0.16.0</a><a href="#v0.15.1">0.15.1</a><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="issues.html#bugs">known issues</a><a href="issues.html#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.28.0">
+      <div class="card prose notes">
+        <h2>0.28.0 &middot; 19 November 2026</h2>
+        <p>A reworked window: a side panel on every workspace with Cedric always in it, the three design apps folded into a Design tab and the analysis panes, one search for every action, fewer menus, and blocks added from the keyboard.</p>
+        <h3>Added</h3>
+        <ul>
+          <li><strong>A side panel on every workspace</strong> (Ctrl+\), with Cedric as its last tab: Analyse has <em>Loop · Design · Cedric</em>, Model <em>Properties · Cedric</em>, Console <em>Workspace · History · Cedric</em>. Cedric keeps the conversation when you switch workspace, and reads the loop on Analyse and the model on Model.</li>
+          <li><strong>The Design tab</strong> (the <em>Design</em> button in the context bar): Gain, Compensator and PID. Changes apply to the loop at once, the panes follow, one drag is one undo step, and <em>Reset</em> goes back to the controller you started from. The PID page has its own Step, Bode or Nichols plot.</li>
+          <li><strong>Compare</strong> on every plot pane: show the loop's other systems, snapshots and systems handed to <code>ltiview</code> in the same pane.</li>
+          <li><strong>Search</strong> (Ctrl+K or Ctrl+Shift+P, or the field in the title strip): every menu action, pane kind, preset, block, example, help page and recent file, the current workspace's first.</li>
+          <li><strong>Keyboard shortcuts</strong> sheet (Help, Ctrl+/).</li>
+          <li><strong>Preferences</strong> (Edit, Ctrl+,): theme, title bar, classic block boxes, snapshot bar, autosave, update checks and where a scope opens.</li>
+          <li><strong>Plant</strong> button in the context bar: the preset plants and systems from the console workspace.</li>
+          <li><strong>Add blocks from the keyboard:</strong> double-click empty canvas, start typing on the canvas, or drop a wire on empty space to get a list of blocks that fit; a block added from a wire comes connected, in one undo step.</li>
+          <li><strong>Scopes can dock</strong> into the Model side panel and undock again.</li>
+          <li>Selecting one block reopens a closed Properties panel; while it is closed a tab at the canvas edge brings it back.</li>
+        </ul>
+        <h3>Changed</h3>
+        <ul>
+          <li><strong>The Apps menu is gone.</strong> The Control System Designer and PID Tuner are the Design tab; the LTI Viewer is the panes' Compare menus. <code>sisotool</code>, <code>pidtuner</code> and <code>ltiview</code> at the console open those.</li>
+          <li><strong>Menus are File, Edit, View and Help.</strong> Export is under File; the theme, title bar, block boxes, autosave and update checks are in Preferences; the presets are under <em>Plant</em>.</li>
+          <li><strong>The loop editor is the Analyse side panel's Loop tab</strong> (<em>Edit loop</em>), not a dock at the left edge.</li>
+          <li><strong>The stability lamp and the margins (PM, GM, wc) are in the bottom bar</strong> on Analyse; Console's bottom bar says whether something is running.</li>
+          <li><strong>Moved shortcuts:</strong> Export pane as PNG is Ctrl+Shift+E (was Ctrl+Shift+P); Ctrl+Shift+L, D and T are gone with the apps; Ctrl+B shows the block palette from the View menu.</li>
+          <li>The shrimp at the foot of the rail opens Cedric; <em>Docs</em> under it opens the documentation (F1).</li>
+          <li>The window's minimum size is smaller, so it fits small laptop screens with every panel open.</li>
+        </ul>
+        <h3>Fixed</h3>
+        <ul>
+          <li>The root locus pane could freeze for minutes on a tuned PID loop.</li>
+          <li>Dragging in the designer now updates the plots during the drag, not only after it stops.</li>
+          <li>Tests no longer read or clear your own window layout settings.</li>
+        </ul>
       </div>
     </section>
 

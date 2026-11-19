@@ -9,6 +9,63 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.28.0 - 2026-11-19
+
+A reworked window: a side panel on every workspace with Cedric always in it,
+the three design apps folded into a Design tab and the analysis panes, one
+search for every action, fewer menus, and blocks added from the keyboard.
+
+### Added
+- **A side panel on every workspace** (Ctrl+\), with Cedric as its last tab:
+  Analyse has *Loop · Design · Cedric*, Model *Properties · Cedric*, Console
+  *Workspace · History · Cedric*. Cedric keeps the conversation when you switch
+  workspace, and reads the loop on Analyse and the model on Model.
+- **The Design tab** (the *Design* button in the context bar): Gain,
+  Compensator and PID. Changes apply to the loop at once, the panes follow, one
+  drag is one undo step, and *Reset* goes back to the controller you started
+  from. The PID page has its own Step, Bode or Nichols plot.
+- **Compare** on every plot pane: show the loop's other systems, snapshots and
+  systems handed to `ltiview` in the same pane.
+- **Search** (Ctrl+K or Ctrl+Shift+P, or the field in the title strip): every
+  menu action, pane kind, preset, block, example, help page and recent file,
+  the current workspace's first.
+- **Keyboard shortcuts** sheet (Help, Ctrl+/).
+- **Preferences** (Edit, Ctrl+,): theme, title bar, classic block boxes,
+  snapshot bar, autosave, update checks and where a scope opens.
+- **Plant** button in the context bar: the preset plants and systems from the
+  console workspace.
+- **Add blocks from the keyboard:** double-click empty canvas, start typing on
+  the canvas, or drop a wire on empty space to get a list of blocks that fit;
+  a block added from a wire comes connected, in one undo step.
+- **Scopes can dock** into the Model side panel and undock again.
+- Selecting one block reopens a closed Properties panel; while it is closed a
+  tab at the canvas edge brings it back.
+
+### Changed
+- **The Apps menu is gone.** The Control System Designer and PID Tuner are the
+  Design tab; the LTI Viewer is the panes' Compare menus. `sisotool`,
+  `pidtuner` and `ltiview` at the console open those.
+- **Menus are File, Edit, View and Help.** Export is under File; the theme,
+  title bar, block boxes, autosave and update checks are in Preferences; the
+  presets are under *Plant*.
+- **The loop editor is the Analyse side panel's Loop tab** (*Edit loop*), not a
+  dock at the left edge.
+- **The stability lamp and the margins (PM, GM, wc) are in the bottom bar** on
+  Analyse; Console's bottom bar says whether something is running.
+- **Moved shortcuts:** Export pane as PNG is Ctrl+Shift+E (was Ctrl+Shift+P);
+  Ctrl+Shift+L, D and T are gone with the apps; Ctrl+B shows the block palette
+  from the View menu.
+- The shrimp at the foot of the rail opens Cedric; *Docs* under it opens the
+  documentation (F1).
+- The window's minimum size is smaller, so it fits small laptop screens with
+  every panel open.
+
+### Fixed
+- The root locus pane could freeze for minutes on a tuned PID loop.
+- Dragging in the designer now updates the plots during the drag, not only
+  after it stops.
+- Tests no longer read or clear your own window layout settings.
+
 ## 0.27.1 - 2026-11-18
 
 The 0.27.0 release, published. 0.27.0 was tagged but never published: two
