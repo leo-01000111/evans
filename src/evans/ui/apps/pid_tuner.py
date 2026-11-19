@@ -207,6 +207,9 @@ class PIDTuner(QWidget, GuardedPanel):
         lay.addWidget(self._transient)
         lay.addWidget(_ends("aggressive", "robust"))
 
+        # Above the readout, which stays the last content before Reset.
+        self._build_limits(lay)
+
         self._readout = QLabel()
         self._readout.setFont(theme.data_font(9))
         self._readout.setWordWrap(True)
@@ -214,8 +217,6 @@ class PIDTuner(QWidget, GuardedPanel):
         self._readout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self._readout.setAccessibleName("Tuning readout")
         lay.addWidget(self._readout)
-
-        self._build_limits(lay)
 
         reset = QPushButton("Reset sliders")
         reset.setAccessibleName("Reset sliders")

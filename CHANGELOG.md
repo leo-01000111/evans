@@ -9,6 +9,15 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.30.1 - 2026-11-19
+
+### Fixed
+
+- 0.30.0 was tagged but not published: its macOS test run failed on a layout
+  check of the Design tab's PID view. The Limits tuning section now sits above
+  the tuning readout, so the readout is again the last thing before Reset. 0.30.1
+  carries everything in 0.30.0.
+
 ## 0.30.0 - 2026-11-19
 
 ### Added
