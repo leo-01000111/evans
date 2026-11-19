@@ -9,6 +9,14 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.28.1 - 2026-11-19
+
+The 0.28.0 release, published. 0.28.0 was tagged but never published: three
+tests written for Windows failed on the macOS and Linux build machines (shortcut
+text in the Mac's command-key form, and a minimum-height ceiling measured with
+Windows fonts), so no installer was made. The app itself is unchanged;
+everything in 0.28.0 below is in this release.
+
 ## 0.28.0 - 2026-11-19
 
 A reworked window: a side panel on every workspace with Cedric always in it,
