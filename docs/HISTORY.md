@@ -1107,6 +1107,13 @@ Tests: `tests/golden/test_confident_liars.py`, last section.
       corpus (2026-11-14): it found 32 silent wrong answers, all fixed 2026-11-18 (see
       Phase 6 below). Its other findings are open in the roadmap, Phase 6.*
 
+- [x] **A struct array's field is a comma-separated list** (found 2026-11-23 while
+      checking `who`): `{s.a}` of a 1x2 struct array was a 1x1 cell holding a tuple,
+      `[s.a]` of text failed, and `f(s.a)` got one argument. `_spread` now splices
+      `s.a` (`Runtime.field_list`); test in `tests/golden/test_confident_liars.py`.
+- [x] `who` and `whos` inside a function list the function's variables. *Found
+      working on 2026-11-23 (`_caller_scope`); the roadmap item was stale.*
+
 ### Phase 1: Everyday data work at the console (core done 2026-10-28)
 
 Needed for any "process my logged data" job, whether coursework, a hobby project or test

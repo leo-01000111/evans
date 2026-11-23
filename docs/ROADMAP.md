@@ -26,15 +26,15 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 |---|---|---|
 | 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
 | Phase 0, silent wrong answers | 2 | |
-| Phase 1, data work at the console | 6 | |
+| Phase 1, data work at the console | 5 | |
 | Phase 2, Simulink for daily use | 24 | |
 | Phase 3, plotting | 5 | |
 | Phase 4, other people's MATLAB code | 13 | |
 | Phase 5, hardware, identification, symbolic | 4 | not started |
 | Phase 6, platform and trust | 14 | the corpus checker (blocks 1.0) |
 | Phase 7, scope decisions | 7 | nothing decided yet |
-| Phase 8, interface rework | 6 | R7 (blocks 1.0) |
-| Phase 8.4, after 1.0 | 14 | seven items, one of them with seven parts |
+| Phase 8, interface rework | 5 | R7 (blocks 1.0) |
+| Phase 8.4, after 1.0 | 15 | seven items, one of them with seven parts |
 
 ---
 
@@ -145,7 +145,7 @@ answers became the reference corpus (Phase 6), which found 32; all were fixed
       `varargout` work, 2026-11-11). Still fails on 2026-11-19 with "The number of
       outputs should match the number of inputs". **S**
 
-## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 6 open**
+## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 5 open**
 
 The functions live in `src/evans/console/lib_*.py`, tests in
 `tests/golden/test_lib_*.py`.
@@ -153,8 +153,6 @@ The functions live in `src/evans/console/lib_*.py`, tests in
 - [ ] A `cftool` curve-fitting GUI over `fit`. **L**
 - [ ] `fit` with custom equations (`fittype('a*exp(b*x)')`); refused today. **M**
 - [ ] `cellfun`/`arrayfun` with `'ErrorHandler'`; refused today. **S**
-- [ ] `who` and `whos` inside a function list the workspace, not the function's
-      variables. **S**
 - [ ] `rng` seeds the generator, but the streams are not MATLAB's, so `rand` after
       `rng(0)` differs (the verification kit records MATLAB's streams). **M**
 - [ ] `cd` lasts one run (noted with the file I/O work). Check against MATLAB, where it
@@ -171,7 +169,10 @@ Tests: `tests/golden/test_sim_workspace.py`, `test_sim_library.py`,
       done; nobody has reconsidered them yet. Decide, then build or drop. **M**
 - [ ] `sim` given a model object returns the Python result, not the
       `SimulationOutput`-like struct that `sim('name')` returns (still so on
-      2026-11-19, `lib_sim.f_sim`). **S**
+      2026-11-19, `lib_sim.f_sim`). *Found 2026-11-23: this is documented (help page
+      `sim`) and relied on (`test_console_ui`, `test_sim_workspace`), so changing it
+      breaks `r.t` and `r.trace('G')`. Decide first: keep it and say so in the
+      "Not in Evans" page, or return the struct and keep the Python attributes on it.* **S**
 - [ ] MIMO `linearize`. **M**
 - [ ] Live parameter sliders during a run. **M**
 - [ ] A user block API (an S-function equivalent). **M**
@@ -502,7 +503,7 @@ it.
 - [ ] **An extension mechanism:** user toolboxes on the path, and a place to share
       them. **L**
 
-## Phase 8 — Interface rework before 1.0 ◐ **R0 to R6d done; 6 open (R7, R8, R9 and three leftovers); blocks 1.0**
+## Phase 8 — Interface rework before 1.0 ◐ **R0 to R6d done; 5 open (R7, R8, R9 and two leftovers); blocks 1.0**
 
 Planned 2026-11-16 from a UI audit and two rounds of decisions with Leon; the audit
 and the finished packages R0 to R6c, with the decisions taken while building them, are
@@ -764,10 +765,12 @@ Order: R7 → R8 → R9 (R6d, added 2026-11-19 after R6c, is done: `docs/HISTORY
     the plot background (3:1); check that curves in a Compare set differ by line
     style as well as colour. Fix in `ui/theme.py` only with Leon's agreement,
     since it is the design system.
-  - **Sweep for leftovers** (haiku): the strings "Model panel", "Edit model",
-    "Apply as K", "Apply to Architecture", "Send to analysis", "Apps" (as a menu),
-    "LTI Viewer" as a window or dock, "session" where "loop" or "project" is meant;
-    in `src/`, `site/`, `README.md`, `src/evans/help/pages/` and docstrings.
+  - **Sweep for leftovers** (done 2026-11-23, nothing to change): "Model panel",
+    "Edit model", "Apply as K", "Apply to Architecture" and "Send to analysis" no
+    longer appear in `src/`, `site/`, `README.md`, the help pages or docstrings.
+    "LTI Viewer" is the `ltiview` app's name and "Apps" a command-index group, both
+    meant; "session" means a console session or a recovery session, as intended.
+    Run it again before the release in case a package adds strings.
   - **Documentation:** the site's pages that describe the window (screens,
     workflow, shortcuts), a new page on projects, the README's description of the
     interface and any count it states (`tests/golden/test_packaging.py`),
@@ -789,13 +792,15 @@ Order: R7 → R8 → R9 (R6d, added 2026-11-19 after R6c, is done: `docs/HISTORY
       style themselves; `ui/design.py`'s primitives are used by everything newer). The
       last item of the UI redesign's UI-8 (history, part 3), and the README's "one item
       is left". **M**
-- [ ] **The active pane has no visual marker** (`PaneGrid.active_index`, R5); *Show
-      Bode* only says "Pane 2: Bode" in the status bar. **S**
 - [ ] **Reduced motion** is not detected for the search field's animation (R6c; Qt has
       no portable query). Decide whether a preference is wanted. **S**
 
-### 8.4 After 1.0 (recorded so they are not lost; 14 open)
+### 8.4 After 1.0 (recorded so they are not lost; 15 open)
 
+- [ ] **A visual marker for the active pane** (`PaneGrid.active_index`, R5); *Show
+      Bode* only says "Pane 2: Bode" in the status bar. *Decided 2026-11-23: not now.*
+      With several panes up the user is working in all of them, so a mark is not
+      needed yet. No date set; revisit if someone asks which pane a command went to. **S**
 - [ ] Poles, zeros and gain dragged directly on the pane grid's root locus and Bode
       panes, replacing the small locus inside the Design tab. **L**
 - [ ] Design requirements (overshoot, settling time, damping, margins) entered in

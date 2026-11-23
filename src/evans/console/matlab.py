@@ -1853,6 +1853,9 @@ class _Emitter:
             target = self.expr(node.target, end_dim=end_dim)
             return (f"*{_RT}.cell_list({target}, "
                     f"({self._arglist(node.args)}))")
+        if isinstance(node, _Field) and not self._is_map_class(node):
+            # ``s.a`` of a struct array is one value per element.
+            return f"*{_RT}.field_list({self.expr(node, end_dim=end_dim)})"
         return self.expr(node, end_dim=end_dim)
 
     def _name_ref(self, name: str) -> str:

@@ -705,3 +705,17 @@ def test_freqresp_is_ny_by_nu_by_n(it):
     """Probe 435: a SISO response at 3 frequencies is 1×1×3."""
     run(it, "H = freqresp(tf(1, [1 1]), [0 1 2]); s = size(H);")
     assert _numbers(val(it, "s")).tolist() == [1, 1, 3]
+
+
+def test_a_struct_array_field_is_a_comma_separated_list(it):
+    """``s.a`` of a 1x2 struct array is two values: ``{s.a}`` is a 1x2 cell,
+    ``[s.a]`` a 1x2 row of text, and a call receives two arguments (it was
+    one tuple, so ``{s.a}`` came out 1x1)."""
+    run(it, "s = struct('a', {'x', 'yz'}); c = {s.a}; nc = numel(c); "
+            "t = [s.a]; q = struct('a', {3, 4}); "
+            "m = max(q.a); k = numel({q.a}); r = hypot(q.a);")
+    assert _numbers(val(it, "nc")).tolist() == [2]
+    assert str(val(it, "t")) == "xyz"
+    assert _numbers(val(it, "m")).tolist() == [4]
+    assert _numbers(val(it, "k")).tolist() == [2]
+    assert _numbers(val(it, "r")).tolist() == pytest.approx([5.0])

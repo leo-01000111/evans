@@ -2481,6 +2481,12 @@ class Runtime:
             raise MatlabError(f"Unrecognized property or field "
                               f"\"{name}\".") from None
 
+    @staticmethod
+    def field_list(value) -> tuple:
+        """A field read as a comma-separated list: ``s.a`` of a struct array
+        gave one value per element (a tuple); anything else is one value."""
+        return value if isinstance(value, tuple) else (value,)
+
     # ── assignment ──────────────────────────────────────────────
 
     def assign(self, obj, path: list, value, owned: bool = False):
