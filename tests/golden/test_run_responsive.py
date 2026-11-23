@@ -5,6 +5,11 @@ The solver is pure Python on a worker thread, so it competes with the UI
 thread for the GIL. At the interpreter's default 5 ms switch interval the UI
 thread was starved for seconds at a time; the Model tab shortens the interval
 for the length of a run and puts it back after.
+
+Only the setting is tested. A test of the stall itself was tried and removed
+(2026-11-23): it did not fail without the fix on a 300 s run, and inside the
+full suite the first heartbeat swallowed 13 to 18 s of work that earlier tests'
+windows had left queued.
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 
 import evans.ui.sim.sim_tab as sim_tab
-from evans.ui.sim.sim_tab import RUN_SWITCH_INTERVAL, SimTab, course_loop
+from evans.ui.sim.sim_tab import RUN_SWITCH_INTERVAL, SimTab
 
 
 @pytest.fixture(scope="module")
@@ -44,42 +49,6 @@ def _busy_solver(seconds: float):
             sum(i * i for i in range(200))
         return object()
     return run
-
-
-def _watch_until_done(tab) -> list[float]:
-    """Spin the event loop until the run ends; the gaps between 10 ms beats."""
-    gaps: list[float] = []
-    last = [time.perf_counter()]
-
-    def beat():
-        now = time.perf_counter()
-        gaps.append(now - last[0])
-        last[0] = now
-
-    loop = QEventLoop()
-    heart = QTimer()
-    heart.timeout.connect(beat)
-    heart.start(10)
-    done = QTimer()
-    done.timeout.connect(lambda: loop.quit() if tab._thread is None else None)
-    done.start(5)
-    loop.exec()
-    heart.stop()
-    done.stop()
-    return gaps
-
-
-def test_the_ui_thread_keeps_getting_its_turn_during_a_run(tab):
-    """The real solver on the course loop: at 5 ms the longest UI stall was
-    over 2 s in a run of this length."""
-    tab._canvas.set_model(course_loop())
-    tab._solver.setCurrentText("ode45")
-    tab._t_end.setValue(300)
-    tab._step.setValue(0)
-    tab.run_simulation()
-    gaps = _watch_until_done(tab)
-    assert len(gaps) > 100, "the UI thread hardly ran at all"
-    assert max(gaps) < 0.5, f"the UI thread stalled for {max(gaps):.2f}s"
 
 
 def test_the_switch_interval_is_shortened_for_a_run_and_restored(tab, monkeypatch):
