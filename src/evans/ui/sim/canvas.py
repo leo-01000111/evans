@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QPen, QUndoStack
 from PySide6.QtWidgets import (
     QApplication,
@@ -42,10 +42,46 @@ from .items import (
 
 MIME_TYPE = "application/x-evans-blocks"
 
+#: What a refused edit says while a simulation runs (R6d).
+LOCKED_MESSAGE = ("The model is locked while a simulation is running. "
+                  "Press Stop, or wait for it to finish, to edit.")
+
 #: The canvas's standing hint (its tooltip over empty canvas).
 HINT = "Double-click or type to add a block. Drag from a port to wire it."
 #: A wire dropped this far (view pixels) from its port counts as dropped.
 DROP_DISTANCE = 12.0
+
+
+class _LockableStack(QUndoStack):
+    """
+    The undo stack, refusing every change while its canvas is locked.
+
+    All model edits go through ``push``, ``undo`` or ``redo``, so this is the
+    one place a locked canvas cannot be bypassed; the canvas's gestures also
+    check first, so they do not start something they cannot finish.
+    """
+
+    def __init__(self, canvas: SimCanvas) -> None:
+        super().__init__(canvas)
+        self._canvas = canvas
+
+    def push(self, command) -> None:
+        if self._canvas.locked:
+            self._canvas.refuse_edit(redraw=True)
+            return
+        super().push(command)
+
+    def undo(self) -> None:
+        if self._canvas.locked:
+            self._canvas.refuse_edit()
+            return
+        super().undo()
+
+    def redo(self) -> None:
+        if self._canvas.locked:
+            self._canvas.refuse_edit()
+            return
+        super().redo()
 
 
 class SimCanvas(QGraphicsView):
@@ -65,7 +101,9 @@ class SimCanvas(QGraphicsView):
     def __init__(self, model: SimModel | None = None, parent=None) -> None:
         super().__init__(parent)
         self.model = model or SimModel("untitled")
-        self.undo_stack = QUndoStack(self)
+        #: True while a simulation runs: the model is read-only (R6d).
+        self.locked = False
+        self.undo_stack = _LockableStack(self)
         self.undo_stack.setUndoLimit(200)
         #: Reads block parameters written as workspace expressions; the app
         #: sets it to the console's (see :mod:`evans.sim.workspace`).
@@ -106,6 +144,27 @@ class SimCanvas(QGraphicsView):
         from . import shapes
         shapes.notifier().changed.connect(lambda *_: self._scene.update())
         self.rebuild()
+
+    # ── run lock ────────────────────────────────────────────────
+
+    def set_locked(self, locked: bool) -> None:
+        """Make the model read-only (a run is on) or editable again."""
+        self.locked = locked
+        self._cancel_wire()
+        if self._quick is not None:
+            self._quick.hide()
+        self._apply_lock()
+
+    def _apply_lock(self) -> None:
+        for item in self._scene.items():
+            if isinstance(item, (BlockItem, AnnotationItem)):
+                item.setFlag(QGraphicsItem.ItemIsMovable, not self.locked)
+
+    def refuse_edit(self, redraw: bool = False) -> None:
+        """Say why an edit did nothing; ``redraw`` undoes a half-made one."""
+        self.status.emit(LOCKED_MESSAGE)
+        if redraw:
+            QTimer.singleShot(0, self.rebuild)
 
     # ── model ↔ scene ───────────────────────────────────────────
 
@@ -174,6 +233,7 @@ class SimCanvas(QGraphicsView):
             self._scene.addItem(item)
 
         self._scene.blockSignals(False)
+        self._apply_lock()
         self.validate()
         self.model_changed.emit()
 
@@ -225,6 +285,9 @@ class SimCanvas(QGraphicsView):
     # ── editing ─────────────────────────────────────────────────
 
     def add_block(self, type_name: str, pos: QPointF | None = None) -> None:
+        if self.locked:
+            self.refuse_edit()
+            return
         where = pos or self._free_spot()
         self.undo_stack.push(
             cmd.AddBlock(self, type_name, snap(where.x()), snap(where.y())))
@@ -266,6 +329,9 @@ class SimCanvas(QGraphicsView):
                  if isinstance(i, WireItem)]
         notes = [i.index for i in self._scene.selectedItems()
                  if isinstance(i, AnnotationItem)]
+        if self.locked:
+            self.refuse_edit()
+            return
         if blocks or wires or notes:
             self.undo_stack.push(cmd.DeleteSelection(self, blocks, wires,
                                                      notes))
@@ -380,6 +446,9 @@ class SimCanvas(QGraphicsView):
         """Change a note's text; an empty text deletes it."""
         if not 0 <= index < len(self.model.annotations):
             return
+        if self.locked:
+            self.refuse_edit()
+            return
         if text is None:
             from PySide6.QtWidgets import QInputDialog
             text, ok = QInputDialog.getMultiLineText(
@@ -433,6 +502,9 @@ class SimCanvas(QGraphicsView):
         self.status.emit(f"Copied {len(payload['blocks'])} block(s)")
 
     def paste(self) -> None:
+        if self.locked:
+            self.refuse_edit()
+            return
         try:
             payload = json.loads(QApplication.clipboard().text())
         except (ValueError, TypeError):
@@ -465,6 +537,10 @@ class SimCanvas(QGraphicsView):
             super().mousePressEvent(event)
             return
 
+        if isinstance(item, PortItem) and self.locked:
+            self.refuse_edit()
+            event.accept()
+            return
         if isinstance(item, PortItem):
             if self._pending_port is not None and item is not self._pending_port:
                 self._finish_wire(item)
@@ -603,6 +679,9 @@ class SimCanvas(QGraphicsView):
         than silently doing nothing.
         """
         blocks = self.selected_blocks()
+        if self.locked:
+            self.refuse_edit()
+            return 0
         if len(blocks) < 2:
             self.status.emit("Select two or more blocks to align them")
             return 0
@@ -618,6 +697,9 @@ class SimCanvas(QGraphicsView):
     def distribute_selection(self, axis: str) -> int:
         """Space the selected blocks evenly along ``axis``."""
         blocks = self.selected_blocks()
+        if self.locked:
+            self.refuse_edit()
+            return 0
         if len(blocks) < 3:
             self.status.emit("Select three or more blocks to distribute them")
             return 0
@@ -650,6 +732,9 @@ class SimCanvas(QGraphicsView):
             self.scope_requested.emit(self.block_path(block_id))
             return
 
+        if self.locked:
+            self.refuse_edit()
+            return
         from .params import ParamDialog
 
         dialog = ParamDialog(block, self)
@@ -692,6 +777,9 @@ class SimCanvas(QGraphicsView):
         """Open the tuner for a PID; write accepted gains through undo."""
         if self.model.block(block_id).type_name != "PID":
             return False
+        if self.locked:
+            self.refuse_edit()
+            return False
         dialog = self.make_tune_dialog(block_id)
         if dialog.exec() and dialog.changes:
             self.undo_stack.push(cmd.SetParams(self, block_id, dialog.changes))
@@ -717,7 +805,7 @@ class SimCanvas(QGraphicsView):
         inner = block.inner_model()
         inner.name = block.params.get("name", block_id)
         self.model = inner
-        self.undo_stack = QUndoStack(self)
+        self.undo_stack = _LockableStack(self)
         self.rebuild()
         self.fit_all()
         self.path_changed.emit(self.breadcrumb())
@@ -730,8 +818,9 @@ class SimCanvas(QGraphicsView):
         parent, block_id, parent_stack = self._stack.pop()
         self.model = parent
         self.undo_stack = parent_stack
-        self.undo_stack.push(
-            cmd.SetParams(self, block_id, {"model": inner.to_dict()}))
+        if not self.locked:
+            self.undo_stack.push(
+                cmd.SetParams(self, block_id, {"model": inner.to_dict()}))
         self.rebuild()
         self.fit_all()
         self.path_changed.emit(self.breadcrumb())
@@ -841,6 +930,9 @@ class SimCanvas(QGraphicsView):
         ``wire_from`` (a wire in progress) only types with a port of the
         needed direction are listed, and the choice is wired to it.
         """
+        if self.locked:
+            self.refuse_edit()
+            return
         point = QPoint(view_pos)
         self._quick_scene_pos = self.mapToScene(point)
         if wire_from is not None:

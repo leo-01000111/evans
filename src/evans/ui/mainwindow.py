@@ -431,6 +431,8 @@ class MainWindow(QMainWindow):
         self._console.interpreter.simulink = self._sim_tab.bridge(
             lambda model: self._on_console_model(model.name, model))
         self._sim_tab.simulated.connect(self._on_simulated)
+        self._sim_tab.running_changed.connect(
+            lambda _running: self._sync_undo_group())
         self._console.open_system.connect(self._on_console_system)
         self._console.console.executed.connect(self._on_console_executed)
         self._console.open_model.connect(self._on_console_model)
@@ -815,7 +817,7 @@ class MainWindow(QMainWindow):
 
     def _settle_model(self) -> bool:
         """The model's unsaved changes, with the Model tab in view."""
-        if not self._sim_tab.is_unsaved():
+        if not (self._sim_tab.is_unsaved() or self._sim_tab.running):
             return True
         self._stack.set_current(Workspace.MODEL)
         return self._sim_tab.settle_unsaved()
@@ -1630,7 +1632,9 @@ class MainWindow(QMainWindow):
         if current is Workspace.ANALYSE:
             active = self._loop_undo
         elif current is Workspace.MODEL:
-            active = canvas.undo_stack
+            # No active stack while a run locks the model: Edit > Undo is
+            # greyed (the group would undo past the canvas's own refusal).
+            active = None if canvas.locked else canvas.undo_stack
         else:
             active = None
         if active is not None:

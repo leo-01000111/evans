@@ -212,6 +212,7 @@ class SimulinkLibrary:
 
         legacy = isinstance(model, SimModel)
         target = model if legacy else self._model(model)
+        self._refuse_while_running("sim")
         settings = dict(target.settings)
         rest = list(args)
         if rest and not isinstance(rest[0], str) \
@@ -284,6 +285,7 @@ class SimulinkLibrary:
     @_nargout
     def f_open_system(self, name, *_, nargout=0):
         model = self._model(name)
+        self._refuse_while_running("open_system", model)
         bridge = self._bridge()
         if bridge is not None:
             bridge.show(model)
@@ -387,6 +389,7 @@ class SimulinkLibrary:
                               "pairs.")
         from ..sim.block import BlockError
         model, parts = self._split(obj)
+        self._refuse_while_running("set_param", model)
         if not parts:
             for name, value in zip(args[::2], args[1::2]):
                 key = _norm(_as_text(name))
@@ -435,6 +438,7 @@ class SimulinkLibrary:
         from ..sim.model import ModelError
         type_name = _block_type(_as_text(source).split("/")[-1])
         model, parts = self._split(dest)
+        self._refuse_while_running("add_block", model)
         if not parts:
             raise MatlabError("add_block: the destination is model/name.")
         if len(args) % 2:
@@ -466,6 +470,7 @@ class SimulinkLibrary:
     def f_delete_block(self, path):
         from ..sim.model import ModelError
         model, parts = self._split(path)
+        self._refuse_while_running("delete_block", model)
         if not parts:
             raise MatlabError("delete_block: name a block, model/name.")
 
@@ -480,6 +485,7 @@ class SimulinkLibrary:
     def f_add_line(self, system, src, dst, *_):
         from ..sim.model import ModelError
         model, parts = self._split(system)
+        self._refuse_while_running("add_line", model)
 
         def wire(target):
             a = _port_spec(target, _as_text(src), output=True)
@@ -493,6 +499,7 @@ class SimulinkLibrary:
 
     def f_delete_line(self, system, src, dst=None, *_):
         model, parts = self._split(system)
+        self._refuse_while_running("delete_line", model)
 
         def unwire(target):
             b = None
@@ -508,6 +515,22 @@ class SimulinkLibrary:
         self._changed(model)
 
     # ── helpers ─────────────────────────────────────────────────
+
+    def _refuse_while_running(self, who: str, model=None) -> None:
+        """
+        A run on the Model tab locks its model (R6d). ``sim`` is refused
+        whatever model it names (one run at a time); an edit only when it
+        is of the model the tab shows.
+        """
+        bridge = self._bridge()
+        if bridge is None or not getattr(bridge, "running", False):
+            return
+        if model is not None and model is not bridge.model():
+            return
+        what = "start another run" if who == "sim" else "change the model"
+        raise MatlabError(
+            f"{who}: a simulation is running on the Model tab, so Evans "
+            f"cannot {what}. Wait for it to finish, or press Stop.")
 
     def _bridge(self):
         return getattr(self.rt.host, "simulink", None) \

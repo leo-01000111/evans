@@ -43,6 +43,8 @@ class BlockInspector(QWidget):
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.block_id: str | None = None
         self._form: ParamForm | None = None
+        #: True while a run locks the model: the form can be read, not used.
+        self._read_only = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(NORMAL, NORMAL, NORMAL, NORMAL)
@@ -105,14 +107,27 @@ class BlockInspector(QWidget):
             self._apply.setEnabled(False)
             return
         self._scroll.setWidget(self._form)
-        self._apply.setEnabled(True)
+        self._apply.setEnabled(not self._read_only)
+        self._form.setEnabled(not self._read_only)
         self._status.clear()
+
+    def set_read_only(self, read_only: bool) -> None:
+        """Lock the form and its buttons (a simulation is running)."""
+        self._read_only = read_only
+        if self._form is not None:
+            self._form.setEnabled(not read_only)
+        has_form = self._form is not None and self.block_id is not None
+        self._apply.setEnabled(has_form and not read_only
+                               and self._scroll.widget() is self._form)
+        self._tune.setEnabled(not read_only)
+        self._status.setText(
+            "Locked while a simulation is running." if read_only else "")
 
     # ── applying ────────────────────────────────────────────────
 
     def commit(self) -> bool:
         """Validate and hand the changes to the canvas. True if applied."""
-        if self._form is None or self.block_id is None:
+        if self._form is None or self.block_id is None or self._read_only:
             return False
         changes = self._form.commit()
         if changes is None:

@@ -2392,3 +2392,58 @@ What is missing is what ties it together:
   row of that page instead, so it is always reachable. Check by eye on Windows: the
   field next to the menus at 1280 px and while the window is dragged narrow, the
   animation, and a click on the field and on the open palette over the caption.
+
+- [x] **R6d — Simulations run off the UI thread.** *opus.* **M–L** Leon,
+  2026-11-19: a long Model run freezes the window, and a click during it brings up
+  "Not responding". Decision (asked and answered): **run in the background, model
+  locked.** The run moves to a worker thread (`QThread` or a worker object; the
+  solver and compile code are pure Python and must not touch widgets), so the window
+  keeps repainting and stays usable. During a run the canvas, the block inspector and
+  model edits are read-only (no moves, wiring, parameter edits, undo/redo of the
+  model, quick insert), with a clear running state: the toolbar's Run becomes
+  **Stop**, the bottom bar shows "Running" and progress if the solver reports it.
+  Analyse and Console stay usable; console commands that touch the running model
+  (`sim`, `set_param` and the like) wait or refuse with a clear message. Scopes
+  update as now (results delivered by signal to the UI thread). Stop cancels
+  cleanly between solver steps. Model scripts that run before a run (model scripts,
+  0.26.0) still run on the console as now, before the worker starts. Closing the
+  model or quitting during a run asks or stops it first. Tests: the UI thread stays
+  responsive during a long run (an event posted during the run is processed), edits
+  are refused while running and allowed after, Stop ends the run, results and scopes
+  match a run made the old way, quit during a run, an error in the worker reaches
+  the user as now.
+  **Decided 2026-11-20: start with a diagnosis.** Step one is to profile a long run
+  and find what freezes the window; the decided behaviour above then applies to
+  whatever the diagnosis shows is left to build. Add a test for the cause found.
+  *Found 2026-11-19 (documentation audit):* the solver already runs
+  on a `QThread` (`SimTab.run_simulation` moves a `_Worker` to `self._thread`), with
+  a progress bar and a Stop button, and has since before 2026-10-27; Run and Stop
+  are already separate buttons. So the freeze is not the run sitting on the UI
+  thread. Likely causes to measure first: the pure-Python solver holding the GIL so
+  the UI thread rarely gets to run; `compile_model` and the before-run scripts,
+  which run on the UI thread before the worker starts; or a flood of progress
+  signals. The decided behaviour (model locked, Analyse and Console usable) still
+  stands; what is left to build may be smaller.
+  **Diagnosed 2026-11-23:** the cause is GIL starvation. The solver thread is pure
+  Python and numpy; at the default 5 ms switch interval the UI thread waited up to
+  2.6 s (7.4 s in a 3000 s run) for the GIL. The compile step, the progress signals
+  (already throttled to 0.1 s) and drawing the result (10 to 30 ms) are not the
+  cause on `course_loop()`. Fixed: `sim_tab.RUN_SWITCH_INTERVAL` (0.5 ms) is set
+  while a run lasts and restored after; longest stall 80 ms.
+  `tests/golden/test_run_responsive.py` tests only the setting (shortened for a
+  run, restored after): a test of the stall itself did not fail at 5 ms on a 300 s
+  run, and in the full suite its first heartbeat swallowed 13 to 18 s of work that
+  earlier tests had left queued, so it was removed. Most of the starvation seen was at
+  the start of a run (first UI gap 1.4 to 2.6 s at 5 ms); later gaps were 60 to 350 ms.
+  **Built 2026-11-23: the lock** (`tests/golden/test_run_lock.py`). While
+  `SimTab._thread` is set the canvas is read-only (`SimCanvas.locked`: no moves,
+  wiring, delete, paste, quick insert, parameter dialogs, align; undo/redo refused
+  by `_LockableStack`, Edit > Undo greyed in the main window), the inspector and the
+  stop time / solver / step controls are read-only, and a refused edit says so in the
+  bottom bar. The lock lifts in `_teardown_thread` (finish, Stop, error). Console:
+  `sim`, `open_system`, `set_param`, `add_block`, `delete_block`, `add_line`,
+  `delete_line` refuse with a message while a run is on (`lib_sim`). Replacing the
+  model (New, Open, example, recent, console double-click, quit) asks "Stop it and
+  continue?" via `SimTab.settle_run`, called from `settle_unsaved`. Run and Stop stay
+  two buttons (decided: not reworked). Not checked: a heavy model, a stiff solver, and the lock by eye
+  in the running app (tests only); R9's hardening pass covers the by-eye check.

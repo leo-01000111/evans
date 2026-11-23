@@ -24,7 +24,7 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 
 | Section | Open | Next |
 |---|---|---|
-| 1.0 | 1 | the tag, after the corpus checker and Phase 8's R6d to R9 |
+| 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
 | Phase 0, silent wrong answers | 2 | |
 | Phase 1, data work at the console | 6 | |
 | Phase 2, Simulink for daily use | 24 | |
@@ -33,7 +33,7 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 | Phase 5, hardware, identification, symbolic | 4 | not started |
 | Phase 6, platform and trust | 14 | the corpus checker (blocks 1.0) |
 | Phase 7, scope decisions | 7 | nothing decided yet |
-| Phase 8, interface rework | 7 | R6d, then R7 (blocks 1.0) |
+| Phase 8, interface rework | 6 | R7 (blocks 1.0) |
 | Phase 8.4, after 1.0 | 14 | seven items, one of them with seven parts |
 
 ---
@@ -52,7 +52,7 @@ here.
   are **not** checked in: they come from an academic licence, so
   `evans_reference.mat` and `verif/` stay on Leon's machine (git-ignored). The checker
   skips when the `.mat` is absent, so it guards 1.0 only where the results exist.
-- **Phase 8's open packages:** R6d, R7 (projects; *Decided 2026-11-16: before
+- **Phase 8's open packages:** R7 (projects; *Decided 2026-11-16: before
   1.0*), R8 (Start page), R9 (hardening, documentation, release).
 - [ ] **Tag 1.0,** after which versions follow the policy below.
 
@@ -502,7 +502,7 @@ it.
 - [ ] **An extension mechanism:** user toolboxes on the path, and a place to share
       them. **L**
 
-## Phase 8 — Interface rework before 1.0 ◐ **R0 to R6c done; 7 open (R6d, R7, R8, R9 and three leftovers); blocks 1.0**
+## Phase 8 — Interface rework before 1.0 ◐ **R0 to R6d done; 6 open (R7, R8, R9 and three leftovers); blocks 1.0**
 
 Planned 2026-11-16 from a UI audit and two rounds of decisions with Leon; the audit
 and the finished packages R0 to R6c, with the decisions taken while building them, are
@@ -598,49 +598,7 @@ Still open, ask Leon before building (none of them blocks packages R0 to R9):
 
 ### 8.3 Packages
 
-Order: R6d → R7 → R8 → R9 (R6d was added 2026-11-19, after R6c was done).
-
-- [ ] **R6d — Simulations run off the UI thread.** *opus.* **M–L** Leon,
-  2026-11-19: a long Model run freezes the window, and a click during it brings up
-  "Not responding". Decision (asked and answered): **run in the background, model
-  locked.** The run moves to a worker thread (`QThread` or a worker object; the
-  solver and compile code are pure Python and must not touch widgets), so the window
-  keeps repainting and stays usable. During a run the canvas, the block inspector and
-  model edits are read-only (no moves, wiring, parameter edits, undo/redo of the
-  model, quick insert), with a clear running state: the toolbar's Run becomes
-  **Stop**, the bottom bar shows "Running" and progress if the solver reports it.
-  Analyse and Console stay usable; console commands that touch the running model
-  (`sim`, `set_param` and the like) wait or refuse with a clear message. Scopes
-  update as now (results delivered by signal to the UI thread). Stop cancels
-  cleanly between solver steps. Model scripts that run before a run (model scripts,
-  0.26.0) still run on the console as now, before the worker starts. Closing the
-  model or quitting during a run asks or stops it first. Tests: the UI thread stays
-  responsive during a long run (an event posted during the run is processed), edits
-  are refused while running and allowed after, Stop ends the run, results and scopes
-  match a run made the old way, quit during a run, an error in the worker reaches
-  the user as now.
-  **Decided 2026-11-20: start with a diagnosis.** Step one is to profile a long run
-  and find what freezes the window; the decided behaviour above then applies to
-  whatever the diagnosis shows is left to build. Add a test for the cause found.
-  *Found 2026-11-19 (documentation audit):* the solver already runs
-  on a `QThread` (`SimTab.run_simulation` moves a `_Worker` to `self._thread`), with
-  a progress bar and a Stop button, and has since before 2026-10-27; Run and Stop
-  are already separate buttons. So the freeze is not the run sitting on the UI
-  thread. Likely causes to measure first: the pure-Python solver holding the GIL so
-  the UI thread rarely gets to run; `compile_model` and the before-run scripts,
-  which run on the UI thread before the worker starts; or a flood of progress
-  signals. The decided behaviour (model locked, Analyse and Console usable) still
-  stands; what is left to build may be smaller.
-  **Diagnosed 2026-11-23:** the cause is GIL starvation. The solver thread is pure
-  Python and numpy; at the default 5 ms switch interval the UI thread waited up to
-  2.6 s (7.4 s in a 3000 s run) for the GIL. The compile step, the progress signals
-  (already throttled to 0.1 s) and drawing the result (10 to 30 ms) are not the
-  cause on `course_loop()`. Fixed: `sim_tab.RUN_SWITCH_INTERVAL` (0.5 ms) is set
-  while a run lasts and restored after; longest stall 80 ms.
-  `tests/golden/test_run_responsive.py` fails at 5 ms. Still open: the decided
-  locking behaviour (model read-only while running, Run becomes Stop), and a check
-  on a heavy model, a stiff solver and the real window, where "Not responding"
-  would show.
+Order: R7 → R8 → R9 (R6d, added 2026-11-19 after R6c, is done: `docs/HISTORY.md`, part 6).
 
 - [ ] **R7 — Projects as folders.** *opus for the core and the decisions, sonnet for
   the rest.* **L** Needs R4.
@@ -788,7 +746,8 @@ Order: R6d → R7 → R8 → R9 (R6d was added 2026-11-19, after R6c was done).
     Tab reaches every control of the side panels, the palette and the Start page,
     with a visible focus frame; the glyphs from R0. Also the by-eye checks the
     finished packages left that Leon's reviews of R2 to R6 (2026-11-18 and
-    2026-11-19) did not cover: the Docs button under the shrimp (R2); the Live
+    2026-11-19) did not cover: the run lock on a long run of a heavy model, and a
+    stiff solver, in the real window (R6d); the Docs button under the shrimp (R2); the Live
     toolbar's overflow arrow at narrow widths (R2); dragging a side panel wider,
     then closing and reopening it (R2); the Design tab at the panel's 240 px
     minimum, where the Gain page may scroll sideways (R3); the Compare menus and

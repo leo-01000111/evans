@@ -159,6 +159,7 @@ class SimTab(QWidget, GuardedPanel):
     palette_changed = Signal(bool)
     #: A run finished; the console writes it to the workspace as ``out``.
     simulated = Signal(object)             # SimResult
+    running_changed = Signal(bool)         # a run began (True) or ended
 
     #: Where the palette's folded/unfolded state is remembered.
     SETTINGS_ORG = "Evans"
@@ -870,6 +871,7 @@ class SimTab(QWidget, GuardedPanel):
         self._progress.setVisible(True)
         self._progress.setValue(0)
         self._status.setText("Running…")
+        self._lock_model(True)
         self._saved_switch = sys.getswitchinterval()
         sys.setswitchinterval(RUN_SWITCH_INTERVAL)
         self._thread.start()
@@ -906,6 +908,62 @@ class SimTab(QWidget, GuardedPanel):
 
     def shutdown(self) -> None:
         """Cancel a running simulation and wait for its thread to end."""
+        self._abandon_run()
+
+    @property
+    def running(self) -> bool:
+        """Whether a simulation is running: the model is locked meanwhile."""
+        return self._thread is not None
+
+    def _lock_model(self, locked: bool) -> None:
+        """
+        Make the model read-only while a run is on, or editable again.
+
+        The run works on a compiled copy, but what the scopes then show would
+        no longer be the diagram on screen if it could change under the run.
+        The canvas refuses moves, wiring, deletes, pastes, quick insert and
+        undo/redo; the inspector and the run settings go read-only.
+        """
+        self._canvas.set_locked(locked)
+        self._inspector.set_read_only(locked)
+        for control in (self._t_end, self._solver, self._step):
+            control.setEnabled(not locked)
+        self.running_changed.emit(locked)
+
+    def _ask_stop_run(self) -> bool:
+        """Whether to stop the run in progress. A method so tests can answer."""
+        box = QMessageBox(
+            QMessageBox.Question, "Simulation running",
+            "A simulation is running. Stop it and continue?",
+            QMessageBox.Yes | QMessageBox.No, self)
+        box.setDefaultButton(QMessageBox.No)
+        return box.exec() == QMessageBox.Yes
+
+    def settle_run(self) -> bool:
+        """
+        Before the model is replaced or closed: stop the run, if the user
+        agrees. True when nothing is running any more.
+        """
+        if self._thread is None:
+            return True
+        if not self._ask_stop_run():
+            return False
+        self._abandon_run()
+        self._status.setText("Simulation stopped.")
+        return True
+
+    def _abandon_run(self) -> None:
+        """Cancel the run and drop its results: they belong to a model that
+        is about to be gone."""
+        worker = self._worker
+        if worker is not None:
+            for signal, slot in ((worker.finished, self._on_finished),
+                                 (worker.failed, self._on_failed),
+                                 (worker.progress, self._on_progress)):
+                try:
+                    signal.disconnect(slot)
+                except (RuntimeError, TypeError):
+                    pass
         self._cancel()
         self._teardown_thread()
 
@@ -922,6 +980,7 @@ class SimTab(QWidget, GuardedPanel):
         self._run_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._progress.setVisible(False)
+        self._lock_model(False)
 
     # ── linearise ───────────────────────────────────────────────
 
@@ -1018,6 +1077,8 @@ class SimTab(QWidget, GuardedPanel):
         ``remember`` puts it on the recent-files list; an example opened
         from the menu is not a file of the user's, so it stays off.
         """
+        if not self.settle_run():
+            return
         model = SimModel.load(path)
         # As PreLoadFcn does: before the canvas checks the parameters.
         self.run_model_scripts(model, ON_OPEN)
@@ -1353,6 +1414,8 @@ class SimTab(QWidget, GuardedPanel):
         cancel its changes. True unless the user cancelled, which includes
         cancelling Save's file dialog. Nothing unsaved asks nothing.
         """
+        if not self.settle_run():
+            return False
         if not self.is_unsaved():
             return True
         choice = self._ask_to_save()
@@ -1413,6 +1476,11 @@ class CanvasBridge:
 
     def model(self) -> SimModel:
         return self._tab._canvas.root_model()
+
+    @property
+    def running(self) -> bool:
+        """Whether a run is in progress: the model on the tab is locked."""
+        return self._tab.running
 
     def show(self, model: SimModel) -> None:
         self._show(model)
