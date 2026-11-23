@@ -9,6 +9,27 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.30.2 - 2026-11-23
+
+### Fixed
+
+- A long simulation no longer freezes the Model tab's window. The solver thread
+  (pure Python) was starving the window's thread of the interpreter lock, so the
+  window stopped repainting and a click brought up "Not responding". A run now
+  asks the interpreter to switch threads every 0.5 ms instead of 5 ms, and puts
+  the setting back when it ends.
+
+### Changed
+
+- **The model is locked while a simulation runs.** The canvas and the block
+  inspector are read-only: no moving, wiring, deleting, pasting, quick insert,
+  parameter dialogs or undo and redo, and the stop time, solver and step
+  controls are greyed. A refused edit says why in the bottom bar. The lock lifts
+  when the run ends, is stopped or fails. Console commands that change the
+  model (`set_param`, `add_block`, `delete_block`, `add_line`, `delete_line`,
+  `open_system`) and `sim` refuse with a message while a run is on. New, Open,
+  an example, a recent file or quitting during a run asks whether to stop it.
+
 ## 0.30.1 - 2026-11-19
 
 ### Fixed
