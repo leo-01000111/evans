@@ -9,6 +9,7 @@ crashed one — so the UI stays live, shows progress, and can be cancelled.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -75,6 +76,13 @@ SOLVER_MENU = (
     ["ode1", "ode2", "ode3", "ode4", "ode5"],
     ["RK45", "RK23", "DOP853", "LSODA", "Radau", "BDF"],
 )
+
+
+#: Seconds between the interpreter's offers to switch threads while a run is
+#: going. The solver is pure Python, so at the default 5 ms the UI thread
+#: could wait seconds for the GIL and the window froze (R6d diagnosis,
+#: 2026-11-23: longest UI stall 2.6 s at 5 ms, 80 ms at 0.5 ms).
+RUN_SWITCH_INTERVAL = 0.0005
 
 
 class _Worker(QObject):
@@ -862,6 +870,8 @@ class SimTab(QWidget, GuardedPanel):
         self._progress.setVisible(True)
         self._progress.setValue(0)
         self._status.setText("Running…")
+        self._saved_switch = sys.getswitchinterval()
+        sys.setswitchinterval(RUN_SWITCH_INTERVAL)
         self._thread.start()
 
     def _on_progress(self, fraction: float) -> None:
@@ -905,6 +915,10 @@ class SimTab(QWidget, GuardedPanel):
             self._thread.wait(2000)
             self._thread = None
         self._worker = None
+        saved = getattr(self, "_saved_switch", None)
+        if saved is not None:
+            sys.setswitchinterval(saved)
+            self._saved_switch = None
         self._run_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._progress.setVisible(False)

@@ -631,6 +631,16 @@ Order: R6d → R7 → R8 → R9 (R6d was added 2026-11-19, after R6c was done).
   which run on the UI thread before the worker starts; or a flood of progress
   signals. The decided behaviour (model locked, Analyse and Console usable) still
   stands; what is left to build may be smaller.
+  **Diagnosed 2026-11-23:** the cause is GIL starvation. The solver thread is pure
+  Python and numpy; at the default 5 ms switch interval the UI thread waited up to
+  2.6 s (7.4 s in a 3000 s run) for the GIL. The compile step, the progress signals
+  (already throttled to 0.1 s) and drawing the result (10 to 30 ms) are not the
+  cause on `course_loop()`. Fixed: `sim_tab.RUN_SWITCH_INTERVAL` (0.5 ms) is set
+  while a run lasts and restored after; longest stall 80 ms.
+  `tests/golden/test_run_responsive.py` fails at 5 ms. Still open: the decided
+  locking behaviour (model read-only while running, Run becomes Stop), and a check
+  on a heavy model, a stiff solver and the real window, where "Not responding"
+  would show.
 
 - [ ] **R7 — Projects as folders.** *opus for the core and the decisions, sonnet for
   the rest.* **L** Needs R4.
