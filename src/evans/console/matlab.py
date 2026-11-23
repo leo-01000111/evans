@@ -1715,6 +1715,9 @@ class _Emitter:
                 and isinstance(s.targets[0].target, _Name)):
             self._assign_list(s, i)
             return
+        if s.multi and any(self._is_list_target(t) for t in s.targets):
+            self._assign_mixed(s, i)
+            return
         if s.multi:
             n = len(s.targets)
             value = self.expr(s.value, nargout=n)
@@ -1732,6 +1735,46 @@ class _Emitter:
         self._store(target, self.expr(s.value, nargout=1), i, s.line)
         if s.echo:
             self._echo(target, i, s.line)
+
+    @staticmethod
+    def _is_list_target(t: _Node) -> bool:
+        return isinstance(t, _CellIndex) and isinstance(t.target, _Name)
+
+    def _assign_mixed(self, s: _Assign, i: int) -> None:
+        """``[a, c{:}] = f(...)``: a list target takes as many outputs as it
+        names, so the call's nargout is only known when this runs."""
+        counts = []
+        for t in s.targets:
+            if not self._is_list_target(t):
+                counts.append("1")
+                continue
+            name = t.target.name
+            current = (self._linked_read(name) if name in self.linked
+                       else f"{_RT}.existing({name!r}, locals())")
+            counts.append(f"{_RT}.list_count({current}, "
+                          f"({self._arglist(t.args)}))")
+        self._put(i, f"_csc = [{', '.join(counts)}]", s.line)
+        self._put(i, "_csn = sum(_csc)", s.line)
+        value = self.expr(s.value, nargout="_csn")
+        self._put(i, f"_cso = {_RT}.unpack({value}, _csn)", s.line)
+        self._put(i, "_csp = 0", s.line)
+        for k, t in enumerate(s.targets):
+            if self._is_list_target(t):
+                name = t.target.name
+                current = (self._linked_read(name) if name in self.linked
+                           else f"{_RT}.existing({name!r}, locals())")
+                self.vars.add(name)
+                self._put(i, f"{_py_name(name)} = {_RT}.list_part("
+                             f"{current}, ({self._arglist(t.args)}), "
+                             f"_cso, _csp, _csc[{k}])", s.line)
+                self._write_back(name, i, s.line)
+            elif isinstance(t, _Name) and t.name == "~":
+                pass
+            else:
+                self._store(t, "_cso[_csp]", i, s.line)
+            self._put(i, f"_csp += _csc[{k}]", s.line)
+            if s.echo and not (isinstance(t, _Name) and t.name == "~"):
+                self._echo(t, i, s.line)
 
     def _assign_list(self, s: _Assign, i: int) -> None:
         """``[c{k}] = f(...)``: as many outputs as ``c{k}`` names."""

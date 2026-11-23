@@ -2453,6 +2453,12 @@ class Runtime:
             c = self.assign(c, [("{}", slot)], v, owned=True)
         return c
 
+    def list_part(self, c, args: tuple, outs: tuple, start: int, n: int):
+        """Store ``n`` of a call's outputs, from ``start``, into ``c{args}``."""
+        part = outs[start:start + n]
+        return self.list_store(c, args, part[0] if n == 1 else (
+            part if n else None), n)
+
     def field(self, obj, name, call=True):
         if isinstance(obj, _cls.ClassObject):
             value = _cls.get_property(obj, name)

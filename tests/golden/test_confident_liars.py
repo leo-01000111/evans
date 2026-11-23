@@ -719,3 +719,13 @@ def test_a_struct_array_field_is_a_comma_separated_list(it):
     assert _numbers(val(it, "m")).tolist() == [4]
     assert _numbers(val(it, "k")).tolist() == [2]
     assert _numbers(val(it, "r")).tolist() == pytest.approx([5.0])
+
+
+def test_a_cs_list_target_beside_other_targets(it):
+    """``[a, c{:}] = f()``: the list takes as many outputs as it names (it
+    failed with "The number of outputs should match the number of inputs")."""
+    run(it, "c = cell(1, 2); [a, c{:}] = deal(1, 2, 3); x = c{1}; y = c{2};\n"
+            "d = cell(1, 2); [d{:}, b] = deal(4, 5, 6); z = d{2}; w = b;\n"
+            "[p, ~, e{1:2}] = deal(7, 8, 9, 10); q = e{2};")
+    got = [_numbers(val(it, k)).tolist() for k in "a x y z w p q".split()]
+    assert got == [[1], [2], [3], [5], [6], [7], [10]]

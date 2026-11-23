@@ -9,6 +9,18 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.30.3 - 2026-11-24
+
+### Fixed
+
+- A struct array's field is now a comma-separated list. `{s.a}` of a 1x2 struct
+  array was a 1x1 cell holding a tuple, `[s.a]` of text failed, and `f(s.a)`
+  received one argument instead of two. A field in a cell literal, a matrix row
+  or an argument list now gives one value per element, as in MATLAB.
+- `[a, c{:}] = f()` and `[d{:}, b] = f()` work: the list takes as many outputs
+  as it names. They failed with "The number of outputs should match the number
+  of inputs".
+
 ## 0.30.2 - 2026-11-23
 
 ### Fixed

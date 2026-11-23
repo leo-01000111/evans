@@ -25,7 +25,7 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 | Section | Open | Next |
 |---|---|---|
 | 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
-| Phase 0, silent wrong answers | 2 | |
+| Phase 0, silent wrong answers | 1 | |
 | Phase 1, data work at the console | 5 | |
 | Phase 2, Simulink for daily use | 24 | |
 | Phase 3, plotting | 5 | |
@@ -130,7 +130,7 @@ under rules 1 and 3 from 1.0, as model files and settings do.
 
 ---
 
-## Phase 0 — Silent wrong answers ◐ **Core done 2026-10-27; 2 open**
+## Phase 0 — Silent wrong answers ◐ **Core done 2026-10-27; 1 open**
 
 Tests: `tests/golden/test_confident_liars.py`. The search for more silent wrong
 answers became the reference corpus (Phase 6), which found 32; all were fixed
@@ -141,9 +141,6 @@ answers became the reference corpus (Phase 6), which found 32; all were fixed
       to a MATLAB function, or to a library function off the owned list, copies once per
       call (correct, but quadratic again); a thread reading the workspace while a loop
       runs could see writes land. **M**
-- [ ] **A cs-list mixed with other targets,** `[a, c{:}] = f()` (left from the
-      `varargout` work, 2026-11-11). Still fails on 2026-11-19 with "The number of
-      outputs should match the number of inputs". **S**
 
 ## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 5 open**
 
@@ -764,7 +761,12 @@ Order: R7 → R8 → R9 (R6d, added 2026-11-19 after R6c, is done: `docs/HISTORY
     on `surface` in both themes (target 4.5:1) and the plot line colours against
     the plot background (3:1); check that curves in a Compare set differ by line
     style as well as colour. Fix in `ui/theme.py` only with Leon's agreement,
-    since it is the design system.
+    since it is the design system. *Measured 2026-11-23:* text passes everywhere
+    (`ink_muted` 6.7 to 7.8:1 on both grounds in both themes). Plot lines on the
+    plot background pass except **Day's highlight amber `#b8900a`, 2.73:1** (target
+    3:1); a darker amber (about `#a17f09`) would clear it. Curves 1 to 5 of a
+    Compare set differ by colour only; the dash style starts at the sixth
+    (`plots.STYLES`). Both are Leon's call.
   - **Sweep for leftovers** (done 2026-11-23, nothing to change): "Model panel",
     "Edit model", "Apply as K", "Apply to Architecture" and "Send to analysis" no
     longer appear in `src/`, `site/`, `README.md`, the help pages or docstrings.

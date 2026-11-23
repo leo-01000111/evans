@@ -1111,6 +1111,10 @@ Tests: `tests/golden/test_confident_liars.py`, last section.
       checking `who`): `{s.a}` of a 1x2 struct array was a 1x1 cell holding a tuple,
       `[s.a]` of text failed, and `f(s.a)` got one argument. `_spread` now splices
       `s.a` (`Runtime.field_list`); test in `tests/golden/test_confident_liars.py`.
+- [x] **A cs-list beside other targets,** `[a, c{:}] = f()` and `[d{:}, b] = f()`:
+      the list takes as many outputs as it names, counted when the statement runs
+      (`Emitter._assign_mixed`, `Runtime.list_part`). Done 2026-11-24; test in
+      `tests/golden/test_confident_liars.py`.
 - [x] `who` and `whos` inside a function list the function's variables. *Found
       working on 2026-11-23 (`_caller_scope`); the roadmap item was stale.*
 
