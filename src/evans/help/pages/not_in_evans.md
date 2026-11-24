@@ -54,6 +54,10 @@ Typing one of these names gives the usual error with a sentence added saying so.
 
 `gco`, `polarplot`, `polaraxes`, `compass`, `feather`, `rose`, `pareto`, `stem3`, `waterfall`, `ribbon`, `trisurf`, `triplot`, `trimesh`, `slice`, `isosurface`, `streamline`, `streamslice`, `comet`, `comet3`, `animatedline`, `getframe`, `movie`, `refresh`, `hggroup`, `daspect`, `pbaspect`, `camlight`, `lighting`, `material`, `light`, `camorbit`, `campos`, `camtarget`, `zoom`, `pan`, `rotate3d`, `datacursormode`, `linkaxes`, `linkprop`, `copyobj`, `findobj`, `findall`, `ishandle`, `isgraphics`, `set`, `get`, `scatterhistogram`, `heatmap`, `wordcloud`, `geoplot`, `geobubble`, `plotmatrix`, `plotyy`, `ezplot`, `fcontour`, `fsurf`, `fmesh`, `fplot3`, `bar3`, `bar3h`
 
+## Text in plots
+
+Not a function but a missing behaviour: MATLAB reads `'\alpha'` and `'x_1'` in titles, labels and legends as TeX (its default text interpreter), and Evans prints them as typed. Write plain text, for example `'alpha (rad)'`, for now.
+
 ## Graphs, geometry and clustering
 
 `graph`, `digraph`, `shortestpath`, `conncomp`, `minspantree`, `delaunay`, `convhull`, `voronoi`, `inpolygon`, `polyarea`, `polyshape`, `rectint`, `knnsearch`, `kmeans`, `pdist`, `pdist2`, `linkage`, `cluster`, `dbscan`

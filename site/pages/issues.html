@@ -24,6 +24,7 @@
         <p>Each is on the <a href="@@repo@@/blob/main/docs/ROADMAP.md">roadmap</a>, with what fixing it involves.</p>
         <ul>
           <li><strong>Growing an array with <code>a(end+1) = v</code> in a loop is slow</strong>, because each step makes a new array. Pre-allocate (<code>a = zeros(1,n)</code>) and fill it, which is fast.</li>
+          <li><strong>TeX text in labels is printed as typed.</strong> <code>ylabel('\alpha (rad)')</code> shows the backslash and the word, not a Greek α, in saved figures and on screen. Until it is fixed, write plain labels.</li>
         </ul>
       </div>
     </section>
@@ -31,13 +32,14 @@
     <section class="proj-section" id="gaps">
       <div class="card prose notes">
         <h2>Not supported yet</h2>
-        <p>These stop with an error that names them rather than giving a wrong answer. The <a href="matlab.html">MATLAB compatibility</a> page has the full list.</p>
+        <p>These stop with an error that names them rather than giving a wrong answer. The <a href="compatibility.html">MATLAB compatibility</a> page has the full list.</p>
         <ul>
           <li><strong>Language:</strong> arrays of <code>classdef</code> objects, <code>subsref</code>/<code>subsasgn</code> and <code>+package</code> folders; categorical arrays and time zones.</li>
           <li><strong>Data:</strong> the old Excel format (<code>.xls</code>) and <code>.ods</code>. Save as <code>.xlsx</code>, which Evans reads and writes.</li>
           <li><strong>Plotting:</strong> graphics handles, as in <code>h = plot(...)</code> and <code>set(h, ...)</code>.</li>
           <li><strong>Simulink:</strong> opening <code>.slx</code> or <code>.mdl</code> files, buses, masks and block libraries, physical (Simscape-style) modelling, and a subsystem that is both enabled and triggered.</li>
           <li><strong>Symbolic maths:</strong> symbolic functions such as <code>syms y(t)</code>, and so <code>dsolve</code>.</li>
+          <li><strong>Command line:</strong> Evans runs in its window only; there is no <code>evans run script.m</code> for a terminal or for other programs yet. Planned, not scheduled.</li>
           <li><strong>Platforms:</strong> no Linux build yet, and the builds are not signed by Microsoft or Apple, so Windows and macOS warn the first time. See the <a href="install.html">install notes</a>.</li>
         </ul>
       </div>

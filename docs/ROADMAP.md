@@ -26,15 +26,15 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 |---|---|---|
 | 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
 | Phase 0, silent wrong answers | 1 | |
-| Phase 1, data work at the console | 5 | |
+| Phase 1, data work at the console | 6 | |
 | Phase 2, Simulink for daily use | 24 | |
-| Phase 3, plotting | 5 | |
+| Phase 3, plotting | 6 | TeX text in labels (after the hold) |
 | Phase 4, other people's MATLAB code | 13 | |
 | Phase 5, hardware, identification, symbolic | 4 | not started |
 | Phase 6, platform and trust | 14 | the corpus checker (blocks 1.0) |
 | Phase 7, scope decisions | 7 | nothing decided yet |
 | Phase 8, interface rework | 5 | R7 (blocks 1.0) |
-| Phase 8.4, after 1.0 | 15 | seven items, one of them with seven parts |
+| Phase 8.4, after 1.0 | 16 | eight items, one of them with seven parts |
 
 ---
 
@@ -142,10 +142,14 @@ answers became the reference corpus (Phase 6), which found 32; all were fixed
       call (correct, but quadratic again); a thread reading the workspace while a loop
       runs could see writes land. **M**
 
-## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 5 open**
+## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 6 open**
 
 The functions live in `src/evans/console/lib_*.py`, tests in
 `tests/golden/test_lib_*.py`.
+
+- [ ] `nextpow2` (listed in *Not in Evans*; `lib_signal.py` has a private `_nextpow2`
+      that a console command can wrap). Found 2026-11-24 by the lab-report session, which
+      used `2^ceil(log2(N))` instead. A new command, so after the 2026-11-26 hold. **S**
 
 - [ ] A `cftool` curve-fitting GUI over `fit`. **L**
 - [ ] `fit` with custom equations (`fittype('a*exp(b*x)')`); refused today. **M**
@@ -292,7 +296,7 @@ nested and conditional (enabled, triggered, action) subsystems exist
       a `timeseries` or struct, and "open as a figure" to continue editing it with
       console plot commands. **S–M**
 
-## Phase 3 — Plotting ◐ **Core done 2026-11-03; 5 open**
+## Phase 3 — Plotting ◐ **Core done 2026-11-03; 6 open**
 
 Plot functions: `console/lib_plot.py`; 2-D drawn by pyqtgraph
 (`ui/console/figure_view.py`), 3-D, pies, PDF/EPS by matplotlib
@@ -311,6 +315,16 @@ Plot functions: `console/lib_plot.py`; 2-D drawn by pyqtgraph
       has *Set K for peak of T*, 0.29.1, and the console has `mtune`, 0.29.0.)
 - [ ] `[az, el] = view` does not read the mouse's angle back on 3-D axes. **S**
 - [ ] `legend` honours only the four corners of `'Location'`. **S**
+- [ ] **TeX text in labels.** MATLAB's default text interpreter is `'tex'`, so
+      `ylabel('\alpha (rad)')` shows a Greek α and `legend('\alpha_c')` a subscript c.
+      Evans prints the string as typed, in both the saved figures
+      (`console/figure_mpl.py`: titles, axis labels, legend, `_Painter._text`) and the
+      on-screen ones (`ui/console/figure_view.py`; not yet checked). Needs one TeX
+      subset to matplotlib-mathtext translator (`\alpha`…, `_x`, `^x`, `\it`, `\bf`)
+      shared by both paths, and the `'Interpreter'` option (`'tex'`, `'latex'`, `'none'`).
+      Found 2026-11-24 by the lab-report session (workaround: plain-text labels).
+      A fix to the output of existing commands, but it touches both renderers, so the
+      2026-11-26 hold applies until Leon says it is a bug fix. **M**
 
 ## Phase 4 — Running other people's MATLAB code ◐ **Core done 2026-11-09; 13 open**
 
@@ -797,7 +811,28 @@ Order: R7 → R8 → R9 (R6d, added 2026-11-19 after R6c, is done: `docs/HISTORY
 - [ ] **Reduced motion** is not detected for the search field's animation (R6c; Qt has
       no portable query). Decide whether a preference is wanted. **S**
 
-### 8.4 After 1.0 (recorded so they are not lost; 15 open)
+### 8.4 After 1.0 (recorded so they are not lost; 16 open)
+
+- [ ] **A command line for scripts and for AI tools** (recorded 2026-11-24; a new
+      feature, so not before the 2026-11-26 hold lapses). Evans's engine already runs
+      without a window: `Interpreter.run(source)` returns a `Result` (output, value,
+      error), `SimModel.load` and `solver.simulate` run `.evx` models, and
+      `--check` runs offscreen. What is missing is the packaging. In this order, one
+      session each; the first two are one PR. **M** then **L**
+      1. `evans run script.m`, `evans eval "expr"`, `evans sim model.evx --stop T --out
+         result.json`: JSON output, exit codes, `--save-figs dir/` (PNG/PDF through
+         `figure_mpl`). A console entry point in `pyproject.toml`, since the Windows exe
+         is windowed. Find out first which `lib_*` commands assume a window (the hooks
+         `close_figures`, `figure_open` and `simulink` default to `None`).
+      2. A help page, tests, the README counts, `CHANGELOG.md` and the patch notes.
+      3. A persistent session (`evans serve`: one `Interpreter` behind a local socket or
+         stdio loop, so numpy/scipy/control load once) with a thin client.
+      4. An MCP server over the same session: tools `eval`, `load_model`, `simulate`,
+         `get_workspace`, `help`; the help pages double as tool docs.
+      5. Optional, last: drive the running window (a `QLocalServer` in the GUI process,
+         commands moved onto the Qt thread). Skip unless someone wants to watch the canvas.
+      Cost guess, 2026-11-24: 1+2 about 20-40% of one 5 h window, 3+4 as much again.
+      Prompted by the ECN lab report, which a throwaway runner covers without this.
 
 - [ ] **A visual marker for the active pane** (`PaneGrid.active_index`, R5); *Show
       Bode* only says "Pane 2: Bode" in the status bar. *Decided 2026-11-23: not now.*

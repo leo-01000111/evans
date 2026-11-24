@@ -69,6 +69,19 @@
       </div>
     </section>
 
+    <section class="proj-section" id="limits">
+      <div class="card prose">
+        <h2>Known limits</h2>
+        <p>Three gaps found while writing up a signal-processing lab, none of them fixed yet:</p>
+        <ul>
+          <li><strong>TeX text in labels.</strong> MATLAB reads <code>'\alpha (rad)'</code> and <code>'\alpha_c'</code> as TeX by default and draws a Greek letter and a subscript. Evans prints the text as typed, in saved figures and on screen. Until this is fixed, write plain labels (<code>'alpha (rad)'</code>).</li>
+          <li><strong><code>nextpow2</code></strong> is not there. <code>2^ceil(log2(N))</code> gives the same number.</li>
+          <li><strong>No command line.</strong> Evans runs in its window only. The engine underneath has no window of its own, so scripts and models could run from a terminal, and from other programs; that is planned, after 1.0 work and not before.</li>
+        </ul>
+        <p>The full list of missing functions is the <em>Not in Evans</em> help page.</p>
+      </div>
+    </section>
+
     <section class="proj-section" id="trademark">
       <div class="card prose">
         <h2>Trademarks</h2>
