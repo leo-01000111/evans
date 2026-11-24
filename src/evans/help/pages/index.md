@@ -106,6 +106,10 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 [filtfilt](filtfilt) · [fir1](fir1) · [pwelch](pwelch) · [hann](hann) · [xcorr](xcorr) · [resample](resample)
 
+## Audio
+
+[audioread](audioread) · [audiowrite](audiowrite) · [audioinfo](audioinfo) · [sound](sound) · [soundsc](soundsc)
+
 ## Fitting and optimisation
 
 [fit](fit) · [lsqcurvefit](lsqcurvefit) · [fsolve](fsolve) · [fmincon](fmincon) · [linprog](linprog) · [integral](integral) · [spline](spline)

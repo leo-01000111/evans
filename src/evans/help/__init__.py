@@ -141,6 +141,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
                           "kaiser", "rectwin", "triang", "bartlett", "window",
                           "fir2", "designfilt", "periodogram", "spectrogram",
                           "decimate", "impz", "grpdelay"),
+    "Audio": ("audioread", "audiowrite", "audioinfo", "sound", "soundsc"),
     "Fitting and optimisation": ("fit", "lsqcurvefit", "fsolve", "fmincon",
                                  "linprog", "integral", "spline",
                                  "optimoptions", "fminunc", "lsqnonlin",
