@@ -9,6 +9,26 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.30.4 - 2026-11-24
+
+### Added
+
+- Help pages for 30 functions that had none: `audioread`, `audiowrite`,
+  `audioinfo`, `sound`, `soundsc`, `fft`, `ifft`, `filter`, `freqz`, `findpeaks`,
+  `butter`, `cheby1`, `ellip`, `interp1`, `trapz`, `ode45`, `fzero`, `fminsearch`,
+  `save`, `load`, `cd`, `pwd`, `addpath`, `all`, `ceil`, `log10`, `log2`, `gt`,
+  `nan` and `struct2table`. Each page says what Evans does today, limits
+  included, and its example is run by the tests. These were the functions the
+  site and README advertise; 191 more without a page are ranked in
+  `docs/HELP_GAPS.md`.
+
+### Changed
+
+- The site's Known issues page lists the bugs found while writing the pages:
+  `all`/`any` of a matrix, `load` turning integer and logical variables into
+  doubles, `struct2table` not returning a table, `nan(2,3)`, and the others. No
+  behaviour changed in this release.
+
 ## 0.30.3 - 2026-11-24
 
 ### Fixed

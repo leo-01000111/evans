@@ -64,7 +64,7 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 ## Maths
 
-[abs](abs) · [sqrt](sqrt) · [exp](exp) · [sum](sum) · [mean](mean) · [max](max) · [min](min) · [sort](sort) · [find](find) · [cumsum](cumsum) · [diff](diff) · [roots](roots) · [poly](poly) · [polyval](polyval) · [conv](conv) · [inv](inv) · [det](det) · [eig](eig)
+[abs](abs) · [sqrt](sqrt) · [exp](exp) · [sum](sum) · [mean](mean) · [max](max) · [min](min) · [sort](sort) · [find](find) · [cumsum](cumsum) · [diff](diff) · [roots](roots) · [poly](poly) · [polyval](polyval) · [conv](conv) · [inv](inv) · [det](det) · [eig](eig) · [all](all) · [ceil](ceil) · [log10](log10) · [log2](log2) · [gt](gt) · [nan](nan)
 
 ## Plotting
 
@@ -96,15 +96,15 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 ## Cells and structs
 
-[cellfun](cellfun) · [arrayfun](arrayfun) · [cell2mat](cell2mat) · [struct2cell](struct2cell) · [cell2struct](cell2struct) · [isfield](isfield) · [rmfield](rmfield) · [orderfields](orderfields) · [getfield](getfield) · [setfield](setfield) · [iscellstr](iscellstr) · [deal](deal) · [isequal](isequal) · [isequaln](isequaln) · [ismember](ismember)
+[cellfun](cellfun) · [arrayfun](arrayfun) · [cell2mat](cell2mat) · [struct2cell](struct2cell) · [cell2struct](cell2struct) · [isfield](isfield) · [rmfield](rmfield) · [orderfields](orderfields) · [getfield](getfield) · [setfield](setfield) · [iscellstr](iscellstr) · [deal](deal) · [isequal](isequal) · [isequaln](isequaln) · [ismember](ismember) · [struct2table](struct2table)
 
 ## Data files
 
-[readmatrix](readmatrix) · [writematrix](writematrix) · [readtable](readtable) · [writetable](writetable) · [table](table) · [fopen](fopen) · [fclose](fclose) · [fgetl](fgetl) · [fileread](fileread) · [textscan](textscan) · [jsondecode](jsondecode) · [jsonencode](jsonencode)
+[readmatrix](readmatrix) · [writematrix](writematrix) · [readtable](readtable) · [writetable](writetable) · [table](table) · [fopen](fopen) · [fclose](fclose) · [fgetl](fgetl) · [fileread](fileread) · [textscan](textscan) · [jsondecode](jsondecode) · [jsonencode](jsonencode) · [save](save) · [load](load)
 
 ## Signal processing
 
-[filtfilt](filtfilt) · [fir1](fir1) · [pwelch](pwelch) · [hann](hann) · [xcorr](xcorr) · [resample](resample)
+[filtfilt](filtfilt) · [fir1](fir1) · [pwelch](pwelch) · [hann](hann) · [xcorr](xcorr) · [resample](resample) · [fft](fft) · [ifft](ifft) · [filter](filter) · [freqz](freqz) · [findpeaks](findpeaks) · [butter](butter) · [cheby1](cheby1) · [ellip](ellip)
 
 ## Audio
 
@@ -112,11 +112,11 @@ Each function has a page with its calling forms, a description of what Evans doe
 
 ## Fitting and optimisation
 
-[fit](fit) · [lsqcurvefit](lsqcurvefit) · [fsolve](fsolve) · [fmincon](fmincon) · [linprog](linprog) · [integral](integral) · [spline](spline)
+[fit](fit) · [lsqcurvefit](lsqcurvefit) · [fsolve](fsolve) · [fmincon](fmincon) · [linprog](linprog) · [integral](integral) · [spline](spline) · [interp1](interp1) · [trapz](trapz) · [ode45](ode45) · [fzero](fzero) · [fminsearch](fminsearch)
 
 ## System
 
-[who](who) · [whos](whos) · [dir](dir) · [exist](exist) · [datestr](datestr) · [nchoosek](nchoosek) · [dec2bin](dec2bin)
+[who](who) · [whos](whos) · [dir](dir) · [exist](exist) · [datestr](datestr) · [nchoosek](nchoosek) · [dec2bin](dec2bin) · [cd](cd) · [pwd](pwd) · [addpath](addpath)
 
 ## Language
 

@@ -25,13 +25,13 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 | Section | Open | Next |
 |---|---|---|
 | 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
-| Phase 0, silent wrong answers | 1 | |
+| Phase 0, silent wrong answers | 3 | |
 | Phase 1, data work at the console | 6 | |
 | Phase 2, Simulink for daily use | 24 | |
 | Phase 3, plotting | 6 | TeX text in labels (after the hold) |
-| Phase 4, other people's MATLAB code | 13 | |
+| Phase 4, other people's MATLAB code | 14 | |
 | Phase 5, hardware, identification, symbolic | 4 | not started |
-| Phase 6, platform and trust | 14 | the corpus checker (blocks 1.0) |
+| Phase 6, platform and trust | 15 | the corpus checker (blocks 1.0) |
 | Phase 7, scope decisions | 7 | nothing decided yet |
 | Phase 8, interface rework | 5 | R7 (blocks 1.0) |
 | Phase 8.4, after 1.0 | 16 | eight items, one of them with seven parts |
@@ -130,7 +130,7 @@ under rules 1 and 3 from 1.0, as model files and settings do.
 
 ---
 
-## Phase 0 — Silent wrong answers ◐ **Core done 2026-10-27; 1 open**
+## Phase 0 — Silent wrong answers ◐ **Core done 2026-10-27; 3 open**
 
 Tests: `tests/golden/test_confident_liars.py`. The search for more silent wrong
 answers became the reference corpus (Phase 6), which found 32; all were fixed
@@ -141,6 +141,53 @@ answers became the reference corpus (Phase 6), which found 32; all were fixed
       to a MATLAB function, or to a library function off the owned list, copies once per
       call (correct, but quadratic again); a thread reading the workspace while a loop
       runs could see writes land. **M**
+- [ ] **Silent wrong answers found while writing help pages** (2026-11-24, batch 1;
+      docs only so far, nothing fixed). Each page below describes today's behaviour and
+      must be revised when its bug is fixed. **S–M**
+      - `load` (page `load`, also `save`): `k=int8(5); L=true; save('d1.mat'); clear;
+        load('d1.mat'); class(k)` gives `'double'`, expected `'int8'`; `L` is
+        `'double'`, expected `'logical'`. `single` survives. Cause: `_from_mat` casts
+        kinds `iu` with `astype(float)`, `_normalise` converts bool.
+      - `trapz` (page `trapz`): `trapz([0 1 3],[1 2 3;4 5 6],2)` returns the row
+        `6.5 15.5`, expected the column `[6.5; 15.5]`; `trapz([0 1 2],[1 2])` returns 3,
+        expected a length error.
+      - `ode45` (page `ode45`): the `Events`, `Mass` and `Jacobian` options are ignored
+        without a warning (an event on `y(1)=0.5` ran to `t(end)=10`).
+      - `fzero` (page `fzero`): `exitflag` is always 1, `TolX` has no effect, `output`
+        has only `algorithm`.
+      - `fminsearch` (page `fminsearch`): a vector-valued objective (`@(p) p`) runs to
+        about 1e43 and returns garbage, expected an error.
+      - `findpeaks` (page `findpeaks`): a matrix is flattened column-major (`[1 3 2 5 1;
+        1 2 3 4 5]` returns peaks 3, 5 at locations 2, 4); an unknown option name is
+        ignored.
+      - `interp1` (page `interp1`): repeated `x` (`interp1([1 2 2 3],[10 20 30 40],2)`)
+        returns 30, expected an error.
+- [ ] **More silent wrong answers found while writing help pages** (2026-11-24, batch
+      2; docs only so far, nothing fixed). Each page describes today's behaviour and
+      must be revised when its bug is fixed. **S–M**
+      - `all` and `any` of a matrix (pages `all`; `any` has no page yet):
+        `all([1 1; 0 1])` returns the scalar `0`, expected the row `[0 1]`;
+        `any([0 0; 0 1])` returns the scalar `1`, expected `[0 1]`; `all(zeros(0,3))`
+        returns 1, expected `[1 1 1]`; `all('')` returns 0, expected 1. Cause: `f_all`
+        and `f_any` (`matlab_runtime.py`, about lines 4584 to 4590) return
+        `bool(np.all(x))` whenever `ndim <= 2` and `dim` is None; N-D arrays go
+        through `_reduce` and work column-wise. Check the callers that rely on the
+        scalar before changing it.
+      - `struct2table` (page `struct2table`): `s=struct('a',{1,2}); T=struct2table(s);
+        istable(T)` gives 0 and `class(T)` is `'double'`; `T.a`, `T.Properties`,
+        `table2struct`, `table2cell`, `table2array` and `summary` all fail, and
+        `T(1,:)` returns every row. It returns the legacy display-only `Table` class
+        (`matlab_runtime.py` about lines 810 and 4102) instead of a `ColumnTable` as
+        `table` does (`lib_tables.py`). The `'AsArray'` and `'RowNames'` options fail
+        with a Python `TypeError`.
+      - `nan` (page `nan`): only the scalar works (`f_nan = math.nan`). `nan(2)`,
+        `nan(2,3)`, `nan([2 3])`, `NaN(2)`, `nan(2,'single')` and `nan('like',x)` fail
+        with "Index exceeds the number of array elements"; `Inf` and `inf` are
+        probably the same (not tested). `true` and `false` take dimensions.
+      - Constants lost for the session (pages `nan`; `pi` has no page yet):
+        `nan = 5; clear nan; nan` gives `NameError: name 'nan' is not defined`, and
+        `pi = 3; clear pi; pi` the same; `clear all` does not restore them. Expected
+        `NaN` and `3.1416`. Probably true of every `f_` constant.
 
 ## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 6 open**
 
@@ -326,7 +373,7 @@ Plot functions: `console/lib_plot.py`; 2-D drawn by pyqtgraph
       A fix to the output of existing commands, but it touches both renderers, so the
       2026-11-26 hold applies until Leon says it is a bug fix. **M**
 
-## Phase 4 — Running other people's MATLAB code ◐ **Core done 2026-11-09; 13 open**
+## Phase 4 — Running other people's MATLAB code ◐ **Core done 2026-11-09; 14 open**
 
 Everything planned here was built 2026-11-09 to 2026-11-11 (history, part 4). These
 are the parts the done items left out. Names that are simply missing are listed on the
@@ -358,6 +405,37 @@ Phase 6.
       writers follow MATLAB's documented layout and are untested there (the
       verification kit covers both, Phase 6). **S**
 - [ ] `msgbox` waits until closed, unlike MATLAB's. **S**
+- [ ] **Crashes and raw Python errors found while writing help pages** (2026-11-24,
+      batch 1; nothing fixed). Pages describe today's behaviour and must be revised
+      when each is fixed. **S–M**
+      - `trapz(A,2)` and `trapz(A,1)` (page `trapz`): `A=[1 2 3;4 5 6]; trapz(A,2)`
+        fails with `IndexError: list assignment index out of range`, expected
+        `[6; 15]`; `trapz(5)` fails too, expected 0. Cause: `f_trapz(x, y=None,
+        dim=None)` takes the second argument as `y`.
+      - `[A,B,C,D] = butter(2,0.2)` (pages `butter`, `cheby1`, `ellip`): `ValueError:
+        'ss' is not a valid output form`, expected the state-space matrices. Cause:
+        `_iir` passes `output='ss'` to scipy; go through `zpk` and `zpk2ss`.
+      - `save` of a string, function handle or table (page `save`): says "Variable 'f'
+        not found." instead of that the type cannot be saved.
+      - Missing arguments give Python errors instead of "Not enough input arguments":
+        `fft()`, `freqz()`, `findpeaks()`, `butter(2)`, `ode45(f,[0 1])`, `fzero(f)`,
+        `fminsearch(f)` (pages of the same names). `fft('a')` shows a numpy
+        `DTypePromotionError`; `filter(1,[1 -0.5],[1 2 3],[1 2])` shows `ValueError:
+        Unexpected shape for zi` (page `filter`); `fzero(@(x) x^2+1, 1)` shows
+        `(34, 'Result too large')` (page `fzero`).
+      - Batch 2 (pages `cd`, `all`, `ceil`, `log10`, `log2`, `gt`, `addpath`):
+        `cd ..` and `cd .` as commands fail with "unexpected text after the statement";
+        `all(x,'all')` and a text `dim` fail with `ValueError: invalid literal for
+        int()`, and a fractional `dim` is accepted; `ceil` of char, string or complex
+        input, `log10('a')` and `log2('a')` show a numpy `TypeError`; `ceil({1})`,
+        `log10({1})` and `gt({1},{2})` return a number instead of an error;
+        `gt(2+3i,1)` and `gt(1+3i,1+2i)` raise a Python `TypeError`; `gt([1 2 3],[1 2])`
+        gives numpy's broadcast message instead of "Arrays have incompatible sizes for
+        this operation."; wrong argument counts (`log10(1,2)`, `gt(1)`, `ceil(1,2)`,
+        `cd('a','b')`, `pwd(1)`) give Python errors; `class(log10(single(100)))` is
+        `'double'`; `addpath` silently ignores a folder that does not exist, a cell
+        array and a number; `genpath`, `path`, `pathsep`, `tempdir` and `tempname`
+        are not there.
 
 ## Phase 5 — Hardware, identification, symbolic leftovers ○ **Not started; 4 open**
 
@@ -374,7 +452,7 @@ work.
       `fourier`/`ifourier`. Symbolic functions are the hard part. **M**
 - [ ] Simulink hardware blocks (serial in/out) and real-time pacing of a run. **L**
 
-## Phase 6 — Platform and trust ◐ **Core done 2026-11-11; 14 open**
+## Phase 6 — Platform and trust ◐ **Core done 2026-11-11; 15 open**
 
 **Distribution** (see the 1.0 decisions above)
 
@@ -481,6 +559,22 @@ probes agreed on 2026-11-14 and the 32 silent wrong answers among the rest were 
       - `save` of a string, function handle, table, datetime, duration,
         map or LTI model fails with "Variable 'x' not found" instead of
         saying the type cannot be saved (`verif/built/interop_build_report.json`).
+
+**Help coverage**
+
+- [ ] Help pages for the remaining callable names (216 on 2026-11-24) that have none (found 2026-11-24 by
+      comparing the runtime's `f_*` methods and `api._GROUPS` with `help.topics()`):
+      rank 1, 25 names the site or README advertises (`fft`, `filter`, `butter`,
+      `ode45`, `fzero`, `save`, `load`, `cd`, `pwd`, `addpath`, `findpeaks`…); rank 2,
+      116 course and teaching staples (elementary maths, types and tests, errors,
+      strings, filters, ODE and optimisation, control plots); rank 3, 75 others
+      (operator forms, colormaps, constants, dates). Full ranked list by category in
+      [`docs/HELP_GAPS.md`](HELP_GAPS.md) (released as 0.30.4). Docs only, in batches of 15, each page verified by running
+      its example. **M** *Batches 1 and 2 done 2026-11-24: all 25 rank-1 pages (batch 1: `fft`, `ifft`,
+      `filter`, `freqz`, `findpeaks`, `butter`, `cheby1`, `ellip`, `interp1`, `trapz`,
+      `ode45`, `fzero`, `fminsearch`, `save`, `load`; batch 2: `cd`, `pwd`, `addpath`,
+      `all`, `ceil`, `log10`, `log2`, `gt`, `nan`, `struct2table`). 191 names left:
+      rank 2, 116; rank 3, 75.*
 
 **Tools**
 

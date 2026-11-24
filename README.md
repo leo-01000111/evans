@@ -303,7 +303,7 @@ a crossover above the plant's phase budget is impossible for it.
 pytest
 ```
 
-5665 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
+5765 tests, plus `ruff check .`. Most are golden tests: analytic values worked out by hand
 or by an independent route, rather than snapshots of whatever the code printed first. The
 numeric signal solver and the symbolic one check each other, and `python-control` is a
 third opinion.
