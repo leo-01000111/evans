@@ -117,9 +117,8 @@ def col_texts(col):
     if isinstance(col, _Vec):
         return col.texts(), True
     if isinstance(col, list):
-        return (["{" + _mr._brief(v) + "}" if isinstance(v, str) and v
-                 else "{0×0 char}" if v == "" else _mr._brief(v)
-                 for v in col], False)
+        return (["{0×0 char}" if isinstance(v, str) and not v
+                 else "{" + _mr._brief(v) + "}" for v in col], False)
     if col.dtype == bool:
         return (["true" if v else "false" for v in col], False)
     return [short_g(v) for v in col], True
