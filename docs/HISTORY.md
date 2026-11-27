@@ -1129,8 +1129,19 @@ Tests: `tests/golden/test_confident_liars.py`, last section.
       (`_objective_value`). `findpeaks` rejects a matrix and an unknown option.
       `ode45` and the other solvers warn about each `odeset` option they ignore.
       `nan` and `inf` are functions taking sizes, `'single'` and `'like'`.
-      Left open in the roadmap: `ode45` events, `fzero`'s outputs, `struct2table`,
-      and a variable cleared in the same script (a translator crash, Phase 4).
+      Left open in the roadmap: `ode45` events, and a variable cleared in the same
+      script (a translator crash, Phase 4).
+- [x] **`fzero`'s outputs and `struct2table`** (the last two of that batch), fixed
+      2026-11-27 on a side branch, merged for 0.30.5; tests in
+      `tests/golden/test_help_page_bugs.py`. `fzero` follows MATLAB's algorithm
+      step for step: `TolX` and `Display` are honoured, `exitflag` is 1, -3, -4,
+      -5 or -6 (a failed search returns `NaN` with a message), and `output` has
+      `intervaliterations`, `iterations`, `funcCount`, `algorithm` and `message`;
+      `OutputFcn`, `PlotFcns` and `FunValCheck` are not supported. `struct2table`
+      builds a `ColumnTable` (in `lib_tables.py`) with `'AsArray'` and
+      `'RowNames'`; the legacy `Table` class is only the common base now. Also
+      fixed there: `x^2` overflowing gives `Inf`, and a table column of arrays
+      displays.
 
 ### Phase 1: Everyday data work at the console (core done 2026-10-28)
 

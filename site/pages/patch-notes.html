@@ -13,10 +13,28 @@
       <div class="card">
         <h2>Versions</h2>
         <dl class="ref-index">
-          <dt>Released</dt><dd><a href="#v0.30.4">0.30.4</a><a href="#v0.30.3">0.30.3</a><a href="#v0.30.2">0.30.2</a><a href="#v0.30.1">0.30.1</a><a href="#v0.30.0">0.30.0</a><a href="#v0.29.1">0.29.1</a><a href="#v0.29.0">0.29.0</a><a href="#v0.28.1">0.28.1</a><a href="#v0.28.0">0.28.0</a><a href="#v0.27.1">0.27.1</a><a href="#v0.27.0">0.27.0</a><a href="#v0.26.1">0.26.1</a><a href="#v0.26.0">0.26.0</a><a href="#v0.25.1">0.25.1</a><a href="#v0.25.0">0.25.0</a><a href="#v0.24.0">0.24.0</a><a href="#v0.23.0">0.23.0</a><a href="#v0.22.0">0.22.0</a><a href="#v0.21.0">0.21.0</a><a href="#v0.20.0">0.20.0</a><a href="#v0.19.0">0.19.0</a><a href="#v0.18.0">0.18.0</a><a href="#v0.17.2">0.17.2</a><a href="#v0.17.1">0.17.1</a><a href="#v0.17.0">0.17.0</a><a href="#v0.16.2">0.16.2</a><a href="#v0.16.1">0.16.1</a><a href="#v0.16.0">0.16.0</a><a href="#v0.15.1">0.15.1</a><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
+          <dt>Released</dt><dd><a href="#v0.30.5">0.30.5</a><a href="#v0.30.4">0.30.4</a><a href="#v0.30.3">0.30.3</a><a href="#v0.30.2">0.30.2</a><a href="#v0.30.1">0.30.1</a><a href="#v0.30.0">0.30.0</a><a href="#v0.29.1">0.29.1</a><a href="#v0.29.0">0.29.0</a><a href="#v0.28.1">0.28.1</a><a href="#v0.28.0">0.28.0</a><a href="#v0.27.1">0.27.1</a><a href="#v0.27.0">0.27.0</a><a href="#v0.26.1">0.26.1</a><a href="#v0.26.0">0.26.0</a><a href="#v0.25.1">0.25.1</a><a href="#v0.25.0">0.25.0</a><a href="#v0.24.0">0.24.0</a><a href="#v0.23.0">0.23.0</a><a href="#v0.22.0">0.22.0</a><a href="#v0.21.0">0.21.0</a><a href="#v0.20.0">0.20.0</a><a href="#v0.19.0">0.19.0</a><a href="#v0.18.0">0.18.0</a><a href="#v0.17.2">0.17.2</a><a href="#v0.17.1">0.17.1</a><a href="#v0.17.0">0.17.0</a><a href="#v0.16.2">0.16.2</a><a href="#v0.16.1">0.16.1</a><a href="#v0.16.0">0.16.0</a><a href="#v0.15.1">0.15.1</a><a href="#v0.15.0">0.15.0</a><a href="#v0.14.0">0.14.0</a><a href="#v0.13.0">0.13.0</a><a href="#v0.12.1">0.12.1</a><a href="#v0.12.0">0.12.0</a><a href="#v0.11.0">0.11.0</a><a href="#v0.10.1">0.10.1</a><a href="#v0.10.0">0.10.0</a><a href="#v0.9.8">0.9.8</a><a href="#v0.9.7">0.9.7</a><a href="#v0.9.6">0.9.6</a><a href="#v0.9.5">0.9.5</a><a href="#v0.9.4">0.9.4</a><a href="#v0.9.3">0.9.3</a><a href="#v0.9.2">0.9.2</a><a href="#v0.9.1">0.9.1</a><a href="#v0.9.0">0.9.0</a></dd>
           <dt>Before 0.9</dt><dd><a href="#fauxmatlab">as FauxMatlab, Sep to Oct 2026</a></dd>
           <dt>Feedback</dt><dd><a href="issues.html#bugs">known issues</a><a href="issues.html#report">report an issue</a></dd>
         </dl>
+      </div>
+    </section>
+
+    <section class="proj-section" id="v0.30.5">
+      <div class="card prose notes">
+        <h2>0.30.5 &middot; 28 November 2026</h2>
+        <h3>Fixed</h3>
+        <ul>
+          <li><code>load</code> keeps a variable&rsquo;s class: an <code>int8</code>, <code>uint16</code> or <code>logical</code> saved with <code>save</code> came back as <code>double</code>.</li>
+          <li><code>all</code> and <code>any</code> of a matrix test each column and return a row, as in MATLAB; they returned one value for the whole matrix. <code>all('')</code> is 1.</li>
+          <li><code>trapz</code> along dimension 2 returns a column, <code>trapz(A, 2)</code> and <code>trapz(5)</code> work, and an <code>X</code> of the wrong length is an error.</li>
+          <li><code>struct2table</code> returns a real table, with the <code>'AsArray'</code> and <code>'RowNames'</code> options.</li>
+          <li><code>fzero</code> honours <code>TolX</code> and <code>Display</code>, sets <code>exitflag</code> as MATLAB does and fills <code>output</code>.</li>
+          <li>Inputs that gave a wrong answer now give an error: <code>interp1</code> with repeated sample points, <code>findpeaks</code> on a matrix or with an unknown option, and a vector-valued function passed to <code>fminsearch</code>, <code>fzero</code> or <code>fminbnd</code>.</li>
+          <li><code>ode45</code> and the other solvers warn about each <code>odeset</code> option they do not support, such as <code>Events</code>.</li>
+          <li><code>nan(2,3)</code>, <code>inf(2,'single')</code> and the other sized forms work.</li>
+          <li><code>x^2</code> overflowing gives <code>Inf</code>, and a table column of arrays displays.</li>
+        </ul>
       </div>
     </section>
 

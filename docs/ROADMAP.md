@@ -25,7 +25,7 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 | Section | Open | Next |
 |---|---|---|
 | 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
-| Phase 0, silent wrong answers | 2 | `struct2table`, then `fzero`'s outputs |
+| Phase 0, silent wrong answers | 2 | none known; `ode45` events is a feature |
 | Phase 1, data work at the console | 6 | |
 | Phase 2, Simulink for daily use | 28 | the `pid_saturation` restarts, then the quick speed wins |
 | Phase 3, plotting | 6 | TeX text in labels (after the hold) |
@@ -141,21 +141,10 @@ answers became the reference corpus (Phase 6), which found 32; all were fixed
       to a MATLAB function, or to a library function off the owned list, copies once per
       call (correct, but quadratic again); a thread reading the workspace while a loop
       runs could see writes land. **M**
-- [ ] **Silent wrong answers found while writing help pages, what is left** (2026-11-24;
-      the rest fixed 2026-11-27). Each page describes today's behaviour and must be
-      revised when its item is done. **S–M**
-      - `ode45` (page `ode45`): the `Events`, `Mass` and `Jacobian` options are not
-        supported. Since 2026-11-27 a set option is named in a warning instead of being
-        dropped silently; supporting `Events` is a new feature.
-      - `fzero` (page `fzero`): `exitflag` is always 1, `TolX` has no effect, `output`
-        has only `algorithm`.
-      - `struct2table` (page `struct2table`): `s=struct('a',{1,2}); T=struct2table(s);
-        istable(T)` gives 0 and `class(T)` is `'double'`; `T.a`, `T.Properties`,
-        `table2struct`, `table2cell`, `table2array` and `summary` all fail, and
-        `T(1,:)` returns every row. It returns the legacy display-only `Table` class
-        (`matlab_runtime.py` about lines 810 and 4102) instead of a `ColumnTable` as
-        `table` does (`lib_tables.py`). The `'AsArray'` and `'RowNames'` options fail
-        with a Python `TypeError`. **M**
+- [ ] **`ode45` events, mass matrices and Jacobians** (found writing the help pages,
+      2026-11-24): the `Events`, `Mass` and `Jacobian` options are not supported.
+      Since 2026-11-27 a set option is named in a warning instead of being dropped
+      silently (page `ode45`). Supporting `Events` is a new feature. **M**
 
 ## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 6 open**
 
@@ -427,8 +416,7 @@ Phase 6.
         `fft()`, `freqz()`, `findpeaks()`, `butter(2)`, `ode45(f,[0 1])`, `fzero(f)`,
         `fminsearch(f)` (pages of the same names). `fft('a')` shows a numpy
         `DTypePromotionError`; `filter(1,[1 -0.5],[1 2 3],[1 2])` shows `ValueError:
-        Unexpected shape for zi` (page `filter`); `fzero(@(x) x^2+1, 1)` shows
-        `(34, 'Result too large')` (page `fzero`).
+        Unexpected shape for zi` (page `filter`).
       - Batch 2 (pages `cd`, `all`, `ceil`, `log10`, `log2`, `gt`, `addpath`):
         `cd ..` and `cd .` as commands fail with "unexpected text after the statement";
         `all(x,'all')` and a text `dim` fail with `ValueError: invalid literal for

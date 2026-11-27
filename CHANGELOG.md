@@ -9,6 +9,32 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.30.5 - 2026-11-28
+
+### Fixed
+
+- `load` keeps a variable's class: an `int8`, `uint16` or `logical` saved with
+  `save` came back as `double`.
+- `all` and `any` of a matrix test each column and return a row, as in MATLAB;
+  they returned one value for the whole matrix. `all('')` is 1.
+- `trapz` along dimension 2 returns a column, `trapz(A, 2)` and `trapz(5)` work
+  (they failed), and an `X` of the wrong length is an error.
+- `struct2table` returns a real table: `istable`, `T.a`, `T(1,:)`,
+  `table2struct`, `table2array` and `summary` work on it, with the `'AsArray'`
+  and `'RowNames'` options.
+- `fzero` honours `TolX` and `Display`, sets `exitflag` as MATLAB does (1, -3,
+  -4, -5 or -6, returning `NaN` when the search fails) and fills `output` with
+  the iteration and call counts and the message.
+- Inputs that gave a wrong answer now give an error: `interp1` with repeated
+  sample points, `findpeaks` on a matrix or with an unknown option, and a
+  vector-valued function passed to `fminsearch`, `fzero` or `fminbnd`.
+- `ode45` and the other solvers warn about each `odeset` option they do not
+  support, such as `Events`, instead of ignoring it silently.
+- `nan(2,3)`, `inf(2,'single')`, `nan('like',x)` and the other sized forms
+  work; only the plain constant did.
+- `x^2` overflowing gives `Inf` instead of a Python `OverflowError`, and a table
+  column of arrays displays.
+
 ## 0.30.4 - 2026-11-24
 
 ### Added

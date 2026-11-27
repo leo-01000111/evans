@@ -5322,8 +5322,11 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         def g(x):
             nonlocal count
             count += 1
-            v = _scalar_of(self.rt.call(f, (_scalar(x),), nargout=1))
-            v = complex(v)
+            out = self.rt.call(f, (_scalar(x),), nargout=1)
+            if _numel(out) != 1:
+                raise MatlabError("The function must return a scalar value; "
+                                  f"it returned {_numel(out)} values.")
+            v = complex(_scalar_of(out))
             return v.real if v.imag == 0 else v
 
         def finish(x, fx, flag, msg, intervals=0, iters=0):
