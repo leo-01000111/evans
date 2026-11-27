@@ -1,40 +1,40 @@
 # struct2table
 
-Show a struct or struct array as a table, one row per struct element.
+Convert a struct or struct array to a table.
 
 ## Syntax
 
     T = struct2table(S)
+    T = struct2table(S, 'AsArray', true)
+    T = struct2table(S, 'RowNames', names)
 
 ## Description
 
-`struct2table(S)` takes a scalar struct (one row) or a struct array (one row per element) and builds a table with one column per field. Printing it shows the columns side by side:
+`struct2table(S)` returns a table with one variable per field of `S`, in the order the fields first appear. The result is a real table: `istable(T)` is 1, `class(T)` is `'table'`, and `T.a`, `T.Properties`, `T(1,:)`, `T{2,'a'}`, `table2struct`, `table2cell`, `table2array` and `summary` all work on it.
 
-    s.a = 1; s.b = 'x';
-    T = struct2table(s)
+- For a struct array (a row or a column of structs), there is one row per element, in order. `struct2table(struct('a', {1, 2}))` is a 2-by-1 table whose `T.a` is the column `[1; 2]`.
+- For a scalar struct, every field must have the same number of rows `m`, and the table has `m` rows: `s.x = [1; 2; 3]; s.y = [4; 5; 6]` gives a 3-by-2 table. Fields with different numbers of rows give the error "the fields of a scalar struct must all have the same number of rows".
 
-prints a header row `a b` and one row `1 'x'`. For a struct array such as `s(1).a = 1; s(2).a = 5` there is one row per element, in order, and text cells are shown in quotes. A field that is missing in some elements (`s(1).a = 1; s(2).b = 2`) shows as `[]` there, and the columns come in the order the fields first appear. A field value may be a vector (`[1 2 3]`), a cell (`{1×2 cell}`) or a struct (`[1×1 struct]`); it is shown as one cell. A matrix of structs is read down its columns, so a 2-by-2 struct array gives 4 rows. An empty struct array prints `0×0 empty table`.
+In each variable, numbers and logicals that are one per row become a numeric (or logical) column. Text fields become a cell array of char vectors, so `T.name` is `{'Ann'; 'Bob'}`. Values of different sizes, structs and cells become a cell column, one value per row: `struct('v', {[1 2], 7})` gives `T.v = {[1 2]; 7}`.
 
-Limits of Evans: the result is a display object, not a real table.
+Options:
 
-- `istable(T)` is 0 and `class(T)` is `'double'`.
-- Columns cannot be read: `T.a` fails with `Unrecognized property or field "a"`, and `T.Properties.VariableNames` fails the same way. Brace indexing `T{2,'a'}` is refused.
-- `table2struct`, `table2cell`, `table2array` and `summary` refuse it ("table2struct needs a table.").
-- `T(1,:)` returns all the rows, not the first.
-- `height(T)`, `width(T)` and `size(T)` do report rows and fields (2 rows and 1 field give `2 1`), and `numel(T)` is the number of rows.
-- Name-value options such as `'AsArray'` or `'RowNames'` are not supported; they fail with a Python `TypeError` ("takes 2 positional arguments but 4 were given").
-- A wrong argument gives a Python error rather than a MATLAB-style message: `struct2table(5)` fails with "'int' object is not iterable", `struct2table({1})` and `struct2table('abc')` with an `AttributeError`, and `struct2table()` with a missing-argument `TypeError`.
+- `'AsArray', true`: treat a scalar struct as a one-row table. Each field becomes one row, and a field with more than one row goes into a cell, so `s.x = [1; 2; 3]; s.y = 7` gives a 1-by-2 table with `T.x = {[1; 2; 3]}` and `T.y = 7`. For a struct array this option changes nothing.
+- `'RowNames', names`: a cell array of distinct names, one per row, so rows can be indexed by name, as in `T('r2', :)`.
 
-To get a real table to compute with, build it with [table](table), [cell2table](cell2table) or [array2table](array2table) instead.
+Limits of Evans: a table variable holds one column per row, so a field that would make a variable with several columns is refused with an error instead. That happens when every element holds a row vector of the same length (MATLAB would make an n-by-k variable), or when a scalar struct's field is a row vector or matrix. Make such a field a column, or put each value in a cell. A matrix of structs (2-by-2, say) is refused; pass `S(:)` for one row per element. A struct field becomes a cell holding the struct, not a nested struct array.
+
+An input that is not a struct gives the error "struct2table: the input must be a struct or a struct array."
 
 ## Example
 
 ```matlab
 s = struct('name', {'Ann', 'Bob'}, 'n', {1, 2});
 T = struct2table(s)
+T.n'
 ```
 
-It prints two rows, one per struct, under the headings `name` and `n`.
+`T` is a 2-by-2 table with the variables `name` and `n`; `T.n'` is `[1 2]`.
 
 ## See also
 

@@ -66,6 +66,73 @@ def _need_table(T, fn):
     return T
 
 
+def _wide_field(name: str) -> MatlabError:
+    return MatlabError(
+        f"struct2table: the field '{name}' would make a table variable with "
+        f"several columns, which Evans's tables do not hold. Make it a "
+        f"column, or put each value in a cell.")
+
+
+def _numeric(v) -> np.ndarray | None:
+    """``v`` as a 2-D numeric array, or None when it is not numeric."""
+    if isinstance(v, (str, Cell, Struct, StructArray, Table, _Vec)) \
+            or callable(v):
+        return None
+    if not (_is_number(v) or isinstance(v, np.ndarray)):
+        return None
+    a = np.asarray(v)
+    if a.dtype.kind not in "biufc":
+        return None
+    return a.reshape(1, -1) if a.ndim < 2 else a
+
+
+def _number_col(a: np.ndarray) -> np.ndarray:
+    a = a.reshape(-1)
+    if a.dtype == bool:
+        return a.copy()
+    return a.astype(complex if np.iscomplexobj(a) else float)
+
+
+def _struct_var(values: list, name: str):
+    """One table variable from one value per row (a struct array's field)."""
+    if values and all(isinstance(v, str) for v in values):
+        return list(values)
+    nums = [_numeric(v) for v in values]
+    if values and all(a is not None for a in nums):
+        if all(a.size == 1 for a in nums):
+            if all(a.dtype == bool for a in nums):
+                return np.array([bool(a.item()) for a in nums])
+            return _number_col(np.concatenate([a.reshape(-1)
+                                               for a in nums]))
+        if len({a.shape for a in nums}) == 1 and nums[0].shape[0] == 1:
+            raise _wide_field(name)
+    if values and all(type(v) is type(values[0]) and isinstance(v, _Vec)
+                      and v.flat().size == 1 for v in values):
+        return functools.reduce(col_concat, values)
+    return list(values)
+
+
+def _field_rows(value, name: str):
+    """One table variable from a scalar struct's field, row by row."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, Cell):
+        r, c = value.dims
+        if c > 1 and r * c > 1:
+            raise _wide_field(name)
+        return list(value)
+    if isinstance(value, _Vec):
+        if value.a.shape[1] != 1:
+            raise _wide_field(name)
+        return value._new(value.flat().reshape(-1, 1))
+    a = _numeric(value)
+    if a is None:
+        return [value]
+    if a.shape[1] != 1 and a.size:
+        raise _wide_field(name)
+    return _number_col(a)
+
+
 def _names(v) -> list[str]:
     return [v] if isinstance(v, str) else list(v)
 
@@ -302,6 +369,46 @@ class TableLibrary:
                   _mr._scalar(c[i].item() if hasattr(c[i], "item") else c[i]))
                  for c in T._data] for i in range(T.height)]
         return Cell.from_grid(grid) if grid else Cell()
+
+    def f_struct2table(self, S, *args):
+        """
+        A struct array → one row per element; a scalar struct → one row per
+        row of its fields (or one row with ``'AsArray', true``).
+        """
+        if not isinstance(S, (Struct, StructArray)):
+            raise MatlabError("struct2table: the input must be a struct or "
+                              "a struct array.")
+        given = _opts(args, {"asarray": "AsArray", "rownames": "RowNames"},
+                      "struct2table")
+        as_array = bool(np.asarray(_as_array(given.get("AsArray", False)))
+                        .reshape(-1)[:1].all()) if "AsArray" in given \
+            else False
+        if isinstance(S, StructArray):
+            r, c = S.dims
+            if r != 1 and c != 1:
+                raise MatlabError("struct2table: the input must be a scalar "
+                                  "struct or a struct vector.")
+            elems = list(S)
+        else:
+            elems = [S]
+        names: list[str] = []
+        for e in elems:
+            names += [k for k in e if k not in names]
+        if isinstance(S, Struct) and not as_array:
+            data = [_field_rows(S[n], n) for n in names]
+            if len({len(c) for c in data}) > 1:
+                raise MatlabError(
+                    "struct2table: the fields of a scalar struct must all "
+                    "have the same number of rows; use 'AsArray', true for "
+                    "a one-row table.")
+        else:
+            data = [_struct_var([e.get(n, np.zeros((0, 0))) for e in elems],
+                                n) for n in names]
+        height = len(elems) if (as_array or isinstance(S, StructArray)) \
+            else (len(data[0]) if data else 1)
+        rn = (_name_cell(given["RowNames"], height, "RowNames")
+              if "RowNames" in given else None)
+        return ColumnTable(names, data, height=height, row_names=rn)
 
     def f_cell2table(self, C, *args):
         return self.f_array2table(C, *args)

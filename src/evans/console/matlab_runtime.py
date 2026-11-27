@@ -808,53 +808,18 @@ def _own(obj):
 
 
 class Table:
-    """What ``struct2table`` returns: rows of named columns, displayed."""
+    """
+    The base of every table (:class:`.tables.ColumnTable` and its
+    timetable), so modules that cannot import :mod:`.tables` can still
+    recognise one.
+    """
 
-    def __init__(self, rows: list[Mapping]) -> None:
-        self.rows = rows
-        self.columns: list[str] = []
-        for row in rows:
-            for key in row:
-                if key not in self.columns:
-                    self.columns.append(key)
-
-    def __repr__(self) -> str:
-        if not self.rows:
-            return "0×0 empty table"
-        cells = [[_table_cell(r.get(c)) for c in self.columns]
-                 for r in self.rows]
-        widths = [max(len(c), *(len(row[k]) for row in cells))
-                  for k, c in enumerate(self.columns)]
-        # A wide table is split into blocks of columns that fit the console,
-        # so no row wraps onto a second line.
-        blocks, current, used = [], [], 0
-        for k, w in enumerate(widths):
-            if current and used + w + 3 > TABLE_WIDTH:
-                blocks.append(current)
-                current, used = [], 0
-            current.append(k)
-            used += w + 3
-        blocks.append(current)
-        out: list[str] = []
-        for block in blocks:
-            if out:
-                out.append("")
-            out.append("   " + "   ".join(
-                self.columns[k].center(widths[k]) for k in block))
-            out.append("   " + "   ".join("_" * widths[k] for k in block))
-            out += ["   " + "   ".join(row[k].rjust(widths[k]) for k in block)
-                    for row in cells]
-        return "\n".join(out)
+    rows: Any
+    columns: list[str]
 
 
 #: Characters a table row may use before its columns wrap into a new block.
 TABLE_WIDTH = 84
-
-
-def _table_cell(value) -> str:
-    if isinstance(value, (int, float, np.floating, np.integer)):
-        return _number(float(value))
-    return _brief(value)
 
 
 class PlotOptions:
@@ -3578,7 +3543,10 @@ def _power(a, b):
             out = a ** b
         except ZeroDivisionError:
             return math.inf
-        return out
+        except OverflowError:
+            pass    # numpy below gives ±Inf, as MATLAB does
+        else:
+            return out
     a_arr = np.asarray(a)
     b_arr = np.asarray(b)
     if a_arr.dtype.kind in "iub":
@@ -4098,10 +4066,6 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
                      if isinstance(v, Cell) else v
                      for k, v in zip(names, values)})
              for i in range(shape[0] * shape[1])), rows=shape[0])
-
-    def f_struct2table(self, s):
-        rows = list(s) if isinstance(s, StructArray) else [s]
-        return Table(rows)
 
     def f_cell(self, *dims):
         if not dims:
@@ -5278,49 +5242,152 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         """
         A root of ``f``: in the bracket ``[a b]``, or near ``x0`` — found
         by widening an interval around it by √2 each step until the sign
-        changes, as MATLAB does, then Brent's method.
+        changes, then Brent's method, step for step as MATLAB's ``fzero``
+        does, so ``TolX``, ``exitflag`` and the counts in ``output`` match.
         """
-        from scipy.optimize import brentq
-        g = self._scalar_fn(f)
+        tol = float(_scalar_of(self._option(
+            options, "TolX", self._option(options, "StepTolerance",
+                                          np.finfo(float).eps))))
+        display = str(self._option(options, "Display", "notify")).lower()
+        count = 0
+
+        def g(x):
+            nonlocal count
+            count += 1
+            v = _scalar_of(self.rt.call(f, (_scalar(x),), nargout=1))
+            v = complex(v)
+            return v.real if v.imag == 0 else v
+
+        def finish(x, fx, flag, msg, intervals=0, iters=0):
+            if display in ("final", "iter") or (
+                    flag != 1 and display not in ("off", "none")):
+                print(msg)
+            out = (_scalar(x), _scalar(fx), flag,
+                   Struct(intervaliterations=intervals, iterations=iters,
+                          funcCount=count,
+                          algorithm="bisection, interpolation",
+                          message=msg))
+            return out[:nargout] if nargout >= 2 else out[0]
+
+        def search_failed(y, fy, intervals):
+            shown = (f"{fy:.6g}" if isinstance(fy, complex) else
+                     "NaN" if math.isnan(fy) else
+                     "Inf" if fy > 0 else "-Inf")
+            where = f"(Function value at {y:.6g} is {shown}.)"
+            if not math.isfinite(y):
+                flag, why = -6, "no sign change is detected"
+            elif isinstance(fy, complex):
+                flag, why = -4, ("complex function value encountered during "
+                                 f"search. {where}")
+            else:
+                flag, why = -3, ("NaN or Inf function value encountered "
+                                 f"during search. {where}")
+            msg = ("Exiting fzero: aborting search for an interval "
+                   f"containing a sign change because {why}")
+            if flag != -6:
+                msg += (" Check function or try again with a different "
+                        "starting value.")
+            return finish(math.nan, math.nan, flag, msg, intervals)
+
+        def bad(v):
+            return isinstance(v, complex) or not math.isfinite(v)
+
         start = np.asarray(x0, float).reshape(-1)
+        intervals = 0
         if start.size >= 2:
             a, b = float(start[0]), float(start[1])
             fa, fb = g(a), g(b)
-            if np.sign(fa) * np.sign(fb) > 0:
+            if bad(fa) or bad(fb):
+                raise MatlabError("Function values at interval endpoints "
+                                  "must be finite and real.")
+            if (fa > 0) == (fb > 0) and fa != 0 and fb != 0:
                 raise MatlabError("The function values at the interval "
                                   "endpoints must differ in sign.")
         else:
             x = float(start[0])
             fx = g(x)
+            if fx == 0:
+                return finish(x, fx, 1, "Zero find terminated.")
+            if bad(fx):
+                raise MatlabError("Function value at starting guess must "
+                                  "be finite and real.")
+            dx = x / 50 if x else 1 / 50
             a = b = x
             fa = fb = fx
-            if fx != 0:
-                dx = x / 50 if x else 1 / 50
-                for _ in range(4000):
-                    dx *= math.sqrt(2)
-                    a, b = x - dx, x + dx
-                    fa, fb = g(a), g(b)
-                    if not (math.isfinite(fa) and math.isfinite(fb)):
-                        raise MatlabError(
-                            "Exiting fzero: aborting search for an interval "
-                            "containing a sign change because NaN or Inf "
-                            "function value encountered during search.")
-                    if np.sign(fa) * np.sign(fb) <= 0:
-                        break
-                else:
-                    raise MatlabError("Exiting fzero: aborting search for "
-                                      "an interval containing a sign "
-                                      "change.")
+            while (fa > 0) == (fb > 0):
+                intervals += 1
+                dx *= math.sqrt(2)
+                a = x - dx
+                fa = g(a)
+                if bad(fa) or not math.isfinite(a):
+                    return search_failed(a, fa, intervals)
+                if (fa > 0) != (fb > 0):
+                    break
+                b = x + dx
+                fb = g(b)
+                if bad(fb) or not math.isfinite(b):
+                    return search_failed(b, fb, intervals)
         if fa == 0:
-            root = a
-        elif fb == 0:
-            root = b
-        else:
-            root = brentq(g, a, b, xtol=1e-300, rtol=4 * np.finfo(float).eps,
-                          maxiter=500)
-        out = (_scalar(root), g(root), 1,
-               Struct(algorithm="bisection, interpolation"))
-        return out[:nargout] if nargout >= 2 else out[0]
+            return finish(a, fa, 1, "Zero find terminated.", intervals)
+        if fb == 0:
+            return finish(b, fb, 1, "Zero find terminated.", intervals)
+        save = (a, b, abs(fa), abs(fb))
+        # Brent's method, as in MATLAB's fzero (Forsythe, Malcolm & Moler).
+        iters = 0
+        c, fc, d, e = a, fb, b - a, b - a
+        while fb != 0 and a != b:
+            if (fb > 0) == (fc > 0):
+                c, fc = a, fa
+                d = e = b - a
+            if abs(fc) < abs(fb):
+                a, b, c = b, c, b
+                fa, fb, fc = fb, fc, fb
+            m = 0.5 * (c - b)
+            toler = 2.0 * tol * max(abs(b), 1.0)
+            if abs(m) <= toler or fb == 0:
+                break
+            if abs(e) < toler or abs(fa) <= abs(fb):
+                d = e = m
+            else:
+                s = fb / fa
+                if a == c:
+                    p, q = 2.0 * m * s, 1.0 - s
+                else:
+                    q, r = fa / fc, fb / fc
+                    p = s * (2.0 * m * q * (q - r) - (b - a) * (r - 1.0))
+                    q = (q - 1.0) * (r - 1.0) * (s - 1.0)
+                if p > 0:
+                    q = -q
+                else:
+                    p = -p
+                if 2.0 * p < 3.0 * m * q - abs(toler * q) and \
+                        p < abs(0.5 * e * q):
+                    e, d = d, p / q
+                else:
+                    d = e = m
+            a, fa = b, fb
+            if abs(d) > toler:
+                b += d
+            elif b > c:
+                b -= toler
+            else:
+                b += toler
+            fb = g(b)
+            iters += 1
+            if bad(fb) and not (isinstance(fb, float) and math.isinf(fb)):
+                return finish(b, fb, -3 if not isinstance(fb, complex)
+                              else -4,
+                              "Exiting fzero: NaN or complex function value "
+                              f"encountered at {b:.6g}.", intervals, iters)
+        if abs(fb) <= max(save[2], save[3]):
+            return finish(b, fb, 1, f"Zero found in the interval "
+                          f"[{save[0]:g}, {save[1]:g}]", intervals, iters)
+        return finish(b, fb, -5, (
+            "Current point x may be near a singular point. The interval "
+            f"[{save[0]:g}, {save[1]:g}] reduced to the requested tolerance "
+            "and the function changes sign in the interval, but f(x) "
+            "increased in magnitude as the interval reduced."),
+            intervals, iters)
 
     @_nargout
     def f_fminsearch(self, f, x0, options=None, *_, nargout=1):
