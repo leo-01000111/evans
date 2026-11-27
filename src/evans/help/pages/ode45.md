@@ -15,7 +15,7 @@ Solve an ordinary differential equation `y' = f(t, y)` with a Runge-Kutta method
 
 With a two-element `tspan`, `t` is the solver's own steps with three extra interpolated points between each pair of steps. With more than two elements, `t` is exactly `tspan`. Either way `y` has one row per time and one column per state. A decreasing `tspan` such as `[1 0]` integrates backwards.
 
-`options` comes from `odeset`. Evans reads only `RelTol` (default `1e-3`), `AbsTol` (default `1e-6`, a scalar or one value per state), `MaxStep` and `InitialStep`; `Events`, `Mass`, `Jacobian` and every other field are accepted and ignored without a message.
+`options` comes from `odeset`. Evans reads only `RelTol` (default `1e-3`), `AbsTol` (default `1e-6`, a scalar or one value per state), `MaxStep` and `InitialStep`; `Events`, `Mass`, `Jacobian` and every other field are not supported: when one is set, `ode45` prints a warning naming it and solves without it.
 
 With one output, `sol = ode45(...)` returns a struct with the fields `solver` (the text `'ode45'`), `x` (the solver's steps, a row, with no interpolated points) and `y` (one row per state, one column per step). There is no `deval`. With no output, `ode45` draws the solution in a figure.
 

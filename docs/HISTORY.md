@@ -1117,6 +1117,20 @@ Tests: `tests/golden/test_confident_liars.py`, last section.
       `tests/golden/test_confident_liars.py`.
 - [x] `who` and `whos` inside a function list the function's variables. *Found
       working on 2026-11-23 (`_caller_scope`); the roadmap item was stale.*
+- [x] **Silent wrong answers found while writing help pages** (2026-11-24), fixed
+      2026-11-27, tests in `tests/golden/test_confident_liars.py`, last section; the
+      pages are revised. `load` keeps `int*`, `uint*` and `logical` (scipy's
+      `loadmat(mat_dtype=True)`; `_from_mat` no longer casts to double).
+      `trapz(X, A, 2)` is a column, `trapz(A, dim)` and `trapz(5)` work (they
+      crashed), and a vector `X` of the wrong length is an error. `all` and `any`
+      of a matrix work down the columns (`_logical_reduce`), and `all('')` is 1.
+      `interp1` rejects repeated sample points. `fminsearch`, `fzero` and
+      `fminbnd` reject a function that returns more than one value
+      (`_objective_value`). `findpeaks` rejects a matrix and an unknown option.
+      `ode45` and the other solvers warn about each `odeset` option they ignore.
+      `nan` and `inf` are functions taking sizes, `'single'` and `'like'`.
+      Left open in the roadmap: `ode45` events, `fzero`'s outputs, `struct2table`,
+      and a variable cleared in the same script (a translator crash, Phase 4).
 
 ### Phase 1: Everyday data work at the console (core done 2026-10-28)
 

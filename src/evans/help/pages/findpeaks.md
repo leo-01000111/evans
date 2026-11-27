@@ -15,7 +15,7 @@ Find the local maxima of a signal.
 
 `findpeaks` returns the values `pks` of the peaks of the vector `y` and their positions `locs`. A peak is a sample higher than both neighbours. The first and last samples never count. A flat top counts once, at its left edge, and a `NaN` is skipped over. If nothing qualifies, both outputs are empty.
 
-`locs` are sample numbers by default. With a vector `x` of the same length as `y`, they are the matching values of `x`. With a scalar `fs`, `locs` are times in seconds, `(k-1)/fs`. The outputs are rows for a row `y` and columns for a column `y`. A matrix is not searched column by column: it is read as one long signal, column after column, without a message.
+`locs` are sample numbers by default. With a vector `x` of the same length as `y`, they are the matching values of `x`. With a scalar `fs`, `locs` are times in seconds, `(k-1)/fs`. The outputs are rows for a row `y` and columns for a column `y`. `y` must be a vector; a matrix stops with "Expected Y to be a vector."
 
 The third and fourth outputs are the widths `w` (measured at half the prominence, interpolated) and the prominences `p`.
 
@@ -28,7 +28,7 @@ Options, as name/value pairs, applied in this order:
 - `'SortStr'` is `'none'`, `'ascend'` or `'descend'`, by height.
 - `'NPeaks'` keeps the first this many after sorting.
 
-An unknown option name is ignored without a message. With no output, `findpeaks` plots the signal with the peaks marked.
+An unknown option name stops with an error, and so do `MinPeakWidth`, `MaxPeakWidth`, `WidthReference` and `Annotate`, which Evans does not support yet. With no output, `findpeaks` plots the signal with the peaks marked.
 
 ## Example
 

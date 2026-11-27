@@ -20,7 +20,7 @@ Version 5 and version 7.3 (HDF5) MAT-files are both read. For a version 7.3 file
 
 A file that is not a `.mat` is read as a text file of numbers: with an output you get the matrix; without one the matrix goes into a variable named after the file, so `load data.txt` creates `data`. Characters that are not valid in a name become `_`.
 
-Limits: integer and logical variables read from a version 5 file come back as `double`. Single-precision values stay `single`.
+Integer, logical and single-precision variables keep their class: an `int8` saved by `save` comes back as `int8`, a logical as `logical`.
 
 ## Example
 

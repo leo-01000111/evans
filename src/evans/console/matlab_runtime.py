@@ -3529,6 +3529,14 @@ def _normalise_row(a: np.ndarray, was_row: bool):
     return a
 
 
+def _objective_value(out) -> float:
+    """What ``fzero`` and ``fminsearch`` read from a call of the function."""
+    if _numel(out) != 1:
+        raise MatlabError("The function must return a scalar value; it "
+                          f"returned {_numel(out)} values.")
+    return float(np.real(_scalar_of(out)))
+
+
 def _scalar_of(x):
     if isinstance(x, np.ndarray):
         if x.size == 0:
@@ -3731,8 +3739,30 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
     # ── constants ───────────────────────────────────────────────
 
     f_pi = math.pi
-    f_Inf = f_inf = math.inf
-    f_NaN = f_nan = math.nan
+
+    # NaN and Inf are functions, as in MATLAB: plain ``nan`` is the scalar,
+    # ``nan(2, 3)`` an array, ``nan(2, 'single')`` and ``nan(2, 'like', p)``
+    # set the class.
+    def _float_filled(self, name: str, value: float, dims):
+        dims, cls = self._class_argument(dims)
+        if cls in _nt.INTS:
+            raise MatlabError(f"{name} accepts only 'double' or 'single', "
+                              f"not '{cls}'.")
+        if not dims:
+            out = value
+        else:
+            out = self._filled(lambda s: np.full(s, value), dims)
+            out = _scalar(out[0]) if np.size(out) == 1 else out
+        return _nt.cast(out, "single") if cls == "single" else out
+
+    def f_NaN(self, *dims):
+        return self._float_filled("NaN", math.nan, dims)
+
+    def f_Inf(self, *dims):
+        return self._float_filled("Inf", math.inf, dims)
+
+    f_nan = f_NaN
+    f_inf = f_Inf
     f_i = f_j = 1j
 
     # true and false are functions, as in MATLAB: plain ``true`` is the
@@ -4581,14 +4611,20 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
                        and np.shape(x)[0] > 1 else -1)
 
     def f_any(self, x, dim=None):
-        if dim is None and np.ndim(x) <= 2:
-            return bool(np.any(x))
-        return self._reduce(np.any, x, dim)
+        return self._logical_reduce(np.any, x, dim)
 
     def f_all(self, x, dim=None):
-        if dim is None and np.ndim(x) <= 2:
-            return bool(np.all(x))
-        return self._reduce(np.all, x, dim)
+        return self._logical_reduce(np.all, x, dim)
+
+    def _logical_reduce(self, fn, x, dim):
+        """``all`` and ``any``: down each column of a matrix, as ``sum``."""
+        if isinstance(x, str):
+            x = (np.array([[ord(c) for c in x]], float) if x
+                 else np.zeros((0, 0)))
+        out = self._reduce(fn, x, dim)
+        if isinstance(out, np.generic):
+            return bool(out)
+        return out
 
     def _extreme(self, pick, arg, x, other, dim, nargout):
         if other is not None and _numel(other) > 0:
@@ -4691,7 +4727,11 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         """``trapz``'s inputs: the samples, their spacing, and the axis."""
         if y is None:
             x, y = None, x
+        elif dim is None and _numel(y) == 1 and _numel(x) > 1:
+            x, y, dim = None, x, y             # trapz(Y, dim)
         Y = np.asarray(y)
+        if Y.ndim == 0:
+            Y = Y.reshape(1)
         if Y.ndim == 2 and dim is None and Y.shape[0] == 1:
             Y = Y.reshape(-1)
         axis = (int(dim) - 1) if dim is not None and Y.ndim == 2 else (
@@ -4700,12 +4740,18 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
             return Y, {"dx": 1.0}, axis
         if _numel(x) == 1:
             return Y, {"dx": float(_scalar_of(x))}, axis
-        return Y, {"x": np.asarray(x, float).reshape(-1)}, axis
+        xs = np.asarray(x, float).reshape(-1)
+        if xs.size != Y.shape[axis]:
+            raise MatlabError("The length of X must equal the length of Y "
+                              "along the dimension being integrated.")
+        return Y, {"x": xs}, axis
 
     def f_trapz(self, x, y=None, dim=None):
         from scipy.integrate import trapezoid
         Y, step, axis = self._integrand(x, y, dim)
         out = trapezoid(Y, axis=axis, **step)
+        if Y.ndim == 2 and np.ndim(out) == 1:
+            out = np.expand_dims(out, axis)    # trapz(A, 2) is a column
         return _normalise(np.asarray(out)) if np.ndim(out) else _scalar(out)
 
     def f_cumtrapz(self, x, y=None, dim=None):
@@ -4753,6 +4799,8 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
             V = V.reshape(-1)
         order = np.argsort(x, kind="stable")
         x, V = x[order], V[order]
+        if np.any(np.diff(x) == 0):
+            raise MatlabError("The grid vectors must contain unique points.")
         q = np.asarray(xq, float)
         if method in ("spline",):
             f = interpolate.CubicSpline(x, V, axis=0)
@@ -5092,6 +5140,8 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         """
         rest = list(args)
         data = np.asarray(y, float)
+        if data.ndim > 2 or (data.ndim == 2 and min(data.shape) > 1):
+            raise MatlabError("Expected Y to be a vector.")
         flat = data.reshape(-1)
         x = np.arange(1.0, flat.size + 1)
         if rest and not isinstance(rest[0], str):
@@ -5100,8 +5150,20 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
                 x = np.arange(flat.size) / float(_scalar_of(given))
             else:
                 x = np.asarray(given, float).reshape(-1)
+        if len(rest) % 2:
+            raise MatlabError("findpeaks options come in name-value pairs.")
         opts = {str(rest[k]).lower(): rest[k + 1]
-                for k in range(0, len(rest) - 1, 2)}
+                for k in range(0, len(rest), 2)}
+        known = ("minpeakheight", "threshold", "minpeakprominence",
+                 "minpeakdistance", "sortstr", "npeaks")
+        for given in (str(rest[k]) for k in range(0, len(rest), 2)):
+            if given.lower() in ("minpeakwidth", "maxpeakwidth",
+                                 "widthreference", "annotate"):
+                raise MatlabError(f"findpeaks: the '{given}' option is not "
+                                  f"supported in Evans yet.")
+            if given.lower() not in known:
+                raise MatlabError(f"'{given}' is not a recognized parameter "
+                                  f"of findpeaks.")
 
         def opt(name, default):
             value = opts.get(name.lower())
@@ -5219,6 +5281,12 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
                                      float).reshape(-1)}
         if kwargs["atol"].size == 1:
             kwargs["atol"] = float(kwargs["atol"][0])
+        if isinstance(options, Mapping):
+            used = {"reltol", "abstol", "maxstep", "initialstep"}
+            for key, value in options.items():
+                if key.lower() not in used and _numel(value):
+                    print(f"Warning: {solver} ignores the '{key}' option: "
+                          f"Evans does not support it yet.")
         for name, key in (("MaxStep", "max_step"),
                           ("InitialStep", "first_step")):
             value = self._option(options, name, None)
@@ -5270,7 +5338,7 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
     def _scalar_fn(self, f):
         def g(x):
             out = self.rt.call(f, (_scalar(x),), nargout=1)
-            return float(np.real(_scalar_of(out)))
+            return _objective_value(out)
         return g
 
     @_nargout
@@ -5335,8 +5403,7 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
 
         def g(v):
             arg = _scalar(v[0]) if v.size == 1 else v.reshape(shape).copy()
-            return float(np.real(_scalar_of(self.rt.call(f, (arg,),
-                                                         nargout=1))))
+            return _objective_value(self.rt.call(f, (arg,), nargout=1))
 
         n = start.size
         limit = 200 * n
@@ -5463,7 +5530,7 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
             return None
         data = {k: _to_mat(v) for k, v in chosen.items()}
         if "-append" in flags and os.path.isfile(path):
-            old = scipy.io.loadmat(path)
+            old = scipy.io.loadmat(path, mat_dtype=True)
             data = {**{k: v for k, v in old.items()
                        if not k.startswith("__")}, **data}
         scipy.io.savemat(path, data, oned_as="row", long_field_names=True)
@@ -5485,7 +5552,7 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
             for warning in skipped:
                 print("Warning: " + warning)
         elif path.lower().endswith(".mat"):
-            raw = scipy.io.loadmat(path, squeeze_me=False,
+            raw = scipy.io.loadmat(path, squeeze_me=False, mat_dtype=True,
                                    struct_as_record=False,
                                    chars_as_strings=True)
             values = {k: _from_mat(v) for k, v in raw.items()
@@ -6211,8 +6278,8 @@ def _from_mat(value):
         return Cell(items)
     if a.size == 0:
         return np.zeros((0, 0))
-    if a.dtype.kind in "iu":
-        a = a.astype(float)
+    # loadmat(mat_dtype=True) gives each variable MATLAB's class: int8 stays
+    # int8, a logical is bool.
     return _normalise(a)
 
 

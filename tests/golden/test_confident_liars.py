@@ -729,3 +729,98 @@ def test_a_cs_list_target_beside_other_targets(it):
             "[p, ~, e{1:2}] = deal(7, 8, 9, 10); q = e{2};")
     got = [_numbers(val(it, k)).tolist() for k in "a x y z w p q".split()]
     assert got == [[1], [2], [3], [5], [6], [7], [10]]
+
+
+# ──────────────────────────────────────────────────────────────
+#  Found while writing help pages (2026-11-24), fixed 2026-11-27
+# ──────────────────────────────────────────────────────────────
+
+def test_load_keeps_integer_and_logical_classes(it, tmp_path):
+    """``save`` then ``load`` gave every integer and logical back as double."""
+    folder = str(tmp_path).replace("\\", "/")
+    run(it, f"k = int8(5); L = true; La = [true false]; u = uint16([3 4]);"
+            f" save('{folder}/d1.mat'); clear; load('{folder}/d1.mat');"
+            " c1 = class(k); c2 = class(L); c3 = class(La); c4 = class(u);")
+    assert [val(it, c) for c in ("c1", "c2", "c3", "c4")] == [
+        "int8", "logical", "logical", "uint16"]
+    assert _numbers(val(it, "u")).tolist() == [3, 4]
+
+
+def test_trapz_along_dim_2_is_a_column(it):
+    """``trapz(x, A, 2)`` was the row ``6.5 15.5``; ``trapz(A, 2)`` failed
+    with an IndexError and ``trapz(5)`` failed too."""
+    run(it, "a = trapz([0 1 3], [1 2 3; 4 5 6], 2); sa = size(a);"
+            "b = trapz([1 2 3; 4 5 6], 2); sb = size(b); c = trapz(5);"
+            "d = trapz([1 2 3; 4 5 6]); sd = size(d);")
+    assert _numbers(val(it, "sa")).tolist() == [2, 1]
+    assert _numbers(val(it, "a")).tolist() == pytest.approx([6.5, 15.5])
+    assert _numbers(val(it, "sb")).tolist() == [2, 1]
+    assert _numbers(val(it, "b")).tolist() == pytest.approx([4, 10])
+    assert val(it, "c") == 0
+    assert _numbers(val(it, "sd")).tolist() == [1, 3]
+    assert _numbers(val(it, "d")).tolist() == pytest.approx([2.5, 3.5, 4.5])
+
+
+def test_trapz_rejects_x_of_the_wrong_length(it):
+    """``trapz([0 1 2], [1 2])`` returned 3."""
+    assert "length of X" in error_of(it, "trapz([0 1 2], [1 2])")
+
+
+def test_all_and_any_of_a_matrix_work_down_the_columns(it):
+    """``all`` and ``any`` of a matrix returned one scalar for the whole
+    matrix; ``all(zeros(0,3))`` was 1 and ``all('')`` 0."""
+    run(it, "a = all([1 1; 0 1]); b = any([0 0; 0 1]); c = all(zeros(0,3));"
+            "d = all(''); e = any(''); f = all([1 2 3]); g = any([0; 0]);"
+            "h = all(all([1 1; 1 0])); k = class(all([1 1; 0 1]));")
+    assert _numbers(val(it, "a")).tolist() == [0, 1]
+    assert _numbers(val(it, "b")).tolist() == [0, 1]
+    assert _numbers(val(it, "c")).tolist() == [1, 1, 1]
+    assert [bool(val(it, n)) for n in "defgh"] == [True, False, True, False,
+                                                  False]
+    assert val(it, "k") == "logical"
+
+
+def test_interp1_rejects_repeated_sample_points(it):
+    """``interp1([1 2 2 3], ..., 2)`` picked one of the two values at 2."""
+    assert "unique" in error_of(
+        it, "interp1([1 2 2 3], [10 20 30 40], 2)")
+
+
+def test_optimisers_reject_a_vector_valued_function(it):
+    """``fminsearch(@(p) p, [1 2])`` ran off to about 1e43; ``fzero`` read
+    only the first element."""
+    assert "scalar" in error_of(it, "fminsearch(@(p) p, [1 2])")
+    assert "scalar" in error_of(it, "fzero(@(x) [x x], 1)")
+    run(it, "p = fminsearch(@(p) sum((p - [1 2]).^2), [0 0]);")
+    assert _numbers(val(it, "p")).tolist() == pytest.approx([1, 2],
+                                                            abs=1e-3)
+
+
+def test_findpeaks_takes_vectors_and_known_options_only(it):
+    """A matrix was flattened, and an unknown option was ignored."""
+    assert "vector" in error_of(it, "findpeaks([1 3 2 5 1; 1 2 3 4 5])")
+    assert "'Foo'" in error_of(it, "findpeaks([1 3 1], 'Foo', 2)")
+    run(it, "[p, l] = findpeaks([1 3 2 5 1], 'MinPeakHeight', 4);")
+    assert (val(it, "p"), val(it, "l")) == (5, 4)
+
+
+def test_ode45_says_which_options_it_ignores(it):
+    """An ``Events`` function was dropped without a word."""
+    results = it.run_script(
+        "[t, y] = ode45(@(t, y) -y, [0 1], 1, "
+        "odeset('Events', @(t, y) y - 0.5, 'RelTol', 1e-6));", "matlab")
+    out = "".join(r.output or "" for r in results)
+    assert "'Events'" in out and "RelTol" not in out
+
+
+def test_nan_and_inf_take_dimensions_and_a_class(it):
+    """Only the scalar worked: ``nan(2)`` failed with "Index exceeds"."""
+    run(it, "a = nan(2); sa = size(a); b = NaN(1, 3); c = inf(2, 'single');"
+            "cc = class(c); d = nan('like', 1); e = nan; f = -Inf;")
+    assert _numbers(val(it, "sa")).tolist() == [2, 2]
+    assert np.isnan(_numbers(val(it, "a"))).all()
+    assert _numbers(val(it, "b")).size == 3
+    assert val(it, "cc") == "single"
+    assert math.isnan(val(it, "d")) and math.isnan(val(it, "e"))
+    assert val(it, "f") == -math.inf
+    assert "double" in error_of(it, "nan(2, 'int8')")

@@ -25,9 +25,9 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 | Section | Open | Next |
 |---|---|---|
 | 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
-| Phase 0, silent wrong answers | 3 | |
+| Phase 0, silent wrong answers | 2 | `struct2table`, then `fzero`'s outputs |
 | Phase 1, data work at the console | 6 | |
-| Phase 2, Simulink for daily use | 24 | |
+| Phase 2, Simulink for daily use | 28 | the `pid_saturation` restarts, then the quick speed wins |
 | Phase 3, plotting | 6 | TeX text in labels (after the hold) |
 | Phase 4, other people's MATLAB code | 14 | |
 | Phase 5, hardware, identification, symbolic | 4 | not started |
@@ -130,7 +130,7 @@ under rules 1 and 3 from 1.0, as model files and settings do.
 
 ---
 
-## Phase 0 — Silent wrong answers ◐ **Core done 2026-10-27; 3 open**
+## Phase 0 — Silent wrong answers ◐ **Core done 2026-10-27; 2 open**
 
 Tests: `tests/golden/test_confident_liars.py`. The search for more silent wrong
 answers became the reference corpus (Phase 6), which found 32; all were fixed
@@ -141,53 +141,21 @@ answers became the reference corpus (Phase 6), which found 32; all were fixed
       to a MATLAB function, or to a library function off the owned list, copies once per
       call (correct, but quadratic again); a thread reading the workspace while a loop
       runs could see writes land. **M**
-- [ ] **Silent wrong answers found while writing help pages** (2026-11-24, batch 1;
-      docs only so far, nothing fixed). Each page below describes today's behaviour and
-      must be revised when its bug is fixed. **S–M**
-      - `load` (page `load`, also `save`): `k=int8(5); L=true; save('d1.mat'); clear;
-        load('d1.mat'); class(k)` gives `'double'`, expected `'int8'`; `L` is
-        `'double'`, expected `'logical'`. `single` survives. Cause: `_from_mat` casts
-        kinds `iu` with `astype(float)`, `_normalise` converts bool.
-      - `trapz` (page `trapz`): `trapz([0 1 3],[1 2 3;4 5 6],2)` returns the row
-        `6.5 15.5`, expected the column `[6.5; 15.5]`; `trapz([0 1 2],[1 2])` returns 3,
-        expected a length error.
-      - `ode45` (page `ode45`): the `Events`, `Mass` and `Jacobian` options are ignored
-        without a warning (an event on `y(1)=0.5` ran to `t(end)=10`).
+- [ ] **Silent wrong answers found while writing help pages, what is left** (2026-11-24;
+      the rest fixed 2026-11-27). Each page describes today's behaviour and must be
+      revised when its item is done. **S–M**
+      - `ode45` (page `ode45`): the `Events`, `Mass` and `Jacobian` options are not
+        supported. Since 2026-11-27 a set option is named in a warning instead of being
+        dropped silently; supporting `Events` is a new feature.
       - `fzero` (page `fzero`): `exitflag` is always 1, `TolX` has no effect, `output`
         has only `algorithm`.
-      - `fminsearch` (page `fminsearch`): a vector-valued objective (`@(p) p`) runs to
-        about 1e43 and returns garbage, expected an error.
-      - `findpeaks` (page `findpeaks`): a matrix is flattened column-major (`[1 3 2 5 1;
-        1 2 3 4 5]` returns peaks 3, 5 at locations 2, 4); an unknown option name is
-        ignored.
-      - `interp1` (page `interp1`): repeated `x` (`interp1([1 2 2 3],[10 20 30 40],2)`)
-        returns 30, expected an error.
-- [ ] **More silent wrong answers found while writing help pages** (2026-11-24, batch
-      2; docs only so far, nothing fixed). Each page describes today's behaviour and
-      must be revised when its bug is fixed. **S–M**
-      - `all` and `any` of a matrix (pages `all`; `any` has no page yet):
-        `all([1 1; 0 1])` returns the scalar `0`, expected the row `[0 1]`;
-        `any([0 0; 0 1])` returns the scalar `1`, expected `[0 1]`; `all(zeros(0,3))`
-        returns 1, expected `[1 1 1]`; `all('')` returns 0, expected 1. Cause: `f_all`
-        and `f_any` (`matlab_runtime.py`, about lines 4584 to 4590) return
-        `bool(np.all(x))` whenever `ndim <= 2` and `dim` is None; N-D arrays go
-        through `_reduce` and work column-wise. Check the callers that rely on the
-        scalar before changing it.
       - `struct2table` (page `struct2table`): `s=struct('a',{1,2}); T=struct2table(s);
         istable(T)` gives 0 and `class(T)` is `'double'`; `T.a`, `T.Properties`,
         `table2struct`, `table2cell`, `table2array` and `summary` all fail, and
         `T(1,:)` returns every row. It returns the legacy display-only `Table` class
         (`matlab_runtime.py` about lines 810 and 4102) instead of a `ColumnTable` as
         `table` does (`lib_tables.py`). The `'AsArray'` and `'RowNames'` options fail
-        with a Python `TypeError`.
-      - `nan` (page `nan`): only the scalar works (`f_nan = math.nan`). `nan(2)`,
-        `nan(2,3)`, `nan([2 3])`, `NaN(2)`, `nan(2,'single')` and `nan('like',x)` fail
-        with "Index exceeds the number of array elements"; `Inf` and `inf` are
-        probably the same (not tested). `true` and `false` take dimensions.
-      - Constants lost for the session (pages `nan`; `pi` has no page yet):
-        `nan = 5; clear nan; nan` gives `NameError: name 'nan' is not defined`, and
-        `pi = 3; clear pi; pi` the same; `clear all` does not restore them. Expected
-        `NaN` and `3.1416`. Probably true of every `f_` constant.
+        with a Python `TypeError`. **M**
 
 ## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 6 open**
 
@@ -206,7 +174,7 @@ The functions live in `src/evans/console/lib_*.py`, tests in
 - [ ] `cd` lasts one run (noted with the file I/O work). Check against MATLAB, where it
       lasts until changed; R7 touches `cd` and `pwd` too. **S**
 
-## Phase 2 — Simulink for daily use ◐ **Core done 2026-10-30; 24 open**
+## Phase 2 — Simulink for daily use ◐ **Core done 2026-10-30; 28 open**
 
 Tests: `tests/golden/test_sim_workspace.py`, `test_sim_library.py`,
 `test_sim_editing.py`.
@@ -246,6 +214,48 @@ Tests: `tests/golden/test_sim_workspace.py`, `test_sim_library.py`,
       the user accepts it, so a saved model stays as typed. A failure with no
       clear fix must still name the block and parameter, as now. Tests next to
       `tests/golden/test_sim_workspace.py`. **S–M**
+
+**Speed.** Profiled 2026-11-27 on the four shipped examples, 10 s of
+simulated time each, RK45: `dc_motor` 0.30 s, `cruise_control` 0.36 s,
+`inverted_pendulum` 0.56 s, `pid_saturation` 2.95 s. Simulink runs models this
+size in tens of milliseconds, so Evans is about 10–100× slower. The maths is
+not the cost. Every block evaluation costs about 13 µs whatever the block does,
+because each signal is a 1-element numpy array and numpy's ~1 µs per call
+dominates: `np.atleast_1d` runs 650k times in one `pid_saturation` run,
+`_Evaluator._inputs` (`sim/solver.py`) allocates `np.zeros` on every call,
+`PortRef.__hash__` runs 590k times for the `_values` dict, and Saturation's
+nested `np.where` costs ~9 µs to clip one number. Fcn blocks cost ~27 µs, since
+they go through the full interpreter (`console/matlab_runtime.py`); in the
+pendulum the one Fcn block is ~60% of the run. Each of the 2000 output points
+is a full diagram sweep, which in the pendulum is most of the run (440 RHS
+calls against ~2000 recording sweeps). Cython alone would not help: the cost is
+thousands of tiny calls, not slow arithmetic.
+
+- [ ] **Check `pid_saturation`'s 51 solver restarts.** It makes 10,400 RHS
+      calls and restarts `solve_ivp` 51 times for a 7-state linear loop with
+      one step input, so the fixed-step `ode4` (1.8 s) beats RK45 (2.95 s).
+      This looks like chattering at the anti-windup Saturation's zero crossings.
+      Find out whether the restarts are real mode changes; if not, it is a bug. **S**
+- [ ] **A benchmark to measure against:** `tools/profile_sim.py`, which times
+      each example and counts block evaluations, sweeps and solver restarts, so
+      every speed change below has a before and after. **S**
+- [ ] **Quick wins in plain Python (expect 2–4×).** At compile time, give
+      every signal a slot in one flat float array and give each block plan
+      the indices of its inputs, so a sweep stops building lists, hashing
+      `PortRef`s and allocating zeros. Drop the repeated
+      `atleast_1d`/`asarray` where the block contract already guarantees
+      arrays, and give scalar signals a float fast path in the hot blocks
+      (Sum, Gain, Saturation, PID, TransferFcn, Integrator). Results must not
+      change: the sim golden tests and `test_model_compat.py` are the check. **S–M**
+- [ ] **Accelerator mode (expect 10–50×).** Compile the flattened diagram
+      into one generated function per model: merge the linear blocks into one
+      `dx = A @ x + B @ u`, translate Fcn expressions to numpy once instead of
+      interpreting them on every step, and run the result under Numba with a
+      solver loop that never returns to Python. Blocks that cannot be compiled
+      (MATLAB Function, interpreted callbacks) fall back to today's path. Run
+      it as a choice in the run settings, as Simulink does, until it matches the
+      normal mode on every test. Needs a design pass on *opus* and its own
+      session; do the quick wins first. **L**
 
 **Subsystems.** Create Subsystem from Selection, Expand Subsystem, descending into one,
 nested and conditional (enabled, triggered, action) subsystems exist
@@ -408,10 +418,6 @@ Phase 6.
 - [ ] **Crashes and raw Python errors found while writing help pages** (2026-11-24,
       batch 1; nothing fixed). Pages describe today's behaviour and must be revised
       when each is fixed. **S–M**
-      - `trapz(A,2)` and `trapz(A,1)` (page `trapz`): `A=[1 2 3;4 5 6]; trapz(A,2)`
-        fails with `IndexError: list assignment index out of range`, expected
-        `[6; 15]`; `trapz(5)` fails too, expected 0. Cause: `f_trapz(x, y=None,
-        dim=None)` takes the second argument as `y`.
       - `[A,B,C,D] = butter(2,0.2)` (pages `butter`, `cheby1`, `ellip`): `ValueError:
         'ss' is not a valid output form`, expected the state-space matrices. Cause:
         `_iir` passes `output='ss'` to scipy; go through `zpk` and `zpk2ss`.
@@ -436,6 +442,12 @@ Phase 6.
         `'double'`; `addpath` silently ignores a folder that does not exist, a cell
         array and a number; `genpath`, `path`, `pathsep`, `tempdir` and `tempname`
         are not there.
+      - A variable assigned and then cleared in the same command or script
+        (page `nan`): `x = 1; clear x; x` and `pi = 3; clear pi; pi` fail with
+        `NameError: name 'x' is not defined`, expected "Unrecognized function or
+        variable 'x'." and `3.1416`. The translator reads a name the script assigns
+        as a plain Python name, so `clear` leaves it undefined; separate commands
+        work. Found 2026-11-27 (the roadmap had it as a lost constant).
 
 ## Phase 5 — Hardware, identification, symbolic leftovers ○ **Not started; 4 open**
 

@@ -45,7 +45,7 @@ round fix
 #: Functions that make typed values out of untyped inputs.
 BUILD = frozenset(list(INT_NAMES) + """
 single double logical cast zeros ones eye intmax intmin realmax realmin
-flintmax eps typecast audioread
+flintmax eps typecast audioread nan NaN inf Inf
 """.split())
 
 

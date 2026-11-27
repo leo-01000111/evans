@@ -51,6 +51,9 @@ docs section, a few-line fix) are batched into one. Run the full suite once
 per batch before committing, not once per tiny task. Read only the files the
 work needs, and ask before starting the next big item.
 
+- To choose what to work on next from `docs/ROADMAP.md`, follow
+  `docs/PROGRESSRULES.md` (the order of work: silent wrong answers, crashes, what
+  blocks 1.0, then the rest).
 - A fresh session per big feature reads less and drifts less than a long one.
   Decisions and leftovers go in `docs/ROADMAP.md`, not only in chat; finished
   work moves to `docs/HISTORY.md`.

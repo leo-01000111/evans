@@ -29,7 +29,7 @@ A leading `*` on the name, as in `'*linear'`, is accepted and ignored. Any other
 
 Outside the range of `x` the result is `NaN`, unless you give a number `extrapval`, which is used instead, or the word `'extrap'`, which extrapolates. The methods `'spline'`, `'pchip'`, `'cubic'` and `'makima'` extrapolate by default. Giving a number turns extrapolation off for these as well. For `x = [1 2 3]` and `v = [10 20 40]`, the query 4 gives `NaN`, `0` with `extrapval` 0, and `60` with `'extrap'`; with `'spline'` it gives 70.
 
-Evans does not check its input. Repeated points in `x` give no error (`interp1([1 2 2 3], [10 20 30 40], 2)` returns 30), and a `NaN` in `xq` gives `NaN`.
+Repeated points in `x` stop with "The grid vectors must contain unique points." A `NaN` in `xq` gives `NaN`.
 
 ## Example
 

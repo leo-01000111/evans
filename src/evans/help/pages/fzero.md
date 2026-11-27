@@ -10,7 +10,7 @@ Find a zero of a function of one variable.
 
 ## Description
 
-`f` is a function handle (or name) taking a scalar and returning a scalar.
+`f` is a function handle (or name) taking a scalar and returning a scalar. A function that returns a vector stops with "The function must return a scalar value".
 
 With a two-element second argument `[a b]`, `fzero` searches inside that bracket. `f(a)` and `f(b)` must have opposite signs, otherwise it stops with "The function values at the interval endpoints must differ in sign." Only the first two elements are used if you pass more.
 

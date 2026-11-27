@@ -18,7 +18,7 @@ The search is the Nelder-Mead simplex method, started from the simplex of `x0` w
 
 `fval` is `f(x)`. `exitflag` is `1` when the search stopped on its tolerances and `0` when it ran out of iterations or evaluations; with `MaxIter` set to 10 on the Rosenbrock function it was `0`. `output` is a struct with `iterations`, `funcCount` and `algorithm` (`'Nelder-Mead simplex direct search'`). Evans prints no message when the limit is reached; test `exitflag`.
 
-The result is a local minimum, and the answer is only as accurate as the tolerances: a minimum at 3 prints as `3.0000`, so compare with a tolerance, not with `==`. The objective must return a real scalar; a value that is not a number stops with a Python-level message such as "could not convert string to float".
+The result is a local minimum, and the answer is only as accurate as the tolerances: a minimum at 3 prints as `3.0000`, so compare with a tolerance, not with `==`. The objective must return a real scalar: a vector stops with "The function must return a scalar value", and a value that is not a number stops with a Python-level message such as "could not convert string to float".
 
 ## Example
 
