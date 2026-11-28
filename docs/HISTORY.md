@@ -1452,6 +1452,45 @@ Found while doing this phase:
 - [x] A fixed-step run does not log its final instant (`_fixed_step` records
       only the edges before `t1`). **S** *Done 2026-11-03.*
 
+Speed (profiled 2026-11-27; the open items are in the roadmap):
+
+- [x] **Check `pid_saturation`'s 51 solver restarts.** It made 10,400 RHS
+      calls and restarted `solve_ivp` 51 times for a 7-state linear loop with
+      one step input, so the fixed-step `ode4` beat RK45. **S** *Done
+      2026-11-28: a bug, chattering in the limited Integrator.* Measured with
+      `tools/sim_restarts.py`, which logs every restart with its time, the
+      crossing value that fired and the modes it changed. One restart was
+      real (the integral `I_a` reaching 1.5 at t = 0.386984); the other 50
+      fell between t = 2.287248 and 2.287250, all on `I_a`'s upper-limit
+      crossing, with a value of +0 and no mode changing. The Integrator
+      decided "held at the limit" live from its state and its input's sign,
+      with no latched mode and no crossing on the input. When the error
+      changed sign the state left the limit quadratically (the input is zero
+      there), so `x − upper` sat on zero and re-fired on rounding errors
+      until the chatter guard stopped latching for the **rest of the run**:
+      every crossing after 2.29 s, the clip's included, was stepped over
+      unlatched, and the clip's output came out 9.5e-4 off. Simulink's
+      Integrator latches a saturation mode and has a separate crossing for
+      leaving it, and its Saturation detects one crossing per limit hit. The
+      Integrator now does the same: a latched mode (+1 held upper, −1 held
+      lower, 0 free), whose crossing value per limit is `x − limit` while
+      free and the input while held (or while the state sits on the limit),
+      the output is the limit while held, and a state past a limit is put
+      back on it (a fixed step overshoots inside the step). After: 5
+      restarts, each changing a mode: `I_a` reaching (0.386984), `I_a` and
+      `u_a` releasing together as the error changes sign (2.289281), and
+      the windup half's clip leaving, re-entering and leaving its limit
+      (4.639251, 7.453565, 8.396784), its real overshoot cycle. 2,195 RHS
+      calls instead of 10,424; 10 s of RK45 in 1.4 s instead of 5.3 s on the
+      same machine (busier than the 2.95 s profile). RK45 at rtol 1e-6 and
+      1e-9 now agree to 3e-10 (before: 1e-6 in the plant outputs, 9.5e-4 in
+      the clip); `ode4` is as close to the RK45 answer as before or closer
+      (the clip 5e-4 instead of 2.6e-3). Tests in
+      `test_sim_zero_crossings.py`: a saturating PI loop with a limited
+      integral restarts twice, as often as it really crosses, at the
+      analytic instants; it does not depend on the tolerance; a fixed-step
+      run keeps the state within the limits.
+
 ### Phase 3: Plotting (core done 2026-11-03)
 
 Plotting stopped at 2-D lines and bars, and figures are a large share of what people use

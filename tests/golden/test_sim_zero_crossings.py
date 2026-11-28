@@ -357,3 +357,99 @@ def test_fixed_step_relay_loop_tracks_the_variable_step_run():
     g_fix = np.interp(np.linspace(0, 20, 401), fix.t, fix.trace("G"))
     assert np.max(np.abs(g_ref - g_fix)) < 0.02
     assert np.ptp(g_fix[200:]) > 0.1                 # it really oscillates
+
+
+# ──────────────────────────────────────────────────────────────
+#  A limited Integrator: one restart per real crossing
+# ──────────────────────────────────────────────────────────────
+
+def anti_windup_pi() -> SimModel:
+    """
+    1/(s+1)² under Kp = 2, Ki = 4, the integral limited to the clip's ±1.5
+    (the lower half of the pid_saturation example). The integral reaches
+    1.5 once, and is released once, when the error changes sign; the clip
+    lets go at that same instant, since Kp·e falls through zero with it.
+    """
+    m = SimModel("anti_windup")
+    m.add("Step", "r", step_time=0.0, final=1.0)
+    m.add("Sum", "e", signs="+-")
+    m.add("Gain", "Kp", gain=2.0)
+    m.add("Gain", "Ki", gain=4.0)
+    m.add("Integrator", "I", limit=True, upper=1.5, lower=-1.5)
+    m.add("Sum", "pi", signs="++")
+    m.add("Saturation", "u", upper=1.5, lower=-1.5)
+    m.add("TransferFcn", "G", num="1", den="1, 2, 1")
+    m.connect("r", "e.in1")
+    m.connect("e", "Kp")
+    m.connect("e", "Ki")
+    m.connect("Ki", "I")
+    m.connect("Kp", "pi.in1")
+    m.connect("I", "pi.in2")
+    m.connect("pi", "u")
+    m.connect("u", "G")
+    m.connect("G", "e.in2")
+    return m
+
+
+def _restarts(monkeypatch, model, **kw):
+    """Run ``model``; return the result and, per restart, (t, modes changed)."""
+    from evans.sim import solver as solver_mod
+    log = []
+    original = solver_mod._cross
+
+    def modes(ev):
+        return {bid: None if getattr(p.block, "_mode", None) is None
+                else tuple(p.block._mode) for bid, p in ev.c.plans.items()}
+
+    def cross(ev, *args):
+        before = modes(ev)
+        out = original(ev, *args)
+        after = modes(ev)
+        log.append((args[2], sorted(b for b in after if after[b] != before[b])))
+        return out
+
+    monkeypatch.setattr(solver_mod, "_cross", cross)
+    return simulate(model, **kw), log
+
+
+def test_limited_integrator_restarts_once_per_real_crossing(monkeypatch):
+    # The release used to leave the state sitting on the limit (the rate is
+    # zero there), and the limit's crossing re-fired on rounding errors 50
+    # times in 10 µs until the solver stopped latching for the rest of the run.
+    res, log = _restarts(monkeypatch, anti_windup_pi(), t_end=10.0)
+    assert not res.warnings
+    assert len(log) == 2
+    assert all(changed for _, changed in log)
+    (t_reach, reach), (t_free, free) = log
+    assert reach == ["I"]
+    assert set(free) == {"I", "u"}
+    # Reached: ∫4e = 1.5. Released: the error changes sign, y = 1.
+    i = np.searchsorted(res.t, t_reach)
+    assert res.trace("I")[i] == pytest.approx(1.5, abs=1e-9)
+    assert np.interp(t_free, res.t, res.trace("G")) == pytest.approx(1.0,
+                                                                     abs=1e-7)
+    # Held, the output is the limit and nothing beyond it.
+    assert np.max(res.trace("I")) <= 1.5
+
+
+def test_limited_integrator_is_insensitive_to_the_tolerance():
+    loose = simulate(anti_windup_pi(), t_end=10.0, rtol=1e-6, atol=1e-9)
+    tight = simulate(anti_windup_pi(), t_end=10.0, rtol=1e-10, atol=1e-13)
+    grid = np.linspace(0.0, 10.0, 1001)
+    for name in ("G", "I", "u"):
+        a = np.interp(grid, loose.t, loose.trace(name))
+        b = np.interp(grid, tight.t, tight.trace(name))
+        # Chattering, the clip came out 1e-3 off near the release.
+        assert np.max(np.abs(a - b)) < 1e-5, name
+
+
+def test_fixed_step_limited_integrator_stays_within_its_limits():
+    # A fixed step overshoots the limit inside the step; the state is put
+    # back on it, or it is held beyond and released late.
+    ref = simulate(anti_windup_pi(), t_end=10.0)
+    fix = simulate(anti_windup_pi(), t_end=10.0, solver="ode4", max_step=1e-3)
+    assert np.max(fix.trace("I")) <= 1.5
+    grid = np.linspace(0.0, 10.0, 1001)
+    g_ref = np.interp(grid, ref.t, ref.trace("G"))
+    g_fix = np.interp(grid, fix.t, fix.trace("G"))
+    assert np.max(np.abs(g_ref - g_fix)) < 1e-3

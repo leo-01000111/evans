@@ -135,7 +135,21 @@ def _as_matrix(value) -> np.ndarray:
 
 
 @register
-class Integrator(Block):
+class Integrator(ModeLatch, Block):
+    """
+    1/s, with an optional limit and an optional reset port.
+
+    With "Limit output" the integrator has a latched mode, as Simulink's
+    does: +1 held at the upper limit, -1 held at the lower, 0 free. It is
+    held while the state is at a limit and the input pushes it further out.
+    Each limit has one zero-crossing value: while free it watches the state
+    reach the limit, while held it watches the input change sign, the only
+    thing that releases it. Decided live from the state instead, a release
+    left the state sitting on the limit (it leaves quadratically, since the
+    input is zero there), and the limit's crossing re-fired on every
+    rounding error until the solver gave up latching.
+    """
+
     type_name = "Integrator"
     category = _CAT
     description = "1/s, optionally saturating — the windup demonstration."
@@ -157,6 +171,7 @@ class Integrator(Block):
         self.reset()
 
     def reset(self) -> None:
+        ModeLatch.reset(self)
         self._side: float | None = None
         self._acted: float | None = None
 
@@ -172,7 +187,45 @@ class Integrator(Block):
         return np.array([float(self.params["x0"])])
 
     def output(self, t, x, xd, u):
+        # No direct feedthrough: the output reads the latched mode, never the
+        # input. Held, the state stopped within the event tolerance of the
+        # limit; the output is the limit itself.
+        held = self._mode[0] if self.params["limit"] and self._latched \
+            and self._mode is not None else 0.0
+        if held:
+            return [np.array([self.params["upper"] if held > 0
+                              else self.params["lower"]])]
         return [self._clamp(x.copy())]
+
+    # ── the limits ──
+    # The upper limit's value is (x - upper) below the limit and the rate at
+    # or above it, so it turns >= 0 exactly when the state would go past the
+    # limit; while held there only the rate's sign is watched. The lower
+    # limit mirrors it (held below zero, as Saturation's lower limit is).
+
+    def _limit_values(self, x: float, rate: float) -> np.ndarray:
+        lo, hi = self.params["lower"], self.params["upper"]
+        held = self._mode[0] if self._latched and self._mode is not None \
+            else 0.0
+        up = rate if held > 0 or x >= hi else x - hi
+        dn = rate if held < 0 or x <= lo else x - lo
+        return np.array([up, dn])
+
+    def _fresh_held(self, x: float, rate: float) -> float:
+        lo, hi = self.params["lower"], self.params["upper"]
+        if x >= hi and rate > 0:
+            return 1.0
+        if x <= lo and rate < 0:
+            return -1.0
+        return 0.0
+
+    @staticmethod
+    def _rate(u) -> float:
+        return float(np.atleast_1d(u[0])[0]) if u else 0.0
+
+    def _held(self, x, u) -> float:
+        return float(self._mode_or(np.array(
+            [self._fresh_held(float(x[0]), self._rate(u))]))[0])
 
     def _clamp(self, x):
         if not self.params["limit"]:
@@ -195,19 +248,41 @@ class Integrator(Block):
         return 1.0 if np.any(z < 0) else 0.0
 
     def update_modes(self, t, x, xd, u):
-        if self.params["reset"] == "none":
-            return False
-        side = self._fresh_side(u)
-        changed = side != self._side
-        self._side = side
+        changed = False
+        if self.params["limit"]:
+            changed = self._latch(
+                [self._fresh_held(float(x[0]), self._rate(u))])
+        if self.params["reset"] != "none":
+            side = self._fresh_side(u)
+            changed = changed or side != self._side
+            self._side = side
         return changed
 
     def init_modes(self, t, x, xd, u):
+        if self.params["limit"]:
+            self._latch([self._fresh_held(float(x[0]), self._rate(u))])
         if self.params["reset"] != "none":
             self._side = self._acted = self._fresh_side(u)
 
     def fire(self, ev, t, x, xd) -> bool:
-        """Put the state back to the initial condition on a reset edge."""
+        """
+        Keep a limited state within its limits, and put the state back to
+        the initial condition on a reset edge.
+
+        A fixed-step solver only sees a limit at the end of a step, by when
+        the state has overshot it; as in Simulink, the state is put back on
+        the limit, or it would stay held beyond it and leave late.
+        """
+        sl = ev.c.plans[self.block_id].x_slice
+        clamped = False
+        if self.params["limit"]:
+            lo, hi = self.params["lower"], self.params["upper"]
+            if x[sl][0] > hi or x[sl][0] < lo:
+                x[sl] = min(max(x[sl][0], lo), hi)
+                clamped = True
+        return self._fire_reset(ev, x) or clamped
+
+    def _fire_reset(self, ev, x) -> bool:
         kind = self.params["reset"]
         if kind == "none" or self._side is None:
             return False
@@ -231,13 +306,12 @@ class Integrator(Block):
         # further out, so the integrator does not accumulate a charge it must
         # later discharge. Without this, a saturating loop overshoots wildly
         # long after the error has changed sign.
-        lo, hi = self.params["lower"], self.params["upper"]
-        held = ((x[0] >= hi) and rate[0] > 0) or ((x[0] <= lo) and rate[0] < 0)
-        return np.zeros(1) if held else rate
+        if self.params["limit"] and self._held(x, u):
+            return np.zeros(1)
+        return rate
 
     def zero_crossings(self, t, x, xd, u):
-        limits = np.array([x[0] - self.params["upper"],
-                           x[0] - self.params["lower"]]) \
+        limits = self._limit_values(float(x[0]), self._rate(u)) \
             if self.params["limit"] else np.zeros(0)
         return np.concatenate([limits, self._reset_values(u)])
 

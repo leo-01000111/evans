@@ -27,7 +27,7 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 | 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
 | Phase 0, silent wrong answers | 3 | an unassigned output; `ode45` events is a feature |
 | Phase 1, data work at the console | 6 | |
-| Phase 2, Simulink for daily use | 28 | the `pid_saturation` restarts, then the quick speed wins |
+| Phase 2, Simulink for daily use | 27 | the speed benchmark, then the quick speed wins |
 | Phase 3, plotting | 6 | TeX text in labels (after the hold) |
 | Phase 4, other people's MATLAB code | 14 | |
 | Phase 5, hardware, identification, symbolic | 4 | not started |
@@ -170,7 +170,7 @@ The functions live in `src/evans/console/lib_*.py`, tests in
 - [ ] `cd` lasts one run (noted with the file I/O work). Check against MATLAB, where it
       lasts until changed; R7 touches `cd` and `pwd` too. **S**
 
-## Phase 2 — Simulink for daily use ◐ **Core done 2026-10-30; 28 open**
+## Phase 2 — Simulink for daily use ◐ **Core done 2026-10-30; 27 open**
 
 Tests: `tests/golden/test_sim_workspace.py`, `test_sim_library.py`,
 `test_sim_editing.py`.
@@ -225,13 +225,11 @@ they go through the full interpreter (`console/matlab_runtime.py`); in the
 pendulum the one Fcn block is ~60% of the run. Each of the 2000 output points
 is a full diagram sweep, which in the pendulum is most of the run (440 RHS
 calls against ~2000 recording sweeps). Cython alone would not help: the cost is
-thousands of tiny calls, not slow arithmetic.
+thousands of tiny calls, not slow arithmetic. (`pid_saturation`'s 51
+restarts were chattering in the limited Integrator, fixed 2026-11-28: 5
+restarts, 2,195 RHS calls; see the history. `tools/sim_restarts.py` logs a
+model's restarts.)
 
-- [ ] **Check `pid_saturation`'s 51 solver restarts.** It makes 10,400 RHS
-      calls and restarts `solve_ivp` 51 times for a 7-state linear loop with
-      one step input, so the fixed-step `ode4` (1.8 s) beats RK45 (2.95 s).
-      This looks like chattering at the anti-windup Saturation's zero crossings.
-      Find out whether the restarts are real mode changes; if not, it is a bug. **S**
 - [ ] **A benchmark to measure against:** `tools/profile_sim.py`, which times
       each example and counts block evaluations, sweeps and solver restarts, so
       every speed change below has a before and after. **S**
