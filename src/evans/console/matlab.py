@@ -1578,6 +1578,8 @@ class _Emitter:
         #: Names declared ``global`` or ``persistent``: read from, and
         #: written back to, the store that outlives this call.
         self.linked: dict[str, str] = {}
+        #: Inside a function, the variables a ``clear`` may delete.
+        self._own: set[str] | None = None
 
     def _bind(self, name: str) -> None:
         if name not in self.cleared:
@@ -1688,7 +1690,11 @@ class _Emitter:
                   outer: frozenset[str] = frozenset()) -> None:
         mine = (_assigned_names(f.body) | set(f.params) | set(f.outputs)
                 | {c.name for c in f.nested})
-        inner = _Emitter(mine | {f.name} | set(outer))
+        inner = _Emitter(mine | {f.name} | set(outer),
+                         frozenset(_cleared_names(f.body)))
+        #: What a ``clear`` in the body may delete: the function's own
+        #: variables (not its nested functions).
+        inner._own = mine - {c.name for c in f.nested}
         inner._outputs = f.outputs
         inner._fname = f.name
         inner.klass = self.klass
@@ -1932,7 +1938,42 @@ class _Emitter:
         elif kind == "persistent":
             self._put(i, f"_persist[{name!r}] = {_py_name(name)}", line)
 
+    def _clear_in_function(self, s: _ExprStmt, i: int) -> bool:
+        """
+        ``clear`` in a function deletes the function's own variables, which
+        are Python locals: the runtime cannot reach them, and its own
+        ``clear`` would empty the base workspace instead.
+        """
+        e = s.expr
+        if isinstance(e, _Name):
+            target, args = e.name, []
+        elif isinstance(e, _Index) and isinstance(e.target, _Name):
+            target, args = e.target.name, e.args
+        else:
+            return False
+        if self._own is None or target not in _CLEARS \
+                or target in self.vars:
+            return False
+        self._switch_count += 1
+        pred = f"_clr{self._switch_count}"
+        self._put(i, f"{pred} = {_RT}.clear_in_function(("
+                     f"{self._arglist(args)}))", s.line)
+        for name in sorted(self._own):
+            py = _py_name(name)
+            self._put(i, f"if {pred}({name!r}):", s.line)
+            if self._outputs and name in self._outputs:
+                # An output is None until it is assigned.
+                self._put(i + 1, f"{py} = None", s.line)
+                continue
+            self._put(i + 1, "try:", s.line)
+            self._put(i + 2, f"del {py}", s.line)
+            self._put(i + 1, "except NameError:", s.line)
+            self._put(i + 2, "pass", s.line)
+        return True
+
     def _expr_stmt(self, s: _ExprStmt, i: int) -> None:
+        if self._clear_in_function(s, i):
+            return
         e = s.expr
         if isinstance(e, _Name) and e.name in self.vars:
             if s.echo:

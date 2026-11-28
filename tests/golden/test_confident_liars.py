@@ -824,3 +824,37 @@ def test_nan_and_inf_take_dimensions_and_a_class(it):
     assert math.isnan(val(it, "d")) and math.isnan(val(it, "e"))
     assert val(it, "f") == -math.inf
     assert "double" in error_of(it, "nan(2, 'int8')")
+
+
+def _function_file(tmp_path, name, body):
+    (tmp_path / f"{name}.m").write_text(body)
+    return str(tmp_path).replace("\\", "/")
+
+
+def test_clear_in_a_function_clears_only_the_function(it, tmp_path):
+    """``clear`` in a function did nothing to the function's variables and
+    deleted the caller's base-workspace variables of the same name."""
+    _function_file(tmp_path, "f1", "function r = f1()\n"
+                   "x = 1; clear x; r = exist('x');\nend\n")
+    _function_file(tmp_path, "f2", "function r = f2()\n"
+                   "y = 2; clear; r = exist('y');\nend\n")
+    folder = _function_file(tmp_path, "f3", "function r = f3()\n"
+                            "a = 1; b = 2; clearvars -except b;\n"
+                            "r = [exist('a') exist('b')];\nend\n")
+    run(it, f"addpath('{folder}'); x = 5; y = 6; a = f1(); b = f2(); "
+            "c = f3();")
+    assert (val(it, "a"), val(it, "b")) == (0, 0)
+    assert _numbers(val(it, "c")).tolist() == [0, 1]
+    assert (val(it, "x"), val(it, "y")) == (5, 6)
+
+
+def test_a_name_cleared_in_a_function_reads_as_matlab_does(it, tmp_path):
+    """After ``clear``, a function's variable is undefined and a hidden
+    constant is back."""
+    _function_file(tmp_path, "g1", "function r = g1()\n"
+                   "pi = 3; clear pi; r = pi;\nend\n")
+    folder = _function_file(tmp_path, "g2", "function r = g2()\n"
+                            "x = 1; clear x; r = x;\nend\n")
+    run(it, f"addpath('{folder}'); p = g1();")
+    assert val(it, "p") == pytest.approx(math.pi)
+    assert "Unrecognized function or variable 'x'" in error_of(it, "g2()")

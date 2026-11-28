@@ -1143,6 +1143,14 @@ Tests: `tests/golden/test_confident_liars.py`, last section.
       fixed there: `x^2` overflowing gives `Inf`, and a table column of arrays
       displays.
 
+- [x] **`clear` inside a function** (found 2026-11-28): it did nothing to the
+      function's variables and deleted the caller's base-workspace variables of the
+      same name. Fixed 2026-11-28: in a function, `clear` deletes the function's own
+      Python locals (`_Emitter._clear_in_function` in `matlab.py`), asking
+      `Runtime.clear_in_function` which names it covers (bare, `all`, wildcards,
+      `-regexp`, `clearvars -except`); a name it may clear is read through the
+      runtime, as in scripts. Tests in `tests/golden/test_confident_liars.py`.
+
 ### Phase 1: Everyday data work at the console (core done 2026-10-28)
 
 Needed for any "process my logged data" job, whether coursework, a hobby project or test

@@ -19,6 +19,8 @@ Scripts often begin with `clear` (and [clc](clc)) so that values left from an ea
 
 `clear K*` removes every variable whose name matches the pattern, here every name starting with `K`; `*` stands for any run of characters. `clear -regexp expr ...` removes the variables whose names match any of the regular expressions after it, so `clear -regexp ^K\d` removes `K1` and `K2` but not `Kp`.
 
+Inside a function, `clear` removes the function's own variables and leaves the caller's workspace alone. There `clearvars -except a b` keeps `a` and `b` and removes the rest. After `pi = 3; clear pi`, `pi` is 3.1416 again.
+
 ## Example
 
 ```matlab

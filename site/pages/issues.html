@@ -25,7 +25,7 @@
         <ul>
           <li><strong>Growing an array with <code>a(end+1) = v</code> in a loop is slow</strong>, because each step makes a new array. Pre-allocate (<code>a = zeros(1,n)</code>) and fill it, which is fast.</li>
           <li><strong><code>ode45</code> does not support the <code>Events</code>, <code>Mass</code> and <code>Jacobian</code> options.</strong> It warns when one is set and solves without it, so an event does not stop the run.</li>
-          <li><strong><code>clear</code> inside a function does nothing.</strong> In a function, <code>x = 1; clear x; r = x</code> gives 1 instead of an error. In a script and at the prompt <code>clear</code> works.</li>
+          <li><strong>A function output that is never assigned comes back as <code>[]</code></strong> instead of stopping with &ldquo;Output argument &hellip; not assigned a value&rdquo;.</li>
           <li><strong>A <code>cd</code> lasts for one run</strong>, not for the next command. Put the <code>cd</code> and the commands that need it in the same script.</li>
           <li><strong>TeX text in labels is printed as typed.</strong> <code>ylabel('\alpha (rad)')</code> shows the backslash and the word, not a Greek α, in saved figures and on screen. Until it is fixed, write plain labels.</li>
         </ul>

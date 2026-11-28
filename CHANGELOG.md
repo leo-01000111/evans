@@ -9,6 +9,31 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.30.6 - 2026-11-28
+
+### Fixed
+
+- `clear` inside a function clears the function's own variables. It did
+  nothing to them and deleted the caller's workspace variables of the same
+  name instead. `clearvars -except` works there too.
+- A variable assigned and then cleared in the same script is undefined, with
+  MATLAB's message, instead of a Python `NameError`; `pi = 3; clear pi; pi` is
+  3.1416 again.
+- A library function called with too few or too many arguments says "Not
+  enough input arguments." or "Too many input arguments." instead of a Python
+  error (`fft()`, `ode45(f,[0 1])`, `fzero(f)` and the rest).
+- `[A,B,C,D] = butter(...)`, and the same for `cheby1`, `cheby2` and `ellip`,
+  return the state-space matrices.
+- `save` names the class it cannot write instead of saying the variable was not
+  found.
+- `cd ..` and `cd .` work as commands. `all(x,'all')` works, and a `dim` that is
+  not a positive whole number is an error.
+- `ceil`, `log10`, `log2` and the relational operators give MATLAB's errors for
+  text, cells and mismatched sizes, compare complex numbers by their real part,
+  and keep `single`.
+- `addpath` warns about a folder that does not exist and refuses a cell or a
+  number.
+
 ## 0.30.5 - 2026-11-28
 
 ### Fixed

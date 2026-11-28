@@ -3444,6 +3444,57 @@ class Runtime:
         self._clear()
         self.ns.update(saved)
 
+    def clear_in_function(self, args: tuple) -> Callable[[str], bool]:
+        """
+        ``clear`` inside a function. It never touches the base workspace:
+        the function's own variables are Python locals, which the
+        translated code deletes itself, asking the predicate returned here
+        which of them this ``clear`` names. ``clear all``, ``clear
+        functions`` and ``clear global`` keep their effects beyond the
+        function, as in MATLAB.
+        """
+        names = [str(a) for a in args if isinstance(a, str)]
+        word = names[0].lower().lstrip("-") if names else ""
+        if word in ("all", "functions"):
+            self._forget_functions()
+        if word in ("all", "global"):
+            gone = (self._clear_targets(tuple(names[1:]))
+                    if word == "global" and names[1:]
+                    else list(self.global_vars))
+            for name in gone:
+                self.global_vars.pop(name, None)
+        if word == "functions":
+            return lambda name: False
+        if not names or word in ("all", "variables", "v") or (
+                word == "global" and not names[1:]):
+            return lambda name: True
+        if word == "global":
+            names = names[1:]
+        patterns, regexps, keep = [], [], []
+        mode = "plain"
+        for n in names:
+            low = n.lower()
+            if low == "-regexp":
+                mode = "regexp"
+            elif low == "-except":
+                mode = "except"
+            elif mode == "regexp":
+                regexps.append(n)
+            elif mode == "except":
+                keep.append(n)
+            else:
+                patterns.append(n)
+        everything = not patterns and not regexps
+
+        def covers(name: str) -> bool:
+            if any(fnmatch.fnmatchcase(name, k) for k in keep):
+                return False
+            return everything or any(
+                fnmatch.fnmatchcase(name, p) for p in patterns) or any(
+                re.search(r, name) for r in regexps)
+
+        return covers
+
     def _forget_functions(self) -> None:
         """Drop loaded function files, and empty every persistent store."""
         functions = [entry[1] for entry in self._files.values()]

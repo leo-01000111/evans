@@ -25,7 +25,7 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 | Section | Open | Next |
 |---|---|---|
 | 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
-| Phase 0, silent wrong answers | 3 | `clear` inside a function; `ode45` events is a feature |
+| Phase 0, silent wrong answers | 3 | an unassigned output; `ode45` events is a feature |
 | Phase 1, data work at the console | 6 | |
 | Phase 2, Simulink for daily use | 28 | the `pid_saturation` restarts, then the quick speed wins |
 | Phase 3, plotting | 6 | TeX text in labels (after the hold) |
@@ -145,13 +145,13 @@ answers became the reference corpus (Phase 6), which found 32; all were fixed
       2026-11-24): the `Events`, `Mass` and `Jacobian` options are not supported.
       Since 2026-11-27 a set option is named in a warning instead of being dropped
       silently (page `ode45`). Supporting `Events` is a new feature. **M**
-- [ ] **`clear` inside a function does nothing** (found 2026-11-28 while fixing the
-      same crash in scripts): in a function, `x = 1; clear x; r = x` returns 1 and
-      `exist('x')` stays 1, also after a bare `clear`. The function's variables are
-      Python locals, which `clear` cannot delete. Scripts were fixed 2026-11-28 by
-      reading a cleared name through `__ml__.read` (`_cleared_names` in
-      `matlab.py`); a function needs `clear` to rebind the local (to a sentinel the
-      reads check) or the same routing plus a scope `clear` can reach. **S–M**
+- [ ] **An output a function never assigns comes back as `[]`** (found 2026-11-28
+      while fixing `clear` in functions): `function r = f() end` and `r = f()` give
+      `r = []`, where MATLAB stops with "Output argument "r" (and possibly others)
+      not assigned a value in the execution with "f" function." The same after
+      `clear` of an output. Outputs start as `None` in the translated function
+      (`_Emitter._function`); `Runtime.outputs` could raise for a requested one
+      that is still `None`. **S**
 
 ## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 6 open**
 
