@@ -8,8 +8,8 @@ integer scalar or array, or a float32 one. Everything else numeric is
 
 Arithmetic is done in double and then cast back, with MATLAB's rules: round
 half away from zero, saturate at the type's limits, ``NaN`` becomes 0. Two
-different integer classes cannot meet in an operator; an integer meets a
-double or a single and stays an integer.
+different integer classes cannot meet in an operator, nor an integer and a
+single; an integer meets a double and stays an integer.
 
 The library functions know nothing of this: :func:`finish` runs after each
 call and turns any integer a function leaked (``find`` returns numpy
@@ -52,7 +52,7 @@ round fix
 #: Functions that make typed values out of untyped inputs.
 BUILD = frozenset(list(INT_NAMES) + """
 single double logical cast zeros ones eye intmax intmin realmax realmin
-flintmax eps typecast audioread nan NaN inf Inf
+flintmax eps typecast audioread nan NaN inf Inf tic
 """.split())
 
 
@@ -84,11 +84,15 @@ def dominant(values) -> str | None:
     return "single" if "single" in classes else None
 
 
-def check_pair(a, b, opname: str = "+") -> str | None:
-    """The result class of ``a op b``; two integer classes are an error."""
+def check_pair(a, b, opname: str = "+", single: bool = True) -> str | None:
+    """The result class of ``a op b``. Two integer classes are an error,
+    and so is an integer with a single: an integer only combines with its
+    own class or a double. ``single=False`` lets a single through, for
+    the comparisons."""
     from .matlab_runtime import MatlabError
     ca, cb = num_class(a), num_class(b)
-    if ca in INTS and cb in INTS and ca != cb:
+    other = set(INTS) | {"single"} if single else set(INTS)
+    if ca != cb and (ca in INTS and cb in other or cb in INTS and ca in other):
         raise MatlabError(
             f"Binary operator '{opname}' not supported for integer classes "
             f"'{ca}' and '{cb}'. Integers can only be combined with "

@@ -1150,6 +1150,23 @@ Tests: `tests/golden/test_confident_liars.py`, last section.
       `Runtime.clear_in_function` which names it covers (bare, `all`, wildcards,
       `-regexp`, `clearvars -except`); a name it may clear is read through the
       runtime, as in scripts. Tests in `tests/golden/test_confident_liars.py`.
+- [x] **An output a function never assigns came back as `[]`** (found 2026-11-28):
+      `function r = f() end` and `r = f()` gave `r = []`. Fixed 2026-11-28:
+      `Runtime.outputs` and `Runtime.outputs_var` get the output names and stop with
+      MATLAB's "Output argument "r" (and possibly others) not assigned a value in the
+      execution with "f" function." for a requested output still `None`; with
+      `nargout` 0 an unset first output is fine. Covers subfunctions, `varargout`'s
+      named outputs, `clear` of an output and class methods (named `Class/method`).
+- [x] **Found on the way, 2026-11-28:** arithmetic on a char worked on the text,
+      not its codes: `'abc' * 2` was `'abcabc'` and `'ab' + 'cd'` was `'abcd'`
+      (now `[194 196 198]` and `[196 198]`; `_char_operand` in `_typed_binary` and
+      `uminus`). `char({'a', 'bcd'})` and `char(['ab'; 'cd'])` printed the value's
+      display text as one row; `char` now builds a padded char matrix from texts,
+      cells and char matrices, and `char(a, b)` works. `fliplr({1, 'x'})` gave a
+      number array; `fliplr`, `flipud` and `flip` keep a char, cell or struct array.
+      `[s, t]` of two structs gave a cell, not a struct array: `StructArray.from_grid`
+      was `Cell`'s classmethod bound to `Cell`. Struct concatenation also skips `[]`
+      (`s = []; s = [s, t]`) and refuses mismatched field names as MATLAB does.
 
 ### Phase 1: Everyday data work at the console (core done 2026-10-28)
 
@@ -1906,6 +1923,21 @@ Professional users need this before Evans can be used for paid work.
       The stability policy was decided 2026-11-11 (part 5) and stated in the README's
       and the site's "Stability" sections; its text is in the roadmap's 1.0 section.
 - [x] Fix the `pyproject.toml` comment that still says "432 tests". **S**
+- [x] **The MATLAB comparison's error cases and the kit dry run, 2026-11-28.**
+      Tier 1: `single(1) + int8(1)` gave 2 and is now MATLAB's "Integers can only be
+      combined with integers of the same class" error (`numtypes.check_pair`;
+      comparisons still accept a single with an integer); `[c{:}]` over a cell of
+      structs is a struct array (see Phase 0, found on the way). Tier 2, Python
+      errors replaced by MATLAB's answer: `'abc' + 1`, `fliplr('abc')`,
+      `str2num('[1 2 3]')` (evaluated as MATLAB, `[]` and `false` when it is not a
+      matrix), `str2double('abc')` (`NaN`), `str2double` of a cell (an array of its
+      size), `mean(A, 'all')` (all of `_reduce`'s users), `norm(tf, 2)` and
+      `norm(tf, Inf)` (H2 and H-infinity norms, `Inf` when unstable),
+      `zeros(3,0) * zeros(0,2)`, `char(a, b)`, `toc(t0)` (`t0 = tic` returns a
+      `uint64` timer value), `d.bytes / 1e6` on an empty `dir` result (an operand
+      that is a comma-separated list gives "Not enough/Too many input arguments."),
+      and `save` inside a function (it saves the function's variables, found with
+      `_caller_scope`). Tests at the end of `tests/golden/test_crash_messages.py`.
 
 ---
 

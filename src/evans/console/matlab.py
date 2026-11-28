@@ -1681,9 +1681,18 @@ class _Emitter:
             # varargout's elements are the outputs after the named ones.
             names = "".join(f"{_py_name(o)}, " for o in self._outputs[:-1])
             return (f"return {_RT}.outputs_var(({names}), varargout, "
-                    f"nargout, {self._fname!r})")
+                    f"nargout, {self._shown_name()!r}, "
+                    f"{tuple(self._outputs[:-1])!r})")
         names = ", ".join(_py_name(o) for o in self._outputs)
-        return f"return {_RT}.outputs(({names},), nargout)"
+        return (f"return {_RT}.outputs(({names},), nargout, "
+                f"{tuple(self._outputs)!r}, {self._shown_name()!r})")
+
+    def _shown_name(self) -> str:
+        """The function's name as MATLAB's messages give it: a class
+        method's is ``Class/method``."""
+        if self.klass and self._fname.startswith(f"{self.klass}__"):
+            return f"{self.klass}/{self._fname[len(self.klass) + 2:]}"
+        return self._fname
 
     def _function(self, f: _Function, i: int,
                   shared: frozenset[str] = frozenset(),

@@ -6,6 +6,7 @@ Seconds elapsed since the last tic.
 
     toc
     elapsed = toc
+    elapsed = toc(t0)
 
 ## Description
 
@@ -13,7 +14,7 @@ Seconds elapsed since the last tic.
 
 `toc` does not stop the stopwatch: each call measures from the same [tic](tic), until `tic` runs again. Without any `tic`, `toc` counts from when the console started.
 
-Evans does not support `toc(t0)` with a timer value from `t0 = tic`; it raises an error.
+`toc(t0)` measures from the timer value `t0 = tic` returned instead of from the last plain `tic`; anything other than such a value is an error.
 
 ## Example
 
