@@ -366,7 +366,7 @@ class StructArray(list):
     nd = None
     dims = Cell.dims
     grid = Cell.grid
-    from_grid = Cell.from_grid
+    from_grid = classmethod(Cell.from_grid.__func__)
 
     def __repr__(self) -> str:
         fields = list(self[0]) if self else []
@@ -1796,6 +1796,8 @@ def _typed_binary(method):
     def operator(self, a, b):
         if isinstance(a, (Str, StrArray)) or isinstance(b, (Str, StrArray)):
             return self._string_operator(method.__name__, a, b)
+        # Arithmetic on a char is on its character codes: 'a' + 1 is 98.
+        a, b = (_char_operand(_one_operand(x)) for x in (a, b))
         if _nt.is_typed(a) or _nt.is_typed(b):
             cls = _nt.check_pair(a, b)
             out = method(self, _nt.to_double(a), _nt.to_double(b))
@@ -2157,17 +2159,32 @@ class Runtime:
         return fn
 
     @staticmethod
-    def outputs(values: tuple, nargout: int):
+    def _assigned(values: tuple, nargout: int, names: tuple, name: str):
+        """MATLAB stops when an output the caller asked for was never
+        set; with no output asked for, an unset first one is fine."""
+        for k in range(min(nargout, len(values), len(names))):
+            if values[k] is None:
+                raise MatlabError(
+                    f'Output argument "{names[k]}" (and possibly others) '
+                    f'not assigned a value in the execution with '
+                    f'"{name}" function.')
+
+    @staticmethod
+    def outputs(values: tuple, nargout: int, names: tuple = (),
+                name: str = ""):
+        Runtime._assigned(values, nargout, names, name)
         if nargout <= 1:
             return values[0] if values else None
         return values[:nargout]
 
     @staticmethod
-    def outputs_var(named: tuple, varargout, nargout: int, name: str):
+    def outputs_var(named: tuple, varargout, nargout: int, name: str,
+                    names: tuple = ()):
         """Outputs of a function whose last output is ``varargout``."""
         rest = list(varargout) if isinstance(varargout, Cell) else (
             [] if varargout is None else [varargout])
         values = named + tuple(rest)
+        Runtime._assigned(named, nargout, names, name)
         if len(values) < nargout:
             missing = nargout - len(named)
             raise MatlabError(
@@ -2913,11 +2930,21 @@ class Runtime:
                          for i in range(len(parts[0]))]
             return Cell.from_grid(grid)
         if any(isinstance(x, (Struct, StructArray)) for x in flat):
-            # [s; t] stacks and [s, t] joins, as with cells.
+            # [s; t] stacks and [s, t] joins, as with cells; [] joins as
+            # nothing, so s = []; s = [s, t] grows a struct array.
             grid = []
             for row in rows:
-                parts = [x.grid() if isinstance(x, StructArray) else [[x]]
-                         for x in row if not isinstance(x, StructArray) or x]
+                parts = []
+                for x in row:
+                    if isinstance(x, StructArray):
+                        if x:
+                            parts.append(x.grid())
+                    elif isinstance(x, Struct):
+                        parts.append([[x]])
+                    elif not (isinstance(x, np.ndarray) and x.size == 0):
+                        raise MatlabError(
+                            f"Conversion to struct from "
+                            f"{self.lib.f_class(x)} is not possible.")
                 if not parts:
                     continue
                 if len({len(p) for p in parts}) > 1:
@@ -2925,6 +2952,12 @@ class Runtime:
                                       "concatenated are not consistent.")
                 grid += [sum((p[i] for p in parts), [])
                          for i in range(len(parts[0]))]
+            names = {frozenset(s) for row in grid for s in row}
+            if len(names) > 1:
+                raise MatlabError("Names of fields in structure arrays being "
+                                  "concatenated do not match.")
+            if len(grid) == 1 and len(grid[0]) == 1:
+                return grid[0][0]
             return StructArray.from_grid(grid)
         if any(isinstance(x, str) for x in flat):
             texts = ["".join(_as_text(x) for x in row) for row in rows if row]
@@ -3151,7 +3184,8 @@ class Runtime:
             return _defer(self.mtimes, a, b)
         a, b = _coerce(a, b)
         if isinstance(a, np.ndarray) and isinstance(b, np.ndarray) \
-                and a.size > 1 and b.size > 1:
+                and a.size != 1 and b.size != 1:
+            # Empty matrices too: zeros(3,0) * zeros(0,2) is zeros(3,2).
             if _is_nd(a) or _is_nd(b):
                 raise MatlabError("Arguments must be 2-D, or at least one "
                                   "argument must be scalar. Use .* for "
@@ -3258,6 +3292,7 @@ class Runtime:
         return _strarray([x + y for x, y in zip(left, right)], rows)
 
     def _compare(self, a, b, op, sym="=="):
+        a, b = _one_operand(a), _one_operand(b)
         strings = isinstance(a, (Str, StrArray)) or isinstance(
             b, (Str, StrArray))      # a string meets text in a cell fine
         for x in (a, b):
@@ -3278,7 +3313,7 @@ class Runtime:
             out = [bool(op(x, y)) for x, y in zip(left, right)]
             return out[0] if len(out) == 1 else np.array(out, dtype=bool)
         if _nt.is_typed(a) or _nt.is_typed(b):
-            _nt.check_pair(a, b)
+            _nt.check_pair(a, b, single=False)
             a, b = _nt.to_double(a), _nt.to_double(b)
         a, b = _coerce(a, b)
         if isinstance(a, str) and isinstance(b, str):
@@ -3353,6 +3388,7 @@ class Runtime:
         if isinstance(a, (Str, StrArray)):
             raise MatlabError("Operator '-' is not supported for operands "
                               "of type 'string'.")
+        a = _char_operand(_one_operand(a))
         if type(a) is int and a == 0:
             return -0.0                  # a double: 1 / -0 is -Inf
         return -a
@@ -3832,6 +3868,69 @@ def _char_codes(text: str):
     return codes[0] if len(codes) == 1 else np.array(codes)
 
 
+def _lti_norm(sys, p) -> float:
+    """``norm(sys)``, ``norm(sys, 2)`` and ``norm(sys, Inf)``: the H2 and
+    H-infinity norms, infinite for an unstable model."""
+    if isinstance(p, str):
+        p = math.inf if p.lower() == "inf" else p
+    elif not isinstance(p, (int, float)) and np.size(p) == 1:
+        p = float(np.asarray(p).reshape(-1)[0])
+    if p != 2 and p != math.inf:
+        raise MatlabError("The second input of the \"norm\" command must be "
+                          "2 or Inf.")
+    poles = np.asarray(ctl.poles(sys))
+    unstable = (np.any(np.abs(poles) >= 1 - 1e-12) if sys.isdtime()
+                else np.any(poles.real >= -1e-12))
+    if unstable:
+        return math.inf
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return float(ctl.norm(sys, 2 if p == 2 else "inf"))
+
+
+def _text_to_double(x):
+    """One value of ``str2double``: text read as a real or complex number,
+    with commas as thousands separators; ``NaN`` for anything else."""
+    if not isinstance(x, str):
+        return math.nan
+    t = x.strip().replace(",", "")
+    if not t or "_" in t:
+        return math.nan
+    try:
+        return float(t)
+    except ValueError:
+        pass
+    try:
+        z = complex(t.replace(" ", "").replace("i", "j")
+                    .replace("Jnf", "inf").replace("jnf", "inf"))
+    except ValueError:
+        return math.nan
+    return z.real if z.imag == 0 else z
+
+
+def _one_operand(x):
+    """An operand that is a comma-separated list (``s.a`` of a struct
+    array, ``c{:}``) passes its values to the operator as arguments, so
+    none is too few and two are too many."""
+    if type(x) is not tuple:
+        return x
+    if not x:
+        raise MatlabError("Not enough input arguments.")
+    if len(x) > 1:
+        raise MatlabError("Too many input arguments.")
+    return x[0]
+
+
+def _char_operand(x):
+    """A char vector or matrix as an operand of arithmetic: its codes."""
+    if type(x) is str:
+        return _char_codes(x) if x else np.zeros((0, 0))
+    if isinstance(x, CharMatrix):
+        return x.codes()
+    return x
+
+
 def _elementwise_arg(lib, name: str, a, text: bool):
     """An argument of an elementwise function, or MATLAB's refusal."""
     if type(a) is str:
@@ -3930,12 +4029,28 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         _FORMAT["long"] = bool(args) and str(args[0]).lower().startswith(
             "long")
 
-    def f_tic(self):
-        self.rt._tic = time.perf_counter()
+    @_nargout
+    def f_tic(self, nargout=0):
+        """``tic`` restarts the stopwatch; ``t0 = tic`` returns the time as
+        a ``uint64`` count of microseconds for ``toc(t0)``, and leaves the
+        stopwatch alone, as MATLAB does."""
+        now = time.perf_counter()
+        if nargout == 0:
+            self.rt._tic = now
+            return None
+        return np.uint64(round(now * 1e6))
 
     @_nargout
-    def f_toc(self, nargout=1):
-        elapsed = time.perf_counter() - self.rt._tic
+    def f_toc(self, t0=None, nargout=1):
+        if t0 is None:
+            elapsed = time.perf_counter() - self.rt._tic
+        else:
+            if not (_nt.is_typed(t0) and _nt.num_class(t0) == "uint64"
+                    and np.size(t0) == 1):
+                raise MatlabError("The input to toc must be a timer value "
+                                  "returned by tic.")
+            start = int(np.asarray(t0).reshape(-1)[0]) / 1e6
+            elapsed = time.perf_counter() - start
         if nargout == 0:
             print(f"Elapsed time is {elapsed:.6f} seconds.")
             return None
@@ -4112,10 +4227,38 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         text = ";".join(rows)
         return text if a.size == 1 else f"[{text}]"
 
-    def f_str2num(self, text):
-        return float(text)
+    @_nargout
+    def f_str2num(self, text, nargout=1):
+        """``str2num``: the text evaluated as a matrix, ``[]`` when it is
+        not one."""
+        if isinstance(text, CharMatrix):
+            text = ";".join(text.rows)
+        if not isinstance(text, str):
+            raise MatlabError("Input must be a character vector or string "
+                              "scalar.")
+        try:
+            value = self._run_text(f"[{text}]", {"__ml__": self.rt}, {}, 1)
+        except Exception:                                  # noqa: BLE001
+            value = None
+        ok = value is not None and not isinstance(value, str) and (
+            _is_number(value) or isinstance(value, (bool, np.bool_))
+            or isinstance(value, np.ndarray) and value.dtype.kind in "biufc")
+        out = value if ok else np.zeros((0, 0))
+        return (out, ok) if nargout >= 2 else out
 
-    f_str2double = f_str2num
+    def f_str2double(self, x):
+        """``str2double``: text to a number, ``NaN`` when it is not one; a
+        cell gives an array of its size."""
+        if isinstance(x, Cell):
+            r, c = x.dims
+            values = [_text_to_double(v) for v in x]
+            return _normalise(np.array(values, dtype=complex if any(
+                isinstance(v, complex) for v in values) else float
+                ).reshape((r, c), order="F")) if values else np.zeros((r, c))
+        if isinstance(x, CharMatrix):
+            return np.array([_text_to_double(r) for r in x.rows]).reshape(
+                -1, 1)
+        return _text_to_double(x)
 
     def f_strcat(self, *parts):
         cells = [p for p in parts
@@ -4178,8 +4321,35 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
     def f_newline(self):
         return "\n"
 
-    def f_char(self, x):
-        return str(_as_text(x))
+    def f_char(self, *args):
+        """``char``: one row per text, padded with blanks to a char matrix;
+        a cell or char matrix gives a row per element or row."""
+        if not args:
+            return ""
+        rows: list[str] = []
+        for a in args:
+            if isinstance(a, Cell):
+                for v in a:
+                    if isinstance(v, Cell):
+                        raise MatlabError("Cell elements must be character "
+                                          "arrays.")
+                    rows += self._char_rows(v)
+            else:
+                rows += self._char_rows(a)
+        if len(rows) == 1:
+            return rows[0]
+        if not rows:
+            return ""
+        width = max(len(r) for r in rows)
+        return CharMatrix([r.ljust(width) for r in rows])
+
+    @staticmethod
+    def _char_rows(x) -> list[str]:
+        if isinstance(x, CharMatrix):
+            return list(x.rows)
+        if isinstance(x, np.ndarray) and x.ndim == 2 and x.shape[0] != 1:
+            return [_as_text(row) for row in x]
+        return [str(_as_text(x))]
 
     # ── types ───────────────────────────────────────────────────
 
@@ -4539,15 +4709,41 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
     def f_vertcat(self, *xs):
         return self.rt.concat([[x] for x in xs])
 
+    @staticmethod
+    def _flip_grid(x, cols: bool):
+        """A char, cell or struct array flipped left-right (``cols``) or
+        upside down; ``None`` for anything else."""
+        if type(x) is str:
+            return x[::-1] if cols else x
+        if isinstance(x, CharMatrix):
+            return CharMatrix([r[::-1] for r in x.rows] if cols
+                              else x.rows[::-1])
+        if isinstance(x, (Cell, StructArray)) and x.nd is None:
+            g = x.grid()
+            return type(x).from_grid([r[::-1] for r in g] if cols
+                                     else g[::-1])
+        return None
+
     def f_fliplr(self, x):
+        out = self._flip_grid(x, True)
+        if out is not None:
+            return out
         a = np.asarray(x)
         return a[::-1] if a.ndim == 1 else a[:, ::-1]
 
     def f_flipud(self, x):
+        out = self._flip_grid(x, False)
+        if out is not None:
+            return out
         a = np.asarray(x)
         return a if a.ndim == 1 else a[::-1, :]
 
     def f_flip(self, x, dim=None):
+        if dim is None and (type(x) is str or isinstance(
+                x, (CharMatrix, Cell, StructArray))):
+            r, _ = x.ml_shape() if isinstance(x, CharMatrix) else (
+                (1, 0) if type(x) is str else x.dims)
+            return self.f_fliplr(x) if r == 1 else self.f_flipud(x)
         a = np.asarray(x)
         if dim is not None or a.ndim > 2:
             axis = self._nd_axis(a if a.ndim > 2 else _as2d(a), dim)
@@ -4664,6 +4860,18 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         a = np.asarray(x)
         if a.ndim == 0:
             a = a.reshape(1)
+        if isinstance(dim, str):
+            if dim.lower() != "all":
+                if dim.lower() in ("omitnan", "includenan", "omitmissing",
+                                   "includemissing", "double", "native",
+                                   "default"):
+                    raise MatlabError(f"The '{dim}' option is not "
+                                      f"supported in Evans yet.")
+                raise MatlabError("Dimension argument must be a positive "
+                                  "integer scalar, a vector of unique "
+                                  "positive integers, or 'all'.")
+            # sum(A, 'all'): every element, whatever the shape.
+            return self._reduce(fn, a.reshape(-1, order="F"))
         if isinstance(dim, np.ndarray) and dim.size > 1:
             # sum(A, [1 2]): reduce over several dimensions at once
             axes = tuple(sorted({int(d) - 1 for d in dim.reshape(-1)}))
@@ -5010,6 +5218,8 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         return _scalar(np.trace(_as2d(a)))
 
     def f_norm(self, x, p=2):
+        if _is_lti(x):
+            return _lti_norm(x, p)
         a = np.asarray(x)
         if isinstance(p, str):
             p = {"inf": np.inf, "fro": "fro"}.get(p.lower(), 2)
@@ -5786,13 +5996,24 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         ascii_ = "-ascii" in flags
         if not os.path.splitext(path)[1] and not ascii_:
             path += ".mat"
-        workspace = self.rt.workspace()
+        # Inside a function, save sees the function's variables.
+        scope, inside = self._caller_scope()
+        if inside:
+            workspace = {
+                k: v for k, v in scope.items()
+                if not k.startswith("_") and k not in ("nargin", "nargout")
+                and v is not None and (_is_number(v) or isinstance(
+                    v, (str, np.ndarray, Struct, StructArray, Cell)))}
+            lookup, base = scope, {}
+        else:
+            workspace = self.rt.workspace()
+            lookup, base = self.rt.ns, self.rt.base
         chosen: dict[str, Any] = {}
         for pattern in names[1:] or ["*"]:
             hits = [k for k in workspace if fnmatch.fnmatchcase(k, pattern)]
             if not hits and not any(c in pattern for c in "*?["):
-                value = self.rt.ns.get(pattern, workspace)
-                if value is not workspace and not pattern.startswith("_")                         and value is not self.rt.base.get(pattern, object()):
+                value = lookup.get(pattern, workspace)
+                if value is not workspace and value is not None                         and not pattern.startswith("_")                         and value is not base.get(pattern, object()):
                     raise MatlabError(
                         f"Cannot save variable '{pattern}': Evans cannot "
                         f"write a value of class '{self.f_class(value)}' "

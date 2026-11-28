@@ -858,3 +858,120 @@ def test_a_name_cleared_in_a_function_reads_as_matlab_does(it, tmp_path):
     run(it, f"addpath('{folder}'); p = g1();")
     assert val(it, "p") == pytest.approx(math.pi)
     assert "Unrecognized function or variable 'x'" in error_of(it, "g2()")
+
+
+# ──────────────────────────────────────────────────────────────
+#  Outputs a function never assigns
+# ──────────────────────────────────────────────────────────────
+
+def _not_assigned(out, fn):
+    return (f'Output argument "{out}" (and possibly others) not assigned a '
+            f'value in the execution with "{fn}" function.')
+
+
+def test_an_unassigned_output_is_an_error_not_an_empty(it, tmp_path):
+    """``r = f()`` gave ``r = []`` when ``f`` never set ``r``."""
+    _function_file(tmp_path, "u1", "function r = u1()\nend\n")
+    _function_file(tmp_path, "u2", "function [a, b] = u2()\na = 1;\nend\n")
+    folder = _function_file(tmp_path, "u3", "function r = u3()\n"
+                            "r = 1; clear r;\nend\n")
+    run(it, f"addpath('{folder}');")
+    assert _not_assigned("r", "u1") in error_of(it, "x = u1();")
+    assert _not_assigned("r", "u1") in error_of(it, "disp(u1())")
+    assert _not_assigned("b", "u2") in error_of(it, "[p, q] = u2();")
+    assert _not_assigned("r", "u3") in error_of(it, "x = u3();")
+
+
+def test_an_unassigned_output_nobody_asked_for_is_fine(it, tmp_path):
+    """With no output requested, MATLAB does not mind; nor when only the
+    assigned outputs are asked for."""
+    folder = _function_file(tmp_path, "u4",
+                            "function [a, b] = u4()\na = 7;\nend\n")
+    _function_file(tmp_path, "u5", "function r = u5()\nend\n")
+    run(it, f"addpath('{folder}'); u5(); u5; x = u4();")
+    assert val(it, "x") == 7
+
+
+def test_unassigned_outputs_in_subfunctions_and_varargout(it, tmp_path):
+    folder = _function_file(tmp_path, "u6", "function r = u6()\n"
+                            "r = helper();\nend\n"
+                            "function q = helper()\nend\n")
+    _function_file(tmp_path, "u7", "function [a, varargout] = u7()\n"
+                   "varargout{1} = 2;\nend\n")
+    run(it, f"addpath('{folder}');")
+    assert _not_assigned("q", "helper") in error_of(it, "x = u6();")
+    assert _not_assigned("a", "u7") in error_of(it, "[p, q] = u7();")
+
+
+def test_an_unassigned_method_output_is_an_error(it, tmp_path):
+    folder = _function_file(tmp_path, "UCls", "classdef UCls\n"
+                            "methods\n"
+                            "function r = m(obj)\nend\n"
+                            "end\nend\n")
+    run(it, f"addpath('{folder}'); o = UCls();")
+    assert "not assigned a value" in error_of(it, "x = o.m();")
+    run(it, "o.m();")
+
+
+# ──────────────────────────────────────────────────────────────
+#  [c{:}] over structs, single + integer
+# ──────────────────────────────────────────────────────────────
+
+def test_concatenating_a_cell_of_structs_gives_a_struct_array(it):
+    """``[c{:}]`` with structs inside gave back a cell."""
+    run(it, "c = {struct('a', 1), struct('a', 2)}; s = [c{:}]; "
+            "k = class(s); n = numel(s); v = s(2).a;")
+    assert val(it, "k") == "struct"
+    assert val(it, "n") == 2
+    assert val(it, "v") == 2
+
+
+def test_concatenating_structs_gives_a_struct_array(it):
+    """``[s, t]`` of two structs also gave a cell (``StructArray`` built
+    its result with ``Cell``'s constructor), and ``s = []; s = [s, t]``
+    kept the ``[]`` as an element."""
+    run(it, "a = struct('a', 1); b = struct('a', 2); s = [a, b]; "
+            "k = class(s); t = [a; b]; d = size(t); "
+            "g = []; g = [g, a]; g = [g, b]; n = size(g); w = g(2).a;")
+    assert val(it, "k") == "struct"
+    assert _numbers(val(it, "d")).tolist() == [2, 1]
+    assert _numbers(val(it, "n")).tolist() == [1, 2]
+    assert val(it, "w") == 2
+    assert "Names of fields in structure arrays being concatenated do "         "not match." in error_of(it, "[struct('a', 1), struct('b', 2)]")
+
+
+def test_single_plus_an_integer_is_an_error(it):
+    """MATLAB only combines an integer with a double scalar, never a
+    single."""
+    msg = "Integers can only be combined with integers of the same class"
+    assert msg in error_of(it, "single(1) + int8(1)")
+    assert msg in error_of(it, "int16(2) .* single([1 2])")
+
+
+# ──────────────────────────────────────────────────────────────
+#  Text taken for text where MATLAB takes its codes
+# ──────────────────────────────────────────────────────────────
+
+def test_char_arithmetic_is_on_codes_not_text(it):
+    """``'abc' * 2`` repeated the text and ``'ab' + 'cd'`` joined it."""
+    run(it, "a = 'abc' * 2; b = 'ab' + 'cd';")
+    assert _numbers(val(it, "a")).tolist() == [194, 196, 198]
+    assert _numbers(val(it, "b")).tolist() == [196, 198]
+
+
+def test_char_of_a_cell_is_a_char_matrix(it):
+    """``char({'a', 'bcd'})`` printed the cell's display text as one row."""
+    run(it, "x = char({'a', 'bcd'}); s = size(x); r = x(2, :); "
+            "y = size(char(['ab'; 'cd']));")
+    assert _numbers(val(it, "s")).tolist() == [2, 3]
+    assert val(it, "r") == "bcd"
+    assert _numbers(val(it, "y")).tolist() == [2, 2]
+
+
+def test_flipping_a_cell_keeps_it_a_cell(it):
+    """``fliplr({1, 'x'})`` gave a numeric array."""
+    run(it, "c = fliplr({1, 'x'}); k = class(c); f = c{1}; "
+            "d = flipud({1; 2}); g = d{1};")
+    assert val(it, "k") == "cell"
+    assert val(it, "f") == "x"
+    assert val(it, "g") == 2

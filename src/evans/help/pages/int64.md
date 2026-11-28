@@ -8,7 +8,7 @@ Convert to the int64 integer class.
 
 ## Description
 
-`int64(A)` rounds `A` to the nearest integer (halves away from zero) and saturates it to the range -9223372036854775808 to 9223372036854775807: `int64(1000)` is the largest value if that is out of range, and `NaN` becomes 0. Arithmetic on `int64` values rounds and saturates the same way. A `int64` and a double give a `int64`; a `int64` and any other integer class is an error. Arithmetic is carried out in double, so `int64` and `uint64` values beyond 2^53 are not exact.
+`int64(A)` rounds `A` to the nearest integer (halves away from zero) and saturates it to the range -9223372036854775808 to 9223372036854775807: `int64(1000)` is the largest value if that is out of range, and `NaN` becomes 0. Arithmetic on `int64` values rounds and saturates the same way. A `int64` and a double give a `int64`; a `int64` and any other integer class, or a `single`, is an error. Arithmetic is carried out in double, so `int64` and `uint64` values beyond 2^53 are not exact.
 
 ## Example
 

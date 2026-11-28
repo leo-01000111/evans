@@ -25,7 +25,7 @@ Sizes: **S** under a day, **M** a few days, **L** a week or more.
 | Section | Open | Next |
 |---|---|---|
 | 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
-| Phase 0, silent wrong answers | 3 | an unassigned output; `ode45` events is a feature |
+| Phase 0, silent wrong answers | 3 | `x = s.a` of a struct array; `ode45` events is a feature |
 | Phase 1, data work at the console | 6 | |
 | Phase 2, Simulink for daily use | 27 | the speed benchmark, then the quick speed wins |
 | Phase 3, plotting | 6 | TeX text in labels (after the hold) |
@@ -145,13 +145,12 @@ answers became the reference corpus (Phase 6), which found 32; all were fixed
       2026-11-24): the `Events`, `Mass` and `Jacobian` options are not supported.
       Since 2026-11-27 a set option is named in a warning instead of being dropped
       silently (page `ode45`). Supporting `Events` is a new feature. **M**
-- [ ] **An output a function never assigns comes back as `[]`** (found 2026-11-28
-      while fixing `clear` in functions): `function r = f() end` and `r = f()` give
-      `r = []`, where MATLAB stops with "Output argument "r" (and possibly others)
-      not assigned a value in the execution with "f" function." The same after
-      `clear` of an output. Outputs start as `None` in the translated function
-      (`_Emitter._function`); `Runtime.outputs` could raise for a requested one
-      that is still `None`. **S**
+- [ ] **`x = s.a` of a struct array stores a Python tuple** (found 2026-11-28):
+      `s = struct('a', {1, 2}); x = s.a` gives `x = (1, 2)`, and on an empty struct
+      array `x = ()`. MATLAB assigns the first value, and stops with "Insufficient
+      number of outputs from right hand side of equal sign to satisfy assignment."
+      when there is none. `Runtime.field` returns the comma-separated list as a
+      tuple; the store (`share`) takes it whole. **S**
 
 ## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 6 open**
 
@@ -505,19 +504,24 @@ probes agreed on 2026-11-14 and the 32 silent wrong answers among the rest were 
         `ismatrix`, `strtok`, `setdiff`, `intersect`, `union`, `normest`,
         `covar`, `categorical`.
       - Missing outputs: `[r, c] = find(...)`, `[u, i, j] = unique(...)`.
-      - Python errors reaching the user: `'abc' + 1`, `fliplr('abc')`,
-        `str2num('[1 2 3]')`, `str2double('abc')` (should be NaN),
-        `str2double` of a cell, `mean(A, 'all')`, `norm(tf, 2)` and
-        `norm(tf, Inf)`, `zeros(3,0) * zeros(0,2)`.
+      - The Python errors reaching the user were fixed 2026-11-28 (history,
+        Phase 6).
       - Signatures MATLAB accepts: `ss2tf(A, B, C, D)`, `tf2ss(num, den)`,
         `lqr(A, B, Q, R)`, `weekday` of a `datenum`, `zeros(2, 'logical')`,
         `allmargin`'s field names (`GainMargin`, …), `s(2).x = 1` on
-        `struct()`.
+        `struct()`, and the NaN flags of `sum`/`mean`/`median`/`std`
+        (`mean(x, 'omitnan')` says the option is not supported yet; found
+        2026-11-28).
       - Time delays (`'InputDelay'`, `'OutputDelay'`): a known gap.
-- [ ] **Evans should raise an error:** `single(1) + int8(1)` (62). **S**
+- [ ] **Comparing two integer classes is refused** (found 2026-11-28):
+      `int16(2) > int8(1)` stops with "Binary operator '+' not supported for integer
+      classes …", naming `+` for a comparison. MATLAB's relational operators accept
+      mixed integer classes, as far as its documentation says; check against MATLAB
+      before changing `Runtime._compare` (it calls `numtypes.check_pair`). **S**
 - [ ] **Char matrices, what is left** (from the silent-wrong-answers fixes,
-      2026-11-18): `char(a, b)` (raises a Python `TypeError` on 2026-11-19), `strvcat`,
-      and char matrices inside other functions. **S–M**
+      2026-11-18): `strvcat` (a missing function, left for after the feature
+      freeze) and char matrices inside other functions. `char(a, b)` was fixed
+      2026-11-28. **S–M**
 - [ ] **Found while dry-running the kit inside Evans (2026-11-14).** The harness is
       ordinary MATLAB, and Evans could not run it: **M**
       - Missing: `mfilename`, `tempdir`, `filesep`, `setappdata`/`getappdata`,
@@ -525,13 +529,9 @@ probes agreed on 2026-11-14 and the 32 silent wrong answers among the rest were 
         `matlabroot`, `zip`, `findall`, `allchild`, `version`, `ver` (and `setdiff`,
         above).
       - `evalin` beyond `'base'` and `eval` assigning inside a function (Phase 4).
-      - `save` inside a function does not see the function's variables
-        ("Variable 'recs' not found").
-      - `toc(t0)` as an argument fails ("got multiple values for argument
-        'nargout'").
-      - `[c{:}]` over a cell of structs gives a cell, not a struct array.
       - `fread(fid, Inf, '*uint8')` is refused.
-      - `d.bytes / 1e6` on an empty `dir` result raises a Python error.
+      - (`save` inside a function, `toc(t0)`, `[c{:}]` of structs and
+        `d.bytes / 1e6` on an empty `dir` were fixed 2026-11-28.)
       - `save` of a string, function handle, table, datetime, duration,
         map or LTI model fails with "Variable 'x' not found" instead of
         saying the type cannot be saved (`verif/built/interop_build_report.json`).

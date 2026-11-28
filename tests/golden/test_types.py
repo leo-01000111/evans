@@ -139,7 +139,8 @@ def test_comparisons_give_logicals(it):
 def test_single_arithmetic(it):
     assert cls(it, "single(1) + 1") == "single"
     assert cls(it, "single(1) + single(2)") == "single"
-    assert cls(it, "single(2) * int8(3)") == "int8"
+    # An integer combines with a double, never with a single.
+    assert "same class" in error(it, "single(2) * int8(3)")
     assert float(value(it, "single(0.1) + single(0.2)")) == pytest.approx(
         0.3, abs=1e-7)
     assert float(value(it, "single(1) / 3")) != 1 / 3         # rounded to 24 bits

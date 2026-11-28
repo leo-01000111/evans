@@ -8,7 +8,7 @@ Convert to the int8 integer class.
 
 ## Description
 
-`int8(A)` rounds `A` to the nearest integer (halves away from zero) and saturates it to the range -128 to 127: `int8(1000)` is the largest value if that is out of range, and `NaN` becomes 0. Arithmetic on `int8` values rounds and saturates the same way. A `int8` and a double give a `int8`; a `int8` and any other integer class is an error. Arithmetic is carried out in double, so `int64` and `uint64` values beyond 2^53 are not exact.
+`int8(A)` rounds `A` to the nearest integer (halves away from zero) and saturates it to the range -128 to 127: `int8(1000)` is the largest value if that is out of range, and `NaN` becomes 0. Arithmetic on `int8` values rounds and saturates the same way. A `int8` and a double give a `int8`; a `int8` and any other integer class, or a `single`, is an error. Arithmetic is carried out in double, so `int64` and `uint64` values beyond 2^53 are not exact.
 
 ## Example
 

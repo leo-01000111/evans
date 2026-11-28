@@ -312,3 +312,107 @@ def test_every_form_of_clear_in_a_script(it, source):
 def test_a_cleared_variable_can_be_assigned_again(it):
     run(it, "x = 1; y = 2; clear x; x = 4; x = x + y;")
     assert val(it, "x") == 6
+
+
+# ──────────────────────────────────────────────────────────────
+#  Found by the MATLAB comparison and the kit dry run
+# ──────────────────────────────────────────────────────────────
+
+def test_arithmetic_on_a_char_uses_its_codes(it):
+    run(it, "a = 'abc' + 1; b = 1 + 'a'; c = -'ab'; d = 'abc' / 2;")
+    assert val(it, "a").tolist() == [98, 99, 100]
+    assert val(it, "b") == 98
+    assert val(it, "c").tolist() == [-97, -98]
+    assert val(it, "d").tolist() == [48.5, 49, 49.5]
+
+
+def test_fliplr_of_a_char_reverses_it(it):
+    run(it, "a = fliplr('abc'); b = flipud('abc'); c = flip('abc');")
+    assert (val(it, "a"), val(it, "b"), val(it, "c")) == ("cba", "abc", "cba")
+
+
+def test_str2num_evaluates_the_text(it):
+    run(it, "a = str2num('[1 2 3]'); b = str2num('1 2; 3 4'); "
+            "[c, ok] = str2num('abc'); e = str2num('pi/2');")
+    assert val(it, "a").tolist() == [1, 2, 3]
+    assert np.asarray(val(it, "b")).tolist() == [[1, 2], [3, 4]]
+    assert np.size(val(it, "c")) == 0 and not val(it, "ok")
+    assert val(it, "e") == pytest.approx(np.pi / 2)
+
+
+def test_str2double_gives_nan_for_what_is_not_a_number(it):
+    run(it, "a = str2double('abc'); b = str2double('1,200.5'); "
+            "c = str2double({'1', 'x'; '2.5', '-Inf'}); d = str2double(5); "
+            "e = str2double('3+4i');")
+    assert np.isnan(val(it, "a"))
+    assert val(it, "b") == 1200.5
+    c = np.asarray(val(it, "c"))
+    assert c.shape == (2, 2) and c[0, 0] == 1 and np.isnan(c[0, 1])
+    assert c[1, 0] == 2.5 and c[1, 1] == -np.inf
+    assert np.isnan(val(it, "d"))
+    assert val(it, "e") == 3 + 4j
+
+
+def test_a_reduction_over_all_elements(it):
+    run(it, "a = mean([1 2; 3 6], 'all'); b = sum(magic(3), 'all'); "
+            "c = median([1 2; 3 10], 'all');")
+    assert (val(it, "a"), val(it, "b"), val(it, "c")) == (3, 45, 2.5)
+    assert "Dimension argument must be a positive integer" in error_of(
+        it, "mean([1 2], 'rows')")
+
+
+def test_the_norms_of_a_model(it):
+    """H2 of 1/(s+1) is 1/√2; H∞ of a lightly damped pair is
+    1/(2ζ√(1-ζ²)); an unstable model's norms are infinite."""
+    run(it, "a = norm(tf(1, [1 1]), 2); b = norm(tf(1, [1 1]), Inf); "
+            "c = norm(tf(1, [1 0.2 1]), inf); d = norm(tf(1, [1 1])); "
+            "e = norm(tf(1, [1 -1]), Inf);")
+    assert val(it, "a") == pytest.approx(1 / np.sqrt(2))
+    assert val(it, "d") == pytest.approx(1 / np.sqrt(2))
+    assert val(it, "b") == pytest.approx(1, rel=1e-5)
+    zeta = 0.1
+    assert val(it, "c") == pytest.approx(
+        1 / (2 * zeta * np.sqrt(1 - zeta ** 2)), rel=1e-5)
+    assert val(it, "e") == np.inf
+
+
+def test_an_empty_matrix_product(it):
+    run(it, "a = zeros(3, 0) * zeros(0, 2);")
+    assert np.asarray(val(it, "a")).tolist() == [[0, 0]] * 3
+
+
+def test_char_of_several_texts_is_a_padded_matrix(it):
+    run(it, "a = char('ab', 'cde'); s = size(a); r = a(1, :); "
+            "b = size(char({'a', 'bcd'})); c = size(char('a', '', 'b'));")
+    assert np.asarray(val(it, "s")).ravel().tolist() == [2, 3]
+    assert val(it, "r") == "ab "
+    assert np.asarray(val(it, "b")).ravel().tolist() == [2, 3]
+    assert np.asarray(val(it, "c")).ravel().tolist() == [3, 1]
+
+
+def test_toc_of_a_timer_value(it):
+    run(it, "t0 = tic; k = class(t0); x = 1 + toc(t0); "
+            "disp(toc(t0) >= 0);")
+    assert val(it, "k") == "uint64"
+    assert 1 <= val(it, "x") < 60
+    assert "timer value returned by tic" in error_of(it, "toc(5)")
+
+
+def test_a_field_of_an_empty_struct_array_in_arithmetic(it):
+    """``d.bytes / 1e6`` on an empty ``dir`` result: the empty list gives
+    the operator too few arguments."""
+    assert NOT_ENOUGH in error_of(
+        it, "d = dir('no-such-file-*.zzz'); d.bytes / 1e6")
+    assert NOT_ENOUGH in error_of(it, "c = {}; c{:} + 1")
+    assert TOO_MANY in error_of(it, "s = struct('a', {1, 2}); s.a + 1")
+
+
+def test_save_inside_a_function_sees_its_variables(it, tmp_path):
+    folder = str(tmp_path).replace("\\", "/")
+    (tmp_path / "saver.m").write_text(
+        "function saver(p)\nrecs = 3; other = 'x';\nsave(p, 'recs');\n"
+        "save([p '_all.mat']);\nend\n")
+    run(it, f"addpath('{folder}'); recs = 99; saver('{folder}/one.mat'); "
+            f"a = load('{folder}/one.mat'); b = load('{folder}/one.mat_all.mat');")
+    assert float(np.asarray(val(it, "a")["recs"]).ravel()[0]) == 3
+    assert set(val(it, "b")) == {"recs", "other", "p"}
