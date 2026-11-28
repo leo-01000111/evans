@@ -9,6 +9,29 @@ is on `main` but not released yet goes under Unreleased.
 
 ## Unreleased
 
+## 0.30.7 - 2026-11-28
+
+### Fixed
+
+- A Saturation-limited Integrator no longer makes the solver restart over and
+  over at its limit. It now stays held at the limit until its input turns back,
+  as Simulink's does. The `pid_saturation` example restarts 5 times instead of
+  51 and runs about four times faster, with the same results.
+- A function output that the caller asks for but the function never assigns
+  stops with MATLAB's "Output argument ... not assigned" error; it came back as
+  `[]`.
+- `[c{:}]` over a cell of structs, and `[s, t]` of two structs, give a struct
+  array; they gave a cell.
+- `single(1) + int8(1)` is an error, as in MATLAB.
+- Arithmetic on text uses the character codes: `'abc' + 1` is `[98 99 100]`.
+  `char` of a cell or of several arguments builds a padded char matrix, and
+  `fliplr` of text or a cell keeps its class.
+- `str2num('[1 2 3]')`, `str2double('abc')` (`NaN`), `str2double` of a cell,
+  `mean(A, 'all')`, `norm(G, 2)` and `norm(G, Inf)` of a model,
+  `zeros(3,0) * zeros(0,2)` and `toc(t0)` used as an argument give MATLAB's
+  answers instead of Python errors.
+- `save` inside a function saves the function's variables.
+
 ## 0.30.6 - 2026-11-28
 
 ### Fixed
