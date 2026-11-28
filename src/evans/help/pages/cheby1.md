@@ -20,7 +20,7 @@ With `'s'` the design is analog: `Wp` is in rad/s and `b`, `a` are the coefficie
 
 With three outputs it returns zeros and poles as columns and the gain; for `cheby1(2, 1, 0.3)` the gain is 0.1382.
 
-The limits are those of [butter](butter): the arguments go to SciPy unchecked, a digital edge outside (0, 1) is a `ValueError`, a non-integer `n` is truncated, an unknown text option is ignored, and the four-output state-space form fails with `ValueError: 'ss' is not a valid output form.`
+The limits are those of [butter](butter): the arguments go to SciPy unchecked, a digital edge outside (0, 1) is a `ValueError`, a non-integer `n` is truncated, an unknown text option is ignored. The four-output state-space form `[A, B, C, D]` is one realisation of the filter and need not match MATLAB's matrices entry by entry.
 
 ## Example
 

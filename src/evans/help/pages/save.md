@@ -19,7 +19,7 @@ The default is a version 5 MAT-file. `-v7.3` writes an HDF5 MAT-file instead, an
 
 `-ascii` writes the numeric variables as plain text, eight significant digits in exponent form, with the variables stacked as rows. No `.mat` is added then, and `load` reads such a file back as a matrix.
 
-Limits: strings in double quotes, function handles, tables and other objects cannot be saved. The failure message is misleading: it says "Variable 'f' not found." although the variable exists.
+Limits: function handles, tables and other objects cannot be saved: `save` stops with "Cannot save variable 'f': Evans cannot write a value of class 'function_handle' to a MAT-file." A string in double quotes is saved as a character vector, so it loads back as `char`.
 
 ## Example
 

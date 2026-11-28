@@ -17,7 +17,7 @@ Sizes:
 - A row against a column expands to a matrix: `gt([1 2 3]', [1 2 3])` gives the 3-by-3 matrix with 1 below the diagonal.
 - A matrix against a row or column vector is expanded the same way, and arrays of more than two dimensions are compared elementwise too.
 - An empty input gives an empty result: `gt([], 1)` is `[]`.
-- Mismatched sizes stop with a Python message: `gt([1 2 3], [1 2])` fails with "operands could not be broadcast together with shapes (3,) (2,)", and so does `gt(ones(2,3), ones(3,2))`.
+- Mismatched sizes stop with "Arrays have incompatible sizes for this operation.": `gt([1 2 3], [1 2])` and `gt(ones(2,3), ones(3,2))`.
 
 Text:
 
@@ -30,12 +30,11 @@ Other types:
 - Integer types: `gt(int8(5), 3)` is 1. Two different integer classes, `gt(int8(5), int16(3))`, are refused with a message that talks about the operator `+`.
 - Symbolic input stays symbolic: `gt(sym('x'), 2)` prints `x > 2`.
 - Dates and durations compare with `gt` as well (`gt(datetime(2020,1,1), datetime(2019,1,1))` is 1).
+- Complex numbers are compared by their real parts, as in MATLAB: `gt(2+3i, 1)` is 1 and `gt(1+3i, 1+2i)` is 0.
+- A number against a character compares its code: `gt(1, 'a')` is 0.
+- A cell array or a struct is refused: `gt({1}, {2})` stops with "Operator '>' is not supported for operands of type 'cell'." So is a function handle.
+- `gt(1)` stops with "Not enough input arguments."
 
-Limits of Evans:
-
-- Complex numbers fail with a Python error, "'>' not supported between instances of 'complex' and 'int'" for `gt(2+3i, 1)`. They are not compared by real part.
-- Wrong argument counts, structs, function handles and a number against a string (`gt(1, 'a')`) also fail with Python `TypeError` messages, not MATLAB-style ones.
-- `gt({1}, {2})` returns 0 instead of an error, and `gt('b', {'a'})` fails with a Python error.
 
 ## Example
 

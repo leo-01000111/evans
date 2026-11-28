@@ -17,9 +17,9 @@ For a vector, `all(x)` is a single value. The usual use is on a comparison: `all
 
 Limits of Evans:
 
-- `all(x, 'all')` does not work: it stops with `ValueError: invalid literal for int() with base 10: 'all'`. A text `dim` fails the same way, and a fractional `dim` such as 1.5 is silently rounded down.
+- A `dim` that is not a positive whole number, such as 1.5, 0 or `'a'`, stops with "Dimension argument must be a positive integer scalar within indexing range." `all(x, 'all')` tests every element.
 - With `dim` 3 or more on a matrix, the result is the array itself with each element as 0 or 1.
-- Wrong argument counts stop with an internal `TypeError` message, not a MATLAB-style one.
+- Wrong argument counts stop with "Not enough input arguments." or "Too many input arguments."
 
 ## Example
 

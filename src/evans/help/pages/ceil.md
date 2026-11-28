@@ -12,12 +12,11 @@ Round toward positive infinity.
 
 The class is kept for `single` and for integer types: `ceil(single(2.5))` is a `single` and `ceil(int8(5))` is an `int8`. A logical `true` gives the number 1 of class `double`.
 
+Characters are rounded as their codes: `ceil('a')` is 97. A complex number is rounded in each part: `ceil(1.5+2.5i)` is `2 + 3i`. A string, a cell array or a struct stops with "Undefined function 'ceil' for input arguments of type 'cell'." (with its own type).
+
 Limits of Evans:
 
-- One argument only. `ceil(1, 2)` stops with `TypeError: return arrays must be of ArrayType` and `ceil()` with a message about missing arguments; there is no digits argument.
-- Complex numbers are not supported: `ceil(1.5+2.5i)` stops with `TypeError: ufunc 'ceil' not supported for the input types`.
-- Characters are not accepted either: `ceil('a')` and `ceil("abc")` stop with the same message. Use `ceil(double('a'))`.
-- A cell array is not rejected: `ceil({1})` prints `1` instead of an error.
+- One argument only: there is no digits argument. `ceil(1, 2)` stops with "Too many input arguments." and `ceil()` with "Not enough input arguments."
 - A symbolic value, `ceil(sym('x'))`, stops with a `TypeError` about `Sym`.
 
 ## Example

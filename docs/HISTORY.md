@@ -1672,6 +1672,34 @@ the cheap items are done; the large types are not.
       on top. `waitbar(h)` is closed by `close(h)` or `delete(h)`. `input`
       evaluates in the base workspace; `msgbox` waits until closed, unlike
       MATLAB's.
+- [x] **Crashes and raw Python errors found while writing help pages** (2026-11-24),
+      fixed 2026-11-28, tests in `tests/golden/test_crash_messages.py`; the pages
+      are revised. A library function called with too few or too many arguments
+      says "Not enough input arguments." or "Too many input arguments." (`friendly`
+      in `matlab_runtime.py` recognises the refused call: the deepest frame is the
+      one forwarding the arguments), which covers `fft()`, `freqz()`,
+      `findpeaks()`, `butter(2)`, `ode45(f,[0 1])`, `fzero(f)`, `fminsearch(f)`,
+      `gt(1)`, `log10(1,2)`, `ceil(1,2)`, `cd('a','b')` and `pwd(1)`.
+      `[A,B,C,D] = butter(...)` (and `cheby1`, `cheby2`, `ellip`) go through
+      `zpk2ss`; the matrices are one realisation, not MATLAB's own. `save` of a
+      function handle or table names the class it cannot write; a string is saved
+      as char. `fft` of text or a cell and a `filter` `zi` of the wrong length give
+      MATLAB's messages. `cd ..` and `cd .` work as commands. `all`/`any` take
+      `'all'` and reject a dimension that is not a positive whole number. The
+      elementwise maths (`_ew`) read char as codes where MATLAB does (`abs`,
+      `floor`, `ceil`, `fix`, `real`, `mod`, ...), refuse char elsewhere and
+      string, cell, struct and handle everywhere with "Undefined function ...
+      for input arguments of type ..."; `floor`/`ceil`/`fix` of complex round
+      each part; the floating-point functions keep `single` (`SINGLE_KEEP` in
+      `numtypes.py`). Relational operators refuse cells and structs, compare
+      complex numbers by real part, compare a number with char codes, and say
+      "Arrays have incompatible sizes for this operation.". `addpath` warns
+      about a missing folder and refuses a cell or a number. In a script,
+      `x = 1; clear x; x` is "Unrecognized function or variable 'x'." and
+      `pi = 3; clear pi; pi` is 3.1416: a name cleared after it is assigned is
+      read through the runtime (`_cleared_names` in `matlab.py`). Left open:
+      `genpath`, `path`, `pathsep`, `tempdir`, `tempname` (new functions), and
+      `clear` inside a function, which does nothing (Phase 0).
 
 ### Phase 6: Platform and trust (the finished items)
 

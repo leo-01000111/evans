@@ -78,12 +78,50 @@ def friendly(exc: BaseException) -> tuple[str, str]:
             if "missing" in text:
                 return "Not enough input arguments.", "MATLAB:minrhs"
             return "Too many input arguments.", "MATLAB:TooManyInputs"
+        count = _argument_count_error(exc)
+        if count is not None:
+            return count
     if isinstance(exc, (TypeError, AttributeError, ValueError)):
         name = _missing_parameter(exc)
         if name is not None:
             return (f"Unrecognized function or variable '{name}'.",
                     "MATLAB:UndefinedFunction")
     return str(exc), type(exc).__name__
+
+
+_TOO_FEW = re.compile(r"\(\) missing \d+ required positional argument")
+_TOO_MANY = re.compile(
+    r"\(\) (takes (?:from )?(\d+) (?:to \d+ )?positional arguments? but "
+    r"(\d+) (?:were|was) given|got multiple values for argument 'nargout')")
+# The frames that only pass a MATLAB call's arguments on to a library
+# function: a TypeError raised in one of them is the call's own, not a bug
+# deeper inside the function.
+_FORWARDERS = frozenset({"call", "method", "wrapper", "operator"})
+
+
+def _argument_count_error(exc: BaseException) -> tuple[str, str] | None:
+    """
+    MATLAB's "Not enough/Too many input arguments." for a library function
+    called with the wrong number of arguments: Python refuses the call
+    before the function starts, so the deepest frame is the one forwarding
+    the arguments.
+    """
+    text = str(exc)
+    few, many = _TOO_FEW.search(text), _TOO_MANY.search(text)
+    if not few and not many:
+        return None
+    tb = exc.__traceback__
+    if tb is None:
+        return None
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+    code = tb.tb_frame.f_code
+    if code.co_name not in _FORWARDERS or not code.co_filename.startswith(
+            os.path.dirname(os.path.abspath(__file__))):
+        return None
+    if few or (many.group(2) and int(many.group(3)) < int(many.group(2))):
+        return "Not enough input arguments.", "MATLAB:minrhs"
+    return "Too many input arguments.", "MATLAB:TooManyInputs"
 
 
 def _missing_parameter(exc: BaseException) -> str | None:
@@ -467,6 +505,9 @@ class InputParser:
             value = args[0]
             if isinstance(value, str) and self._name_match(value):
                 break                       # a parameter name, not a value
+            if validator is not None and isinstance(value, str) \
+                    and _elementwise_verdict(validator, value):
+                break        # 'extra' > 0 tests each character: a name
             if validator is not None:
                 try:
                     self._check(name, value, validator)
@@ -3216,7 +3257,15 @@ class Runtime:
             b.rows if isinstance(b, StrArray) else 1)
         return _strarray([x + y for x, y in zip(left, right)], rows)
 
-    def _compare(self, a, b, op):
+    def _compare(self, a, b, op, sym="=="):
+        strings = isinstance(a, (Str, StrArray)) or isinstance(
+            b, (Str, StrArray))      # a string meets text in a cell fine
+        for x in (a, b):
+            if (isinstance(x, (Cell, Struct, StructArray)) and not strings) or (
+                    sym not in ("==", "~=") and _is_function(x)):
+                raise MatlabError(
+                    f"Operator '{sym}' is not supported for operands of "
+                    f"type '{self.lib.f_class(x)}'.")
         if isinstance(a, (Str, StrArray)) or isinstance(b, (Str, StrArray)):
             left, right = _string_items(a), _string_items(b)
             if len(left) == 1 and len(right) != 1:
@@ -3237,33 +3286,47 @@ class Runtime:
                 raise MatlabError("Arrays have incompatible sizes; use "
                                   "strcmp to compare text.")
             a, b = np.array([ord(c) for c in a]), np.array([ord(c) for c in b])
-        out = _broadcast_nd(a, b, op) if _is_nd(a) or _is_nd(b) \
-            else op(a, b)
+        elif isinstance(a, str) or isinstance(b, str):
+            # A char vector against numbers: its character codes.
+            a, b = (_char_codes(x) if isinstance(x, str) else x
+                    for x in (a, b))
+        if sym not in ("==", "~=") and (np.iscomplexobj(a)
+                                        or np.iscomplexobj(b)):
+            # MATLAB orders complex numbers by their real parts.
+            a, b = np.real(a), np.real(b)
+        try:
+            out = _broadcast_nd(a, b, op) if _is_nd(a) or _is_nd(b) \
+                else op(a, b)
+        except ValueError as exc:
+            if "broadcast" not in str(exc):
+                raise
+            raise MatlabError("Arrays have incompatible sizes for this "
+                              "operation.") from None
         return bool(out) if isinstance(out, (bool, np.bool_)) else out
 
     @_symbolic_aware("eq")
     def eq(self, a, b):
-        return self._compare(a, b, lambda x, y: x == y)
+        return self._compare(a, b, lambda x, y: x == y, '==')
 
     @_symbolic_aware("ne")
     def ne(self, a, b):
-        return self._compare(a, b, lambda x, y: x != y)
+        return self._compare(a, b, lambda x, y: x != y, '~=')
 
     @_symbolic_aware("lt")
     def lt(self, a, b):
-        return self._compare(a, b, lambda x, y: x < y)
+        return self._compare(a, b, lambda x, y: x < y, '<')
 
     @_symbolic_aware("le")
     def le(self, a, b):
-        return self._compare(a, b, lambda x, y: x <= y)
+        return self._compare(a, b, lambda x, y: x <= y, '<=')
 
     @_symbolic_aware("gt")
     def gt(self, a, b):
-        return self._compare(a, b, lambda x, y: x > y)
+        return self._compare(a, b, lambda x, y: x > y, '>')
 
     @_symbolic_aware("ge")
     def ge(self, a, b):
-        return self._compare(a, b, lambda x, y: x >= y)
+        return self._compare(a, b, lambda x, y: x >= y, '>=')
 
     @staticmethod
     def logical_and(a, b):
@@ -3691,6 +3754,46 @@ from .lib_text import TextLibrary  # noqa: E402
 from .lib_types import TypesLibrary  # noqa: E402
 
 
+def _by_parts(fn):
+    """``floor``, ``ceil`` and ``fix`` of a complex number: each part."""
+    def parts(x):
+        if np.iscomplexobj(x):
+            return fn(np.real(x)) + 1j * fn(np.imag(x))
+        return fn(x)
+    return parts
+
+
+def _elementwise_verdict(validator, value) -> bool:
+    """
+    Whether a validator answers a text value one character at a time, as
+    ``@(x) x > 0`` does: that text is a parameter name, not the value.
+    """
+    try:
+        ok = validator(value)
+    except Exception:            # noqa: BLE001 — _check reports it
+        return False
+    return isinstance(ok, np.ndarray) and ok.size != 1
+
+
+def _char_codes(text: str):
+    """A char vector as its character codes: a number for one character."""
+    codes = [float(ord(c)) for c in text]
+    return codes[0] if len(codes) == 1 else np.array(codes)
+
+
+def _elementwise_arg(lib, name: str, a, text: bool):
+    """An argument of an elementwise function, or MATLAB's refusal."""
+    if type(a) is str:
+        if text:
+            return _char_codes(a)
+        raise MatlabError(f"Undefined function '{name}' for input "
+                          f"arguments of type 'char'.")
+    if isinstance(a, (Str, StrArray, Cell, Struct, StructArray))             or _is_function(a):
+        raise MatlabError(f"Undefined function '{name}' for input "
+                          f"arguments of type '{lib.f_class(a)}'.")
+    return a
+
+
 class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
                StatsLibrary, TextLibrary, CellLibrary,
                SignalLibrary, OptimLibrary, SystemLibrary, SimulinkLibrary,
@@ -3803,10 +3906,23 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         return self.rt.folder
 
     def f_addpath(self, *folders):
+        if not folders:
+            raise MatlabError("Not enough input arguments.")
+        if not all(isinstance(f, str) for f in folders):
+            raise MatlabError("Arguments must contain a character vector.")
         at_end = any(str(f).lower() == "-end" for f in folders)
-        added = [self.rt.resolve(p) for f in folders
-                 if not str(f).startswith("-")
-                 for p in _as_text(f).split(os.pathsep) if p]
+        added = []
+        for f in folders:
+            if str(f).startswith("-"):
+                continue
+            for p in _as_text(f).split(os.pathsep):
+                if not p:
+                    continue
+                if not os.path.isdir(self.rt.resolve(p)):
+                    print(f"Warning: Name is nonexistent or not a "
+                          f"directory: {self.rt.resolve(p)}")
+                    continue
+                added.append(self.rt.resolve(p))
         path = [p for p in self.rt.path if p not in added]
         self.rt.path = path + added if at_end else added + path
 
@@ -4390,14 +4506,30 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
 
     # ── elementwise maths ───────────────────────────────────────
 
-    def _ew(fn):                               # noqa: N805 — helper
+    def _ew(fn, text=False):                   # noqa: N805 — helper
+        """
+        An elementwise function of numbers. With ``text`` a char vector is
+        read as its character codes, as MATLAB's ``abs`` and ``floor`` read
+        it; otherwise text, cells, structs and handles are refused the way
+        MATLAB refuses them.
+        """
+        nin = fn.nin if isinstance(fn, np.ufunc) else None
+
         def wrapper(self, *args):
+            if nin is not None and len(args) != nin:
+                raise MatlabError("Not enough input arguments."
+                                  if len(args) < nin
+                                  else "Too many input arguments.")
+            args = tuple(_elementwise_arg(self, wrapper.ml_name, a, text)
+                         for a in args)
             with np.errstate(divide="ignore", invalid="ignore"):
                 out = fn(*args)
             return _scalar(out) if np.ndim(out) == 0 else out
+        wrapper.ml_name = getattr(fn, "__name__", "")
+        wrapper.elementwise = True
         return wrapper
 
-    f_abs = _ew(np.abs)
+    f_abs = _ew(np.abs, text=True)
     f_sqrt = _ew(np.emath.sqrt)
     f_exp = _ew(np.exp)
     f_log = _ew(np.emath.log)
@@ -4413,27 +4545,32 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
     f_sinh = _ew(np.sinh)
     f_cosh = _ew(np.cosh)
     f_tanh = _ew(np.tanh)
-    f_floor = _ew(np.floor)
-    f_ceil = _ew(np.ceil)
-    f_fix = _ew(np.trunc)
+    f_floor = _ew(_by_parts(np.floor), text=True)
+    f_ceil = _ew(_by_parts(np.ceil), text=True)
+    f_fix = _ew(_by_parts(np.trunc), text=True)
     f_sign = _ew(np.sign)
-    f_real = _ew(np.real)
-    f_imag = _ew(np.imag)
-    f_conj = _ew(np.conj)
+    f_real = _ew(np.real, text=True)
+    f_imag = _ew(np.imag, text=True)
+    f_conj = _ew(np.conj, text=True)
     f_angle = _ew(np.angle)
     f_hypot = _ew(np.hypot)
     f_deg2rad = _ew(np.deg2rad)
     f_rad2deg = _ew(np.rad2deg)
-    f_isnan = _ew(np.isnan)
-    f_isinf = _ew(np.isinf)
-    f_isfinite = _ew(np.isfinite)
-    f_mod = _ew(lambda a, b: np.where(np.asarray(b) == 0, a, np.mod(a, b)))
+    f_isnan = _ew(np.isnan, text=True)
+    f_isinf = _ew(np.isinf, text=True)
+    f_isfinite = _ew(np.isfinite, text=True)
+    f_mod = _ew(lambda a, b: np.where(np.asarray(b) == 0, a, np.mod(a, b)),
+                 text=True)
     f_rem = _ew(lambda a, b: np.where(np.asarray(b) == 0, np.nan,
-                                      np.fmod(a, b)))
+                                      np.fmod(a, b)), text=True)
     f_mag2db = _ew(lambda m: 20 * np.log10(m))
     f_db = f_mag2db
     f_db2mag = _ew(lambda d: 10 ** (np.asarray(d) / 20))
     del _ew
+    for _name, _fn in list(locals().items()):
+        if getattr(_fn, "elementwise", False) and _name.startswith("f_"):
+            _fn.ml_name = _fn.ml_name if _name == "f_db" else _name[2:]
+    del _name, _fn
 
     def f_round(self, x, digits=0):
         a = np.asarray(x, dtype=complex if np.iscomplexobj(x) else float)
@@ -4585,6 +4722,16 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         if isinstance(x, str):
             x = (np.array([[ord(c) for c in x]], float) if x
                  else np.zeros((0, 0)))
+        if isinstance(dim, str) and dim.lower() == "all":
+            return bool(fn(np.asarray(x)))
+        if dim is not None:
+            d = np.asarray(dim, dtype=object if isinstance(dim, str)
+                           else None)
+            if d.dtype.kind not in "biuf" or d.size < 1 or np.any(
+                    np.asarray(d, float) < 1) or np.any(
+                    np.asarray(d, float) % 1):
+                raise MatlabError("Dimension argument must be a positive "
+                                  "integer scalar within indexing range.")
         out = self._reduce(fn, x, dim)
         if isinstance(out, np.generic):
             return bool(out)
@@ -4925,6 +5072,9 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         return None if n is None or _numel(n) == 0 else int(_scalar_of(n))
 
     def f_fft(self, x, n=None, dim=None):
+        if isinstance(x, (str, Cell, Struct, StructArray)):
+            raise MatlabError("Invalid data type. First argument must be "
+                              "numeric or logical.")
         A, axis = self._along(x, dim)
         if axis > 1:
             return x
@@ -4993,6 +5143,10 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         k = max(aa.size, bb.size) - 1
         z = None
         if zi is not None and _numel(zi):
+            if _numel(zi) % max(k, 1) or (_numel(zi) // max(k, 1)
+                                           != A.shape[1 - axis]):
+                raise MatlabError("Initial conditions must be a vector of "
+                                  "length max(length(a),length(b))-1.")
             z = np.asarray(zi).reshape(k, -1)
             z = z if axis == 0 else z.T
         elif nargout >= 2:
@@ -5020,16 +5174,19 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
             elif word in ("low", "high", "bandpass", "stop", "bandstop"):
                 btype = {"low": "lowpass", "high": "highpass",
                          "stop": "bandstop"}.get(word, word)
-        output = {3: "zpk", 4: "ss"}.get(nargout, "ba")
+        # SciPy has no state-space output: [A,B,C,D] go through zpk2ss.
+        output = "zpk" if nargout >= 3 else "ba"
         out = getattr(signal, design)(int(n), *ripple,
                                       wn if wn.size > 1 else float(wn[0]),
                                       btype=btype, analog=analog,
                                       output=output)
+        if nargout >= 4:
+            A, B, C, D = signal.zpk2ss(*out)
+            return tuple(_normalise(np.real_if_close(np.atleast_2d(m)))
+                         for m in (A, B, C, D))
         if output == "zpk":
             z, p, k = out
             return z.reshape(-1, 1), p.reshape(-1, 1), float(k)
-        if output == "ss":
-            return tuple(_normalise(np.asarray(m)) for m in out)
         b, a = (np.real_if_close(np.asarray(c)) for c in out)
         return (b, a) if nargout >= 2 else b
 
@@ -5583,6 +5740,12 @@ class _Library(ClassLibrary, FileLibrary, TableLibrary, DateLibrary,
         for pattern in names[1:] or ["*"]:
             hits = [k for k in workspace if fnmatch.fnmatchcase(k, pattern)]
             if not hits and not any(c in pattern for c in "*?["):
+                value = self.rt.ns.get(pattern, workspace)
+                if value is not workspace and not pattern.startswith("_")                         and value is not self.rt.base.get(pattern, object()):
+                    raise MatlabError(
+                        f"Cannot save variable '{pattern}': Evans cannot "
+                        f"write a value of class '{self.f_class(value)}' "
+                        f"to a MAT-file.")
                 raise MatlabError(f"Variable '{pattern}' not found.")
             chosen.update((k, workspace[k]) for k in hits)
         if ascii_:
