@@ -22,7 +22,7 @@ If `n` is a vector, those are the frequencies to evaluate at, in rad/sample (or 
 
 Called with no output, `freqz` opens a figure with the magnitude in dB over the phase in degrees. `d` may be a `designfilt` filter in place of `b, a`.
 
-`b` and `a` are read as vectors: a matrix is flattened without a message. Asking for three outputs stops with "Too many output arguments." A call with no argument stops with a Python error message.
+`b` and `a` are read as vectors: a matrix is flattened without a message. Asking for three outputs stops with "Too many output arguments." A call with no argument stops with "Not enough input arguments."
 
 ## Example
 

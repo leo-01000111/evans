@@ -22,7 +22,7 @@ With sizes, `nan` makes an array of `NaN`, as `zeros` makes an array of zeros: `
 
 Limits of Evans:
 
-- `nan` is an ordinary name, so `nan = 5` creates a variable that hides it until `clear nan`. Typed as separate commands this works. Within one line or script, `nan = 5; clear nan; nan` fails with "NameError: name 'nan' is not defined"; the next command sees `NaN` again. Any variable assigned and then cleared in the same script fails this way.
+- `nan` is an ordinary name, so `nan = 5` creates a variable that hides it until `clear nan`. After `clear nan`, in the same script or later, `nan` is `NaN` again.
 
 ## Example
 

@@ -26,8 +26,7 @@ Evans passes the arguments to SciPy and does not check them itself:
 - A non-integer `n` is truncated: `butter(2.5, 0.2)` is the same filter as `butter(2, 0.2)`.
 - A text option that is not recognised, such as `'foo'`, is ignored without an error.
 - A two-element `Wn` with `'low'` or `'high'`, or a three-element `Wn`, fails with `ValueError: Must specify a single critical frequency Wn for lowpass or highpass filter`.
-- The four-output state-space form `[A, B, C, D] = butter(...)` does not work: it fails with `ValueError: 'ss' is not a valid output form.`
-- Calling `butter(2)` with no `Wn` fails with a Python `TypeError` about a missing argument.
+- `[A, B, C, D] = butter(...)` returns the state-space matrices, built from the zeros, poles and gain. The transfer function is the filter's, but the matrices are one realisation of it and need not equal MATLAB's, which uses other state coordinates; compare them through `ss2tf` or `tf`, not entry by entry.
 
 ## Example
 

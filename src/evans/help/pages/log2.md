@@ -16,14 +16,14 @@ Zero, negative and complex input:
 - A negative number gives a complex result instead of `NaN`: `log2(-8)` prints `3.0000 + 4.5324i`.
 - A complex number is accepted: `log2(1+1i)` prints `0.5000 + 1.1331i`.
 
+A `single` input gives a `single`: `class(log2(single(100)))` is `'single'`. Text, a cell array or a struct stops with "Undefined function 'log2' for input arguments of type 'char'." (with its own type), and `log2(1, 2)` with "Too many input arguments."
+
 A symbolic input stays symbolic: `log2(sym('x'))` prints `log(x)/log(2)`.
 
 Limits of Evans:
 
 - Only the one-output form exists. The two-output form `[f, e] = log2(x)` (mantissa and exponent) stops with "Too many output arguments."
-- The result is always `double`: `class(log2(single(8)))` is `'double'`, and `log2(int8(8))` is 3.
-- It takes exactly one argument. `log2(1, 2)` fails with a Python `TypeError` message ("takes 1 positional argument but 2 were given") rather than a MATLAB-style message.
-- Text is not rejected cleanly: `log2('a')` fails with a numpy error message.
+- An integer input gives a `double`: `log2(int8(8))` is 3.
 
 ## Example
 

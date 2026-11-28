@@ -36,6 +36,7 @@ failing obscurely. (Symbolic *variables* are supported; see
 
 from __future__ import annotations
 
+import fnmatch
 import keyword
 import re
 from dataclasses import dataclass, field
@@ -86,8 +87,10 @@ def translate(source: str, allow_classdef: bool = False) -> list[Chunk]:
                 "prompt", stmt.line)
     source_lines = source.splitlines()
     chunks: list[Chunk] = []
+    variables = _assigned_names(program, top=True)
+    cleared = frozenset(_cleared_names(program))
     for group in _group(program):
-        emitter = _Emitter(_assigned_names(program, top=True))
+        emitter = _Emitter(variables, cleared)
         for stmt in group:
             emitter.statement(stmt, 0)
         first = group[0].line
@@ -220,7 +223,10 @@ _KEYWORDS = {
 
 _COMMAND = re.compile(
     r"^(?P<indent>\s*)(?P<name>[A-Za-z_]\w*)[ \t]+"
-    r"(?P<args>(?![-+*/^\\=<>&|~:.]\s|=|\()[A-Za-z0-9'\-][^;,%\n]*?)"
+    # ``cd ..``, ``cd .`` and ``ls ./sub``: a relative folder starts with a
+    # dot, which elsewhere would begin an operator such as ``.*``.
+    r"(?P<args>\.{1,2}(?=[/\\\s;,%]|$)[^;,%\n]*?"
+    r"|(?![-+*/^\\=<>&|~:.]\s|=|\()[A-Za-z0-9'\-][^;,%\n]*?)"
     r"\s*(?P<end>[;,]?)\s*(?P<comment>%.*)?$")
 
 
@@ -1480,6 +1486,67 @@ def _assigned_names(body: list[_Stmt], top: bool = False) -> set[str]:
     return names
 
 
+_CLEARS = ("clear", "clearvars")
+
+
+def _cleared_names(body: list[_Stmt]) -> set[str]:
+    """
+    The variables a script assigns and may then ``clear``: those are read
+    through the runtime, which finds them gone, and not as plain Python
+    names, which would fail with ``NameError``. Conservative: a ``clear``
+    whose names are not all literal words counts for every variable.
+    """
+    seen: set[str] = set()
+    cleared: set[str] = set()
+
+    def covered(s: _ExprStmt) -> list[str] | None:
+        e = s.expr
+        if isinstance(e, _Name):
+            return None if e.name in _CLEARS else []
+        if not (isinstance(e, _Index) and isinstance(e.target, _Name)
+                and e.target.name in _CLEARS):
+            return []
+        words = []
+        for a in e.args:
+            if not isinstance(a, _Str) or a.value.startswith("-") \
+                    or a.value.lower() in ("all", "variables", "v"):
+                return None
+            words.append(a.value)
+        return words or None
+
+    def visit(stmts):
+        for s in stmts:
+            if isinstance(s, _Function):
+                continue
+            if isinstance(s, (_For, _While)):
+                # A later pass of the loop sees what the body assigns.
+                seen.update(_assigned_names(s.body))
+            if isinstance(s, _Assign):
+                seen.update(_assigned_names([s]))
+            elif isinstance(s, _For):
+                seen.add(s.var)
+            elif isinstance(s, _ExprStmt):
+                words = covered(s)
+                if words is None:
+                    cleared.update(seen)
+                else:
+                    cleared.update(n for n in seen if any(
+                        fnmatch.fnmatchcase(n, w) for w in words))
+            if isinstance(s, _Try) and s.var:
+                seen.add(s.var)
+            blocks = [getattr(s, "body", None), getattr(s, "handler", None),
+                      getattr(s, "orelse", None),
+                      getattr(s, "otherwise", None)]
+            blocks += [b for _, b in getattr(s, "branches", ())]
+            blocks += [b for _, b in getattr(s, "cases", ())]
+            for b in blocks:
+                if b:
+                    visit(b)
+
+    visit(body)
+    return cleared
+
+
 def _declares(body: list[_Stmt], word: str) -> bool:
     """Whether a function body says ``persistent`` (or ``global``) anywhere."""
     for s in body:
@@ -1496,8 +1563,12 @@ def _declares(body: list[_Stmt], word: str) -> bool:
 
 
 class _Emitter:
-    def __init__(self, variables: set[str]) -> None:
-        self.vars = set(variables)
+    def __init__(self, variables: set[str],
+                 cleared: frozenset[str] = frozenset()) -> None:
+        #: Names a ``clear`` may remove after they are assigned: they are
+        #: always read through the runtime (see :func:`_cleared_names`).
+        self.cleared = cleared
+        self.vars = set(variables) - cleared
         self.lines: list[tuple[int, str, int]] = []   # indent, text, mline
         self._switch_count = 0
         self._outputs: list[str] | None = None        # inside a function
@@ -1507,6 +1578,10 @@ class _Emitter:
         #: Names declared ``global`` or ``persistent``: read from, and
         #: written back to, the store that outlives this call.
         self.linked: dict[str, str] = {}
+
+    def _bind(self, name: str) -> None:
+        if name not in self.cleared:
+            self.vars.add(name)
 
     def code(self) -> str:
         return "\n".join("    " * i + t for i, t, _ in self.lines) + "\n"
@@ -1670,7 +1745,7 @@ class _Emitter:
             inner._put(body_indent, "pass", f.line)
         inner._put(body_indent, inner._return_text(), f.end_line or f.line)
         self.lines.extend(inner.lines)
-        self.vars.add(f.name)
+        self._bind(f.name)
 
     def _classdef(self, c: _ClassDef, i: int) -> None:
         """The class's methods as functions, then one call that builds it."""
@@ -1763,7 +1838,7 @@ class _Emitter:
                 name = t.target.name
                 current = (self._linked_read(name) if name in self.linked
                            else f"{_RT}.existing({name!r}, locals())")
-                self.vars.add(name)
+                self._bind(name)
                 self._put(i, f"{_py_name(name)} = {_RT}.list_part("
                              f"{current}, ({self._arglist(t.args)}), "
                              f"_cso, _csp, _csc[{k}])", s.line)
@@ -1786,7 +1861,7 @@ class _Emitter:
         self._put(i, f"_csn = {_RT}.list_count({current}, ({args}))",
                   s.line)
         value = self.expr(s.value, nargout="_csn")
-        self.vars.add(name)
+        self._bind(name)
         self._put(i, f"{_py_name(name)} = {_RT}.list_store({current}, "
                      f"({args}), {value}, _csn)", s.line)
         self._write_back(name, i, s.line)
@@ -1802,7 +1877,7 @@ class _Emitter:
 
     def _store(self, target: _Node, value: str, i: int, line: int) -> None:
         if isinstance(target, _Name):
-            self.vars.add(target.name)
+            self._bind(target.name)
             # The right side may be held elsewhere too (another variable, an
             # element of a cell): see the runtime's share().
             self._put(i, f"{_py_name(target.name)} = {_RT}.share({value})",
@@ -1822,7 +1897,7 @@ class _Emitter:
             node = node.target
         path.reverse()
         name = _py_name(node.name)
-        self.vars.add(node.name)
+        self._bind(node.name)
         current = (self._linked_read(node.name) if node.name in self.linked
                    else f"{_RT}.existing({name!r}, locals())")
         self._put(i, f"{name} = {_RT}.assign({current}, "
@@ -1834,7 +1909,7 @@ class _Emitter:
             raise MatlabSyntaxError("persistent can only be used in a "
                                     "function", s.line)
         for name in s.names:
-            self.vars.add(name)
+            self._bind(name)
             self.linked[name] = s.word
             if s.word == "global":
                 top = self._outputs is None

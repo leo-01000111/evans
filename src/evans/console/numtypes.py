@@ -35,6 +35,13 @@ triu tril horzcat vertcat cat transpose ctranspose fftshift ifftshift
 idivide bitand bitor bitxor bitshift bitcmp
 """.split())
 
+#: Functions whose result is ``single`` for a ``single`` input (and double
+#: for an integer one): the floating-point maths.
+SINGLE_KEEP = frozenset("""
+sqrt exp log log10 log2 sin cos tan asin acos atan atan2 sinh cosh tanh
+hypot angle deg2rad rad2deg
+""".split())
+
 #: Functions that run on the values in double, then cast back (so ``abs`` of
 #: ``int8(-128)`` saturates instead of wrapping).
 COMPUTE = frozenset("""
@@ -177,6 +184,8 @@ def finish(name: str, args: tuple, result):
             return (_keep(result[0], cls),) + tuple(
                 plain(r) for r in result[1:])
         return _keep(result, cls)
+    if name in SINGLE_KEEP and dominant(typed) == "single":
+        return _keep(result, "single")
     return plain(result)
 
 

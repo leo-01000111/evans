@@ -18,7 +18,7 @@ Discrete Fourier transform of a vector or of each column of a matrix.
 
 The result is complex, even when every imaginary part is zero, so a real spectrum is displayed as `10 + 0i`. Use `abs` and `angle` for magnitude and phase. Only the first and second dimensions are handled: there is no N-D transform.
 
-A call with no argument or with a text argument stops with a Python error message instead of a MATLAB one.
+A call with no argument stops with "Not enough input arguments." Text or a cell array stops with "Invalid data type. First argument must be numeric or logical."
 
 ## Example
 

@@ -20,12 +20,12 @@ finished before then, with its notes, moved to `docs/HISTORY.md`, part 4 and par
 
 Sizes: **S** under a day, **M** a few days, **L** a week or more.
 
-## At a glance (2026-11-19)
+## At a glance (2026-11-28)
 
 | Section | Open | Next |
 |---|---|---|
 | 1.0 | 1 | the tag, after the corpus checker and Phase 8's R7 to R9 |
-| Phase 0, silent wrong answers | 2 | none known; `ode45` events is a feature |
+| Phase 0, silent wrong answers | 3 | `clear` inside a function; `ode45` events is a feature |
 | Phase 1, data work at the console | 6 | |
 | Phase 2, Simulink for daily use | 28 | the `pid_saturation` restarts, then the quick speed wins |
 | Phase 3, plotting | 6 | TeX text in labels (after the hold) |
@@ -130,7 +130,7 @@ under rules 1 and 3 from 1.0, as model files and settings do.
 
 ---
 
-## Phase 0 — Silent wrong answers ◐ **Core done 2026-10-27; 2 open**
+## Phase 0 — Silent wrong answers ◐ **Core done 2026-10-27; 3 open**
 
 Tests: `tests/golden/test_confident_liars.py`. The search for more silent wrong
 answers became the reference corpus (Phase 6), which found 32; all were fixed
@@ -145,6 +145,13 @@ answers became the reference corpus (Phase 6), which found 32; all were fixed
       2026-11-24): the `Events`, `Mass` and `Jacobian` options are not supported.
       Since 2026-11-27 a set option is named in a warning instead of being dropped
       silently (page `ode45`). Supporting `Events` is a new feature. **M**
+- [ ] **`clear` inside a function does nothing** (found 2026-11-28 while fixing the
+      same crash in scripts): in a function, `x = 1; clear x; r = x` returns 1 and
+      `exist('x')` stays 1, also after a bare `clear`. The function's variables are
+      Python locals, which `clear` cannot delete. Scripts were fixed 2026-11-28 by
+      reading a cleared name through `__ml__.read` (`_cleared_names` in
+      `matlab.py`); a function needs `clear` to rebind the local (to a sentinel the
+      reads check) or the same routing plus a scope `clear` can reach. **S–M**
 
 ## Phase 1 — Everyday data work at the console ◐ **Core done 2026-10-28; 6 open**
 
@@ -404,38 +411,9 @@ Phase 6.
       writers follow MATLAB's documented layout and are untested there (the
       verification kit covers both, Phase 6). **S**
 - [ ] `msgbox` waits until closed, unlike MATLAB's. **S**
-- [ ] **Crashes and raw Python errors found while writing help pages** (2026-11-24,
-      batch 1; nothing fixed). Pages describe today's behaviour and must be revised
-      when each is fixed. **S–M**
-      - `[A,B,C,D] = butter(2,0.2)` (pages `butter`, `cheby1`, `ellip`): `ValueError:
-        'ss' is not a valid output form`, expected the state-space matrices. Cause:
-        `_iir` passes `output='ss'` to scipy; go through `zpk` and `zpk2ss`.
-      - `save` of a string, function handle or table (page `save`): says "Variable 'f'
-        not found." instead of that the type cannot be saved.
-      - Missing arguments give Python errors instead of "Not enough input arguments":
-        `fft()`, `freqz()`, `findpeaks()`, `butter(2)`, `ode45(f,[0 1])`, `fzero(f)`,
-        `fminsearch(f)` (pages of the same names). `fft('a')` shows a numpy
-        `DTypePromotionError`; `filter(1,[1 -0.5],[1 2 3],[1 2])` shows `ValueError:
-        Unexpected shape for zi` (page `filter`).
-      - Batch 2 (pages `cd`, `all`, `ceil`, `log10`, `log2`, `gt`, `addpath`):
-        `cd ..` and `cd .` as commands fail with "unexpected text after the statement";
-        `all(x,'all')` and a text `dim` fail with `ValueError: invalid literal for
-        int()`, and a fractional `dim` is accepted; `ceil` of char, string or complex
-        input, `log10('a')` and `log2('a')` show a numpy `TypeError`; `ceil({1})`,
-        `log10({1})` and `gt({1},{2})` return a number instead of an error;
-        `gt(2+3i,1)` and `gt(1+3i,1+2i)` raise a Python `TypeError`; `gt([1 2 3],[1 2])`
-        gives numpy's broadcast message instead of "Arrays have incompatible sizes for
-        this operation."; wrong argument counts (`log10(1,2)`, `gt(1)`, `ceil(1,2)`,
-        `cd('a','b')`, `pwd(1)`) give Python errors; `class(log10(single(100)))` is
-        `'double'`; `addpath` silently ignores a folder that does not exist, a cell
-        array and a number; `genpath`, `path`, `pathsep`, `tempdir` and `tempname`
-        are not there.
-      - A variable assigned and then cleared in the same command or script
-        (page `nan`): `x = 1; clear x; x` and `pi = 3; clear pi; pi` fail with
-        `NameError: name 'x' is not defined`, expected "Unrecognized function or
-        variable 'x'." and `3.1416`. The translator reads a name the script assigns
-        as a plain Python name, so `clear` leaves it undefined; separate commands
-        work. Found 2026-11-27 (the roadmap had it as a lost constant).
+- [ ] **Path and temporary-folder functions** (left from the help-page crashes,
+      2026-11-28): `genpath`, `path`, `pathsep`, `tempdir` and `tempname` are not
+      there. New functions, not bugs (page `addpath`). **S**
 
 ## Phase 5 — Hardware, identification, symbolic leftovers ○ **Not started; 4 open**
 

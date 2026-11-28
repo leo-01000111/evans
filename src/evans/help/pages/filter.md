@@ -16,7 +16,7 @@ Apply a digital filter to data.
 
 `a(1)` may be any non-zero value: `b` and `a` are scaled by it. A zero `a(1)` stops with "First denominator filter coefficient must be non-zero." With fewer than three arguments the error is "Not enough input arguments."
 
-`zi` is the initial state, one value per column, `max(length(a), length(b)) - 1` of them. With a second output `zf` the final state comes back, so a long signal can be filtered in blocks: pass `zf` of one block as `zi` of the next. A `zi` of the wrong length stops with a Python error message.
+`zi` is the initial state, one value per column, `max(length(a), length(b)) - 1` of them. With a second output `zf` the final state comes back, so a long signal can be filtered in blocks: pass `zf` of one block as `zi` of the next. A `zi` of the wrong length stops with "Initial conditions must be a vector of length max(length(a),length(b))-1."
 
 `filter(d, x)` applies a filter made by `designfilt`. It takes no `zi` and gives no state.
 

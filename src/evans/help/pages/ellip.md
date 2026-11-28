@@ -18,7 +18,7 @@ Design an elliptic (Cauer) filter, with ripple in both bands, and return its coe
 
 With three outputs it returns zeros and poles as columns and the gain.
 
-The limits are those of [butter](butter): the arguments go to SciPy unchecked, a digital edge outside (0, 1) is a `ValueError`, a non-integer `n` is truncated, an unknown text option is ignored, and the four-output state-space form is not supported.
+The limits are those of [butter](butter): the arguments go to SciPy unchecked, a digital edge outside (0, 1) is a `ValueError`, a non-integer `n` is truncated, an unknown text option is ignored. The four-output state-space form `[A, B, C, D]` is one realisation of the filter and need not match MATLAB's matrices entry by entry.
 
 ## Example
 

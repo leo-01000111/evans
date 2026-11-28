@@ -19,10 +19,10 @@ A relative folder is turned into a full path when `addpath` runs, so a later `cd
 
 `rmpath(folder)` takes a folder off the path again; a folder that is not on it is ignored.
 
+A folder that does not exist is not added: `addpath('no_such_folder')` prints "Warning: Name is nonexistent or not a directory:" and the full path. A cell array or a number, `addpath({'lib'})` or `addpath(5)`, stops with "Arguments must contain a character vector."
+
 Limits of Evans:
 
-- The folder is not checked. `addpath('no_such_folder')` does nothing and prints nothing; the functions in it are simply not found.
-- Only text arguments work. A cell array, `addpath({'lib'})`, or a number, `addpath(5)`, is ignored without a message, and the functions are not found.
 - `addpath` returns nothing: `x = addpath('lib')` gives `x = []`, not the old path.
 - Subfolders are not added; `genpath`, `path` and `pathsep` do not exist in Evans.
 
